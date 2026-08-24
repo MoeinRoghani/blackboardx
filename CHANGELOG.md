@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.2.1...v0.3.0) (2026-08-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **control:** `Agent` no longer takes `acknowledgment_deadline` or `wake_cap`. `Control.extend` is removed. `Notification.deadline` is removed. `DeadlineExtended`, `PresumedFailed` and `WakeCapReached` are removed; an agent that never acknowledged is named in the outcome's `unfinished`.
+* **control:** `RunBudgets` takes `wall_clock` and `idle`, and no longer takes `total_writes` or `total_notifications`. `Complete`, `FinishedWithFailures`, `BudgetExhausted`, `BudgetKind`, `BudgetReached` and `RejectionCause.BUDGET_EXHAUSTED` are removed; use `Settled`, `WallClockExpired` and `Aborted`, each carrying `unfinished`.
+* **control:** `Notification.registers` is now `Notification.regions`, because it names regions of either kind.
+* **model:** `create_model` no longer accepts `agents`. Register each agent with `control.register_agent` after creating the model. Registering now wakes the agent, and an agent registered during a run is woken with everything already on the board rather than only subsequent changes.
+
+### Features
+
+* **board:** a storage protocol so the board can be substituted ([#57](https://github.com/MoeinRoghani/blackboardx/issues/57)) ([4de8a91](https://github.com/MoeinRoghani/blackboardx/commit/4de8a911bae5b672a0c3ec38eaefa49af6729474)), closes [#55](https://github.com/MoeinRoghani/blackboardx/issues/55)
+* **control:** a level write notifies the agents subscribed to that level ([#66](https://github.com/MoeinRoghani/blackboardx/issues/66)) ([3535c17](https://github.com/MoeinRoghani/blackboardx/commit/3535c17e814665f0f4c79ab51765583714012703)), closes [#64](https://github.com/MoeinRoghani/blackboardx/issues/64)
+* **control:** a run closes on silence, and time is its only bound ([#69](https://github.com/MoeinRoghani/blackboardx/issues/69)) ([be3f755](https://github.com/MoeinRoghani/blackboardx/commit/be3f755f0a4d6a5c1f9394248a9ebe604c5a1c48)), closes [#67](https://github.com/MoeinRoghani/blackboardx/issues/67)
+* **control:** an agent declares the regions it hears about and the levels it writes ([#63](https://github.com/MoeinRoghani/blackboardx/issues/63)) ([192936e](https://github.com/MoeinRoghani/blackboardx/commit/192936efe8acf0f45d3327dad9c05515ca7432b4)), closes [#61](https://github.com/MoeinRoghani/blackboardx/issues/61)
+* **control:** the acknowledgment deadline and the wake cap are removed ([#72](https://github.com/MoeinRoghani/blackboardx/issues/72)) ([75887f9](https://github.com/MoeinRoghani/blackboardx/commit/75887f9620cab1bec9725468161acf61c32ce47f)), closes [#70](https://github.com/MoeinRoghani/blackboardx/issues/70)
+* **model:** agents register themselves rather than being named at creation ([#60](https://github.com/MoeinRoghani/blackboardx/issues/60)) ([0af78e3](https://github.com/MoeinRoghani/blackboardx/commit/0af78e3f60860680ffd84164ee8e78fcc4e314bb)), closes [#58](https://github.com/MoeinRoghani/blackboardx/issues/58)
+
+
+### Documentation
+
+* the blackboard service design ([#54](https://github.com/MoeinRoghani/blackboardx/issues/54)) ([3fb20d7](https://github.com/MoeinRoghani/blackboardx/commit/3fb20d7d6a4b94ac0605fe489bb0b6369a949439)), closes [#53](https://github.com/MoeinRoghani/blackboardx/issues/53)
+
 ## [0.2.1](https://github.com/MoeinRoghani/blackboardx/compare/v0.2.0...v0.2.1) (2026-08-17)
 
 
