@@ -20,6 +20,7 @@ from blackboard._control import (
     AdmissionRule,
     Agent,
     BoardReader,
+    BoardStore,
     Control,
     RunBudgets,
     RunClosedError,
@@ -48,6 +49,7 @@ def create_model(
     admission_rule: AdmissionRule | None = None,
     termination_predicate: TerminationPredicate | None = None,
     budgets: RunBudgets,
+    board: BoardStore | None = None,
     clock: Clock | None = None,
 ) -> Model:
     """Opens a run and returns the model.
@@ -65,6 +67,7 @@ def create_model(
         admission_rule=admission_rule,
         termination_predicate=termination_predicate,
         budgets=budgets,
+        board=board,
         clock=clock if clock is not None else SystemClock(),
     )
     try:
