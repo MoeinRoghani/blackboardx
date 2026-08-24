@@ -1,6 +1,6 @@
 # blackboardx
 
-A group of agents works on one problem. Each writes what it finds into a single shared record, every agent can read all of it, and no agent calls another; the record is the only channel between them. The blackboard literature calls a system skeletal when it supplies this structure with no domain knowledge inside, so that an application system is built on it by adding knowledge and control. `blackboardx` is skeletal in that sense. It supplies the board and the control component; an application creates a model by supplying its regions, seed, admission rule, termination predicate, and budgets, and its agents register themselves into it.
+A group of agents works on one problem. Each writes what it finds into a single shared record, every agent can read all of it, and no agent calls another; the record is the only channel between them. The blackboard literature calls a system skeletal when it supplies this structure with no domain knowledge inside, so that an application system is built on it by adding knowledge and control. `blackboardx` is skeletal in that sense. It supplies the board and the control component; an application creates a model by supplying its regions, seed, admission rule, termination predicate, and limits, and its agents register themselves into it.
 
 The distribution name is `blackboardx`; the import name is `blackboard`. The documentation, including the API reference, is at <https://moeinroghani.github.io/blackboardx/>.
 
@@ -13,6 +13,18 @@ pip install blackboardx
 ## The board
 
 The board stores contributions in named regions under one total order, and it never reads what it stores. A region has one of two kinds. A level accumulates contributions in arrival order, and nothing stored is altered. A register holds one current value for a premise of the case; a write replaces the whole value under the version the writer read, and fails with the register's current version when another writer moved it first. One counter orders every write across all regions, so a contribution in one region stands in a definite order against a write in any other.
+
+## How a run works
+
+An application creates a model, and its agents register themselves into it. Registering wakes the agent, because it is out of date with everything already on the board.
+
+A wake names the regions that changed and carries no values. The agent reads whatever it wants, decides whether it has anything to add, writes what it has, and acknowledges. Deciding to add nothing is an ordinary outcome, and reads never pass through the control component, cost nothing, and cannot be refused.
+
+An agent declares what wakes it. Omitting the declaration subscribes it to every register and to no level, because a premise bears on any agent's work while another agent's conclusion does not. An agent that names levels is woken when those levels receive a contribution, so a finding by one agent can put another to work. No agent is ever woken by its own write.
+
+A write passes the application's admission rule before the board sequences it. The rule sees the proposed write with a read handle on the board and returns accept, or reject with a reason the writer receives.
+
+A run ends on time. It closes when nothing has happened for its idle limit, when its wall clock passes, or when a caller closes it, and every outcome names the agents that were still holding an unacknowledged wake. Nothing counts writes or notifications, because a change that lands is always told to every agent that should hear it.
 
 ## Public API
 
