@@ -52,6 +52,7 @@ from blackboard._board import (
     RegionKindError,
     Register,
     RegisterState,
+    UnsetRegisterError,
     Written,
 )
 from blackboard._clock import Clock, ScheduledCall
@@ -507,7 +508,14 @@ class Control:
                 self._batch_windows[region.name] = region.batch_window
 
     def register_agent(self, agent: Agent) -> None:
-        """Registers an agent. Its cursor starts at the current sequence number."""
+        """Registers an agent and wakes it.
+
+        The agent is out of date with everything already on the board, so
+        registering issues one notification covering the registers that
+        currently hold a value. Its cursor starts at zero, since it has
+        read nothing.
+        """
+        deliveries: list[_Delivery] = []
         with self._lock:
             if self._outcome is not None:
                 raise RunClosedError("the run has closed")
@@ -515,9 +523,26 @@ class Control:
                 raise DuplicateAgentError(
                     f"an agent named {agent.name!r} is already registered"
                 )
-            self._agents[agent.name] = _AgentState(
-                declaration=agent, cursor=self._last_sequence
-            )
+            state = _AgentState(declaration=agent, cursor=0)
+            self._agents[agent.name] = state
+            now = self._clock.now()
+            for name, kind in self._kinds.items():
+                if kind is _RegionKind.REGISTER and self._has_value(name):
+                    state.pending[name] = now + self._batch_windows[name]
+            delivery = self._evaluate_dispatch_locked(state, now)
+            if delivery is not None:
+                deliveries.append(delivery)
+        # Registering never completes a run. An agent joining is the start of
+        # work, not the end of it.
+        self._deliver(deliveries)
+
+    def _has_value(self, register: str) -> bool:
+        # Callers hold self._lock.
+        try:
+            self._board.read_register(register)
+        except UnsetRegisterError:
+            return False
+        return True
 
     def write(self, agent: str, level: str, content: object) -> Accepted | Rejected:
         """Runs one level write through admission and, if admitted, the board."""
@@ -962,6 +987,10 @@ class Control:
         return None
 
     def _quiescent_locked(self) -> bool:
+        # A run into which no agent has ever registered has not begun, so a
+        # quiet moment is the gap before the work rather than the end of it.
+        if not self._agents:
+            return False
         windows_open = sum(
             1 for state in self._agents.values() if state.window_call is not None
         )

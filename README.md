@@ -1,6 +1,6 @@
 # blackboardx
 
-A group of agents works on one problem. Each writes what it finds into a single shared record, every agent can read all of it, and no agent calls another; the record is the only channel between them. The blackboard literature calls a system skeletal when it supplies this structure with no domain knowledge inside, so that an application system is built on it by adding knowledge and control. `blackboardx` is skeletal in that sense. It supplies the board and the control component; an application creates a model by supplying its regions, agents, seed, admission rule, termination predicate, and budgets.
+A group of agents works on one problem. Each writes what it finds into a single shared record, every agent can read all of it, and no agent calls another; the record is the only channel between them. The blackboard literature calls a system skeletal when it supplies this structure with no domain knowledge inside, so that an application system is built on it by adding knowledge and control. `blackboardx` is skeletal in that sense. It supplies the board and the control component; an application creates a model by supplying its regions, seed, admission rule, termination predicate, and budgets, and its agents register themselves into it.
 
 The distribution name is `blackboardx`; the import name is `blackboard`. The documentation, including the API reference, is at <https://moeinroghani.github.io/blackboardx/>.
 
@@ -50,7 +50,7 @@ Every public name is exported from `blackboard`; every other module is internal.
 | `Complete`, `FinishedWithFailures`, `BudgetExhausted`, `Aborted`, `RunOutcome` | The four states a run closes in, and their union |
 | `BudgetReached`, `RunClosed` | The audit's records of a limit reached and of the run closing |
 | `RunClosedError` | A declaration or registration reached a run that has closed |
-| `Model`, `create_model` | A running model's read handle and control component, and the one creation path |
+| `Model`, `create_model` | A running model's read handle and control component, and the one creation path. Agents are not named here |
 | `Control` | The control component an application drives: writes, acknowledgment and extension, mid-run declaration and registration, abort, the audit, and the outcome |
 | `SeedError` | The seed's names are not exactly the declared registers |
 | `RegisterSeeded` | The audit's record of the seed writing one register when the run opened |
@@ -68,18 +68,20 @@ wakes = []
 
 model = create_model(
     regions=[Level("platform"), Register("window")],
-    agents=[
-        Agent(
-            name="ocp",
-            acknowledgment_deadline=timedelta(minutes=5),
-            wake_cap=10,
-            notify=wakes.append,
-        )
-    ],
     seed={"window": ("2026-08-16T20:00", "2026-08-16T22:00")},
     budgets=RunBudgets(
         wall_clock=timedelta(minutes=10), total_writes=100, total_notifications=100
     ),
+)
+
+# An agent registers itself, and registering wakes it.
+model.control.register_agent(
+    Agent(
+        name="ocp",
+        acknowledgment_deadline=timedelta(minutes=5),
+        wake_cap=10,
+        notify=wakes.append,
+    )
 )
 
 # The agent's cycle: read the premises, contribute, acknowledge.
