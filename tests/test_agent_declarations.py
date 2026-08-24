@@ -69,7 +69,7 @@ class TestSubscription:
         control.register_agent(declaration("ocp", received))
         control.set_register("operator", "window", "w", expected_version=0)
         control.set_register("operator", "namespace", ("ns",), expected_version=0)
-        assert [n.registers for n in received] == [
+        assert [n.regions for n in received] == [
             frozenset({"window"}),
             frozenset({"namespace"}),
         ]
@@ -82,7 +82,7 @@ class TestSubscription:
         control.set_register("operator", "namespace", ("ns",), expected_version=0)
         assert received == []
         control.set_register("operator", "window", "w", expected_version=0)
-        assert [n.registers for n in received] == [frozenset({"window"})]
+        assert [n.regions for n in received] == [frozenset({"window"})]
 
     def test_the_opening_wake_names_only_subscribed_registers(self) -> None:
         clock = ManualClock(start=START)
@@ -92,7 +92,7 @@ class TestSubscription:
         received: list[Notification] = []
         control.register_agent(declaration("late", received, subscribes_to=["window"]))
         (wake,) = received
-        assert wake.registers == frozenset({"window"})
+        assert wake.regions == frozenset({"window"})
 
 
 class TestWritePermission:

@@ -40,7 +40,7 @@ Every public name is exported from `blackboard`; every other module is internal.
 | `RejectionCause` | The closed set of causes for a refused write, including a level the agent did not declare |
 | `WriteAccepted`, `WriteRejected`, `AuditEvent` | The audit's records of writes that reached the board and writes that did not |
 | `Agent` | An agent declaration: name, acknowledgment deadline, wake cap, delivery callback, the registers it subscribes to, and the levels it may write |
-| `Notification`, `NotificationId` | One wake, and the identifier an acknowledgment names |
+| `Notification`, `NotificationId` | One wake, naming the regions that changed, and the identifier an acknowledgment names |
 | `NotificationDispatched`, `NotificationAcknowledged`, `DeadlineExtended`, `PresumedFailed`, `WakeCapReached` | The audit's records of dispatch, acknowledgment, extension, presumed failure, and a reached wake cap |
 | `DuplicateAgentError` | A registration named an agent that is already registered |
 | `UnknownNotificationError` | The named notification was never issued to the acknowledging agent |

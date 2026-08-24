@@ -102,7 +102,7 @@ class TestRegistration:
         model.control.register_agent(declaration("ocp", wakes.append))
         (wake,) = wakes
         assert wake.agent == "ocp"
-        assert wake.registers == frozenset({"window", "service"})
+        assert wake.regions == frozenset({"window", "service"})
 
     def test_each_agent_is_woken_when_it_registers(self) -> None:
         first: list[Notification] = []
@@ -133,7 +133,7 @@ class TestRegistration:
         model.control.declare(Register("trigger"))
         model.control.register_agent(declaration("ocp", wakes.append))
         (wake,) = wakes
-        assert wake.registers == frozenset({"window"})
+        assert wake.regions == frozenset({"window"})
 
     def test_a_duplicate_name_is_refused(self) -> None:
         wakes: list[Notification] = []
