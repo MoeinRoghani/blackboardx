@@ -429,7 +429,6 @@ class Control:
         self._kinds: dict[str, _RegionKind] = {}
         self._batch_windows: dict[str, timedelta] = {}
         self._audit: list[AuditEvent] = []
-        self._in_flight = 0
         self._last_sequence = 0
         self._agents: dict[str, _AgentState] = {}
         self._issued: set[tuple[str, NotificationId]] = set()
@@ -437,7 +436,6 @@ class Control:
         self._next_notification_id = 1
         self._delivery_queue: deque[_Delivery] = deque()
         self._delivering = threading.local()
-        self._checking = threading.local()
         self._termination_predicate = termination_predicate
         self._budgets = budgets
         self._outcome: RunOutcome | None = None
@@ -538,38 +536,32 @@ class Control:
                     RejectionCause.NOT_PERMITTED,
                     f"{agent!r} may not write to {level!r}",
                 )
-        with self._lock:
-            self._in_flight += 1
-        try:
-            proposed = ProposedContribution(agent=agent, level=level, content=content)
-            verdict = self._admission_rule(proposed, self._board)
-            deliveries: list[_Delivery] = []
-            result: Accepted | Rejected
-            if isinstance(verdict, Reject):
-                result = self._reject(
-                    agent, level, RejectionCause.ADMISSION, verdict.reason
-                )
-            else:
-                with self._lock:
-                    gate = self._sequencing_gate_locked(agent, level)
-                    if gate is not None:
-                        result = gate
-                    else:
-                        sequence = self._board.append(level, content)
-                        self._last_sequence = sequence
-                        self._audit.append(
-                            WriteAccepted(
-                                at=self._clock.now(),
-                                writer=agent,
-                                region=level,
-                                sequence=sequence,
-                            )
-                        )
-                        deliveries = self._note_region_change(level, agent)
-                        result = Accepted(sequence=sequence)
-        finally:
+        proposed = ProposedContribution(agent=agent, level=level, content=content)
+        verdict = self._admission_rule(proposed, self._board)
+        deliveries: list[_Delivery] = []
+        result: Accepted | Rejected
+        if isinstance(verdict, Reject):
+            result = self._reject(
+                agent, level, RejectionCause.ADMISSION, verdict.reason
+            )
+        else:
             with self._lock:
-                self._in_flight -= 1
+                gate = self._sequencing_gate_locked(agent, level)
+                if gate is not None:
+                    result = gate
+                else:
+                    sequence = self._board.append(level, content)
+                    self._last_sequence = sequence
+                    self._audit.append(
+                        WriteAccepted(
+                            at=self._clock.now(),
+                            writer=agent,
+                            region=level,
+                            sequence=sequence,
+                        )
+                    )
+                    deliveries = self._note_region_change(level, agent)
+                    result = Accepted(sequence=sequence)
         self._deliver(deliveries)
         self._check_completion()
         return result
@@ -581,43 +573,37 @@ class Control:
         refusal = self._refuse_region(writer, register, _RegionKind.REGISTER)
         if refusal is not None:
             return refusal
-        with self._lock:
-            self._in_flight += 1
-        try:
-            proposed = ProposedRegisterWrite(
-                writer=writer,
-                register=register,
-                value=value,
-                expected_version=expected_version,
+        proposed = ProposedRegisterWrite(
+            writer=writer,
+            register=register,
+            value=value,
+            expected_version=expected_version,
+        )
+        verdict = self._admission_rule(proposed, self._board)
+        deliveries: list[_Delivery] = []
+        result: Written | Conflict | Rejected
+        if isinstance(verdict, Reject):
+            result = self._reject(
+                writer, register, RejectionCause.ADMISSION, verdict.reason
             )
-            verdict = self._admission_rule(proposed, self._board)
-            deliveries: list[_Delivery] = []
-            result: Written | Conflict | Rejected
-            if isinstance(verdict, Reject):
-                result = self._reject(
-                    writer, register, RejectionCause.ADMISSION, verdict.reason
-                )
-            else:
-                with self._lock:
-                    gate = self._sequencing_gate_locked(writer, register)
-                    if gate is not None:
-                        result = gate
-                    else:
-                        result = self._board.set(register, value, expected_version)
-                        if isinstance(result, Written):
-                            self._last_sequence = result.sequence
-                            self._audit.append(
-                                WriteAccepted(
-                                    at=self._clock.now(),
-                                    writer=writer,
-                                    region=register,
-                                    sequence=result.sequence,
-                                )
-                            )
-                            deliveries = self._note_region_change(register, writer)
-        finally:
+        else:
             with self._lock:
-                self._in_flight -= 1
+                gate = self._sequencing_gate_locked(writer, register)
+                if gate is not None:
+                    result = gate
+                else:
+                    result = self._board.set(register, value, expected_version)
+                    if isinstance(result, Written):
+                        self._last_sequence = result.sequence
+                        self._audit.append(
+                            WriteAccepted(
+                                at=self._clock.now(),
+                                writer=writer,
+                                region=register,
+                                sequence=result.sequence,
+                            )
+                        )
+                        deliveries = self._note_region_change(register, writer)
         self._deliver(deliveries)
         self._check_completion()
         return result
@@ -897,16 +883,6 @@ class Control:
                 writer, region, RejectionCause.RUN_CLOSED, "the run has closed"
             )
         return None
-
-    def _quiescent_locked(self) -> bool:
-        # A run into which no agent has ever registered has not begun, so a
-        # quiet moment is the gap before the work rather than the end of it.
-        if not self._agents:
-            return False
-        windows_open = sum(
-            1 for state in self._agents.values() if state.window_call is not None
-        )
-        return not self._outstanding and self._in_flight == 0 and windows_open == 0
 
     def _unfinished_locked(self) -> frozenset[str]:
         # An agent has not finished when it still holds an unacknowledged
