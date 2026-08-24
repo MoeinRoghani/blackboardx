@@ -25,9 +25,23 @@ theme:
         name: Switch to light mode
 
 nav:
-  - Home: index.md
-  - API reference: api.md
-  - Contributing: contributing.md
+  - Get started:
+      - Overview: index.md
+      - Installation: install.md
+      - Quickstart: quickstart.md
+  - Concepts:
+      - The board: concepts/board.md
+      - The control component: concepts/control.md
+      - The run: concepts/run.md
+      - Running as a service: concepts/service.md
+  - Guides:
+      - Write an agent: guides/writing-an-agent.md
+      - Write an admission rule: guides/admission-rules.md
+      - End a run: guides/ending-a-run.md
+      - Test an application: guides/testing.md
+  - Reference: reference.md
+  - About:
+      - Contributing: about/contributing.md
 
 plugins:
   - search
