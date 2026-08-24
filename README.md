@@ -32,6 +32,7 @@ Every public name is exported from `blackboard`; every other module is internal.
 | `RegionKindError` | An operation that takes a level named a register, or the reverse |
 | `UnsetRegisterError` | A register was read before any write gave it a value |
 | `BoardReader` | The three read operations, as the admission rule receives them |
+| `BoardStore` | The operations the control component performs on a board, so an application can supply its own |
 | `ProposedContribution`, `ProposedRegisterWrite`, `ProposedWrite` | A write as the admission rule sees it, before sequencing |
 | `Accept`, `Reject` | The admission rule's two verdicts |
 | `AdmissionRule` | The type of the rule the application supplies |

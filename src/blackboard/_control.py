@@ -57,6 +57,41 @@ from blackboard._board import (
 from blackboard._clock import Clock, ScheduledCall
 
 
+class BoardStore(Protocol):
+    """The operations the control component performs on a board.
+
+    The in-memory ``Board`` satisfies it. An application supplying its own
+    implementation puts the record wherever it needs it, and the control
+    component names no concrete type.
+    """
+
+    def declare(self, region: Level | Register) -> None:
+        """Creates a region."""
+        ...
+
+    def append(self, level: str, content: object) -> int:
+        """Adds one contribution to a level and returns its sequence number."""
+        ...
+
+    def set(
+        self, register: str, value: object, expected_version: int
+    ) -> Written | Conflict:
+        """Replaces a register's value under the version the caller expects."""
+        ...
+
+    def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
+        """Returns a level's contributions from the sequence bound, inclusive."""
+        ...
+
+    def read_register(self, register: str) -> RegisterState:
+        """Returns a register's current value and version."""
+        ...
+
+    def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
+        """Returns every write to every region, in sequence order, from the bound."""
+        ...
+
+
 class BoardReader(Protocol):
     """The three read operations, the handle the admission rule receives."""
 
@@ -419,9 +454,10 @@ class Control:
         admission_rule: AdmissionRule | None = None,
         termination_predicate: TerminationPredicate | None = None,
         budgets: RunBudgets,
+        board: BoardStore | None = None,
         clock: Clock,
     ) -> None:
-        self._board = Board()
+        self._board: BoardStore = board if board is not None else Board()
         self._clock = clock
         self._admission_rule = (
             admission_rule if admission_rule is not None else _accept_every_write
