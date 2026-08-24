@@ -9,8 +9,7 @@ unaudited. A rejected write returns its reason to the writer, never reaches
 the board, and is audited without a sequence number.
 
 An admitted register write also notifies the registered agents, each
-through its batch window; the writer of the change, a capped agent, and
-every agent after the notification budget trips are not notified.
+through its batch window, except the agent that wrote the change.
 Acknowledgment, extension, presumed failure, and wake caps are tracked
 here.
 
@@ -205,7 +204,7 @@ NotificationId = NewType("NotificationId", int)
 
 @dataclass(frozen=True)
 class Notification:
-    """One wake: the range it covers, the regions that changed, and its deadline.
+    """One wake: the range it covers and the regions that changed.
 
     It carries no values. The agent reads the registers itself, and reads
     whatever else on the board it wants.
@@ -216,12 +215,11 @@ class Notification:
     from_sequence: int
     to_sequence: int
     regions: frozenset[str]
-    deadline: datetime
 
 
 @dataclass(frozen=True)
 class Agent:
-    """An agent declaration: identity, deadline, wake cap, and delivery.
+    """An agent declaration: identity, delivery, and what it wants.
 
     ``subscribes_to`` names the registers whose changes wake this agent.
     Omitting it subscribes the agent to every register, which is the common
@@ -240,17 +238,9 @@ class Agent:
     """
 
     name: str
-    acknowledgment_deadline: timedelta
-    wake_cap: int
     notify: Callable[[Notification], None]
     subscribes_to: Iterable[str] | None = None
     writes_to: Iterable[str] | None = None
-
-    def __post_init__(self) -> None:
-        if self.acknowledgment_deadline <= timedelta(0):
-            raise ValueError("an acknowledgment deadline is a positive duration")
-        if self.wake_cap < 1:
-            raise ValueError("a wake cap is at least one notification")
 
 
 class DuplicateAgentError(BlackboardError):
@@ -280,33 +270,6 @@ class NotificationAcknowledged:
     at: datetime
     agent: str
     notification_id: NotificationId
-
-
-@dataclass(frozen=True)
-class DeadlineExtended:
-    """The audit record of a new deadline granted before the old one passed."""
-
-    at: datetime
-    agent: str
-    notification_id: NotificationId
-    new_deadline: datetime
-
-
-@dataclass(frozen=True)
-class PresumedFailed:
-    """The audit record of a deadline passing with no acknowledgment."""
-
-    at: datetime
-    agent: str
-    notification_id: NotificationId
-
-
-@dataclass(frozen=True)
-class WakeCapReached:
-    """The audit record of an agent receiving the last notification its cap allows."""
-
-    at: datetime
-    agent: str
 
 
 class RunClosedError(BlackboardError):
@@ -400,9 +363,6 @@ AuditEvent: TypeAlias = (
     | WriteRejected
     | NotificationDispatched
     | NotificationAcknowledged
-    | DeadlineExtended
-    | PresumedFailed
-    | WakeCapReached
     | RunClosed
 )
 """Every kind of event the audit records."""
@@ -414,8 +374,6 @@ _Delivery: TypeAlias = tuple[Callable[[Notification], None], Notification]
 class _AgentState:
     declaration: Agent
     cursor: int
-    wake_count: int = 0
-    capped: bool = False
     pending: dict[str, datetime] = field(default_factory=dict)
     window_call: ScheduledCall | None = None
     window_due: datetime | None = None
@@ -424,7 +382,6 @@ class _AgentState:
 
 @dataclass
 class _Outstanding:
-    deadline_call: ScheduledCall
     to_sequence: int
     generation: int = 0
 
@@ -477,7 +434,6 @@ class Control:
         self._agents: dict[str, _AgentState] = {}
         self._issued: set[tuple[str, NotificationId]] = set()
         self._outstanding: dict[tuple[str, NotificationId], _Outstanding] = {}
-        self._presumed_failed: set[str] = set()
         self._next_notification_id = 1
         self._delivery_queue: deque[_Delivery] = deque()
         self._delivering = threading.local()
@@ -708,7 +664,6 @@ class Control:
                 raise UnknownNotificationError(
                     f"no notification {notification_id} was issued to {agent!r}"
                 )
-            outstanding.deadline_call.cancel()
             state = self._agents[agent]
             state.cursor = max(state.cursor, outstanding.to_sequence)
             self._audit.append(
@@ -717,39 +672,6 @@ class Control:
                 )
             )
         self._check_completion()
-
-    def extend(self, agent: str, notification_id: NotificationId) -> datetime | None:
-        """Grants the agent a new acknowledgment deadline for a notification.
-
-        Returns the new deadline, or nothing when the notification is no
-        longer outstanding. An identifier never issued to that agent raises.
-        """
-        with self._lock:
-            key = (agent, notification_id)
-            outstanding = self._outstanding.get(key)
-            if outstanding is None:
-                if key in self._issued:
-                    return None
-                raise UnknownNotificationError(
-                    f"no notification {notification_id} was issued to {agent!r}"
-                )
-            outstanding.deadline_call.cancel()
-            now = self._clock.now()
-            new_deadline = now + self._agents[agent].declaration.acknowledgment_deadline
-            outstanding.generation += 1
-            outstanding.deadline_call = self._clock.call_at(
-                new_deadline,
-                partial(self._deadline_passed, key, outstanding.generation),
-            )
-            self._audit.append(
-                DeadlineExtended(
-                    at=now,
-                    agent=agent,
-                    notification_id=notification_id,
-                    new_deadline=new_deadline,
-                )
-            )
-            return new_deadline
 
     def _note_region_change(self, region: str, writer: str) -> list[_Delivery]:
         # Callers hold self._lock. Returns the deliveries the caller makes
@@ -760,7 +682,7 @@ class Control:
         for state in self._agents.values():
             if self._outcome is not None:
                 break
-            if state.declaration.name == writer or state.capped:
+            if state.declaration.name == writer:
                 continue
             if not _subscribed(state, region, self._kinds[region]):
                 continue
@@ -778,7 +700,7 @@ class Control:
         # Callers hold self._lock. Dispatches the agent's pending set when
         # a change is due; arms or re-arms the batch window when the
         # earliest due instant is ahead.
-        if not state.pending or state.capped:
+        if not state.pending:
             return None
         earliest = min(state.pending.values())
         if earliest <= now:
@@ -836,8 +758,6 @@ class Control:
                 window = self._batch_windows[register]
                 due = now + window
                 for state in self._agents.values():
-                    if state.capped:
-                        continue
                     existing = state.pending.get(register)
                     state.pending[register] = (
                         due if existing is None else min(existing, due)
@@ -863,28 +783,17 @@ class Control:
         state.pending.clear()
         notification_id = NotificationId(self._next_notification_id)
         self._next_notification_id += 1
-        deadline = now + state.declaration.acknowledgment_deadline
         notification = Notification(
             notification_id=notification_id,
             agent=state.declaration.name,
             from_sequence=state.cursor + 1,
             to_sequence=self._last_sequence,
             regions=regions,
-            deadline=deadline,
         )
         key = (state.declaration.name, notification_id)
         self._issued.add(key)
-        self._outstanding[key] = _Outstanding(
-            deadline_call=self._clock.call_at(
-                deadline, partial(self._deadline_passed, key, 0)
-            ),
-            to_sequence=self._last_sequence,
-        )
-        state.wake_count += 1
+        self._outstanding[key] = _Outstanding(to_sequence=self._last_sequence)
         self._audit.append(NotificationDispatched(at=now, notification=notification))
-        if state.wake_count == state.declaration.wake_cap:
-            state.capped = True
-            self._audit.append(WakeCapReached(at=now, agent=state.declaration.name))
         return (state.declaration.notify, notification)
 
     def _close_window(self, agent_name: str, generation: int) -> None:
@@ -903,30 +812,11 @@ class Control:
             state.window_call = None
             state.window_due = None
             state.window_generation += 1
-            if state.pending and not state.capped:
+            if state.pending:
                 delivery = self._dispatch(state, self._clock.now())
                 if delivery is not None:
                     deliveries.append(delivery)
         self._deliver(deliveries)
-        self._check_completion()
-
-    def _deadline_passed(
-        self, key: tuple[str, NotificationId], generation: int
-    ) -> None:
-        # The generation identifies the armed deadline; a stale call from a
-        # deadline that extend replaced changes nothing.
-        with self._lock:
-            outstanding = self._outstanding.get(key)
-            if outstanding is None or outstanding.generation != generation:
-                return
-            del self._outstanding[key]
-            agent, notification_id = key
-            self._presumed_failed.add(agent)
-            self._audit.append(
-                PresumedFailed(
-                    at=self._clock.now(), agent=agent, notification_id=notification_id
-                )
-            )
         self._check_completion()
 
     def _deliver(self, deliveries: list[_Delivery]) -> None:
@@ -1019,11 +909,10 @@ class Control:
         return not self._outstanding and self._in_flight == 0 and windows_open == 0
 
     def _unfinished_locked(self) -> frozenset[str]:
-        # An agent has not finished when it holds an unacknowledged
-        # notification or when it reached its wake cap.
+        # An agent has not finished when it still holds an unacknowledged
+        # notification.
         holding = {agent for agent, _ in self._outstanding}
-        capped = {name for name, state in self._agents.items() if state.capped}
-        return frozenset(holding | capped | self._presumed_failed)
+        return frozenset(holding)
 
     def _close_locked(self, outcome: RunOutcome) -> None:
         if self._outcome is not None:
@@ -1031,6 +920,10 @@ class Control:
         self._outcome = outcome
         if self._wall_call is not None:
             self._wall_call.cancel()
+        if self._idle_call is not None:
+            self._idle_call.cancel()
+            self._idle_call = None
+        self._idle_generation += 1
         for state in self._agents.values():
             if state.window_call is not None:
                 state.window_call.cancel()
@@ -1038,8 +931,6 @@ class Control:
                 state.window_due = None
                 state.window_generation += 1
             state.pending.clear()
-        for outstanding in self._outstanding.values():
-            outstanding.deadline_call.cancel()
         self._outstanding.clear()
         self._audit.append(RunClosed(at=self._clock.now(), outcome=outcome))
         self._condition.notify_all()

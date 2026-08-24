@@ -39,9 +39,9 @@ Every public name is exported from `blackboard`; every other module is internal.
 | `Accepted`, `Rejected` | A write the control component admitted, and one it refused |
 | `RejectionCause` | The closed set of causes for a refused write, including a level the agent did not declare |
 | `WriteAccepted`, `WriteRejected`, `AuditEvent` | The audit's records of writes that reached the board and writes that did not |
-| `Agent` | An agent declaration: name, acknowledgment deadline, wake cap, delivery callback, the registers it subscribes to, and the levels it may write |
+| `Agent` | An agent declaration: name, delivery callback, the regions it subscribes to, and the levels it may write |
 | `Notification`, `NotificationId` | One wake, naming the regions that changed, and the identifier an acknowledgment names |
-| `NotificationDispatched`, `NotificationAcknowledged`, `DeadlineExtended`, `PresumedFailed`, `WakeCapReached` | The audit's records of dispatch, acknowledgment, extension, presumed failure, and a reached wake cap |
+| `NotificationDispatched`, `NotificationAcknowledged` | The audit's records of a wake being dispatched and acknowledged |
 | `DuplicateAgentError` | A registration named an agent that is already registered |
 | `UnknownNotificationError` | The named notification was never issued to the acknowledging agent |
 | `Clock`, `ScheduledCall` | The protocol for reading time and arming calls, and an armed call's handle |
@@ -51,7 +51,7 @@ Every public name is exported from `blackboard`; every other module is internal.
 | `RunClosed` | The audit's record of the run closing |
 | `RunClosedError` | A declaration or registration reached a run that has closed |
 | `Model`, `create_model` | A running model's read handle and control component, and the one creation path. Agents are not named here |
-| `Control` | The control component an application drives: writes, acknowledgment and extension, mid-run declaration and registration, abort, the audit, and the outcome |
+| `Control` | The control component an application drives: writes, acknowledgment, mid-run declaration and registration, abort, the audit, and the outcome |
 | `SeedError` | The seed's names are not exactly the declared registers |
 | `RegisterSeeded` | The audit's record of the seed writing one register when the run opened |
 | `SystemClock` | The default clock, the library's only reader of the operating system clock |
@@ -73,14 +73,7 @@ model = create_model(
 )
 
 # An agent registers itself, and registering wakes it.
-model.control.register_agent(
-    Agent(
-        name="ocp",
-        acknowledgment_deadline=timedelta(minutes=5),
-        wake_cap=10,
-        notify=wakes.append,
-    )
-)
+model.control.register_agent(Agent(name="ocp", notify=wakes.append))
 
 # The agent's cycle: read the premises, contribute, acknowledge.
 (wake,) = wakes

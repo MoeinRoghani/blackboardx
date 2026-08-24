@@ -46,11 +46,9 @@ class Recorder:
         self.received.append(notification)
 
 
-def declaration(name: str, notify: object, wake_cap: int = 100) -> Agent:
+def declaration(name: str, notify: object) -> Agent:
     return Agent(
         name=name,
-        acknowledgment_deadline=DEADLINE,
-        wake_cap=wake_cap,
         notify=notify,  # type: ignore[arg-type]  # the callers pass a recorder
     )
 
