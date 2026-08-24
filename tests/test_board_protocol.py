@@ -21,9 +21,7 @@ from blackboard import (
 )
 
 START = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
-BUDGETS = RunBudgets(
-    wall_clock=timedelta(hours=1), total_writes=100, total_notifications=100
-)
+BUDGETS = RunBudgets(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
 def keep_open(reader: BoardReader) -> TerminationDecision:
