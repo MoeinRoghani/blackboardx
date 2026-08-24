@@ -154,13 +154,11 @@ class RejectionCause(Enum):
 
     ``ADMISSION``: the admission rule rejected it. ``NOT_PERMITTED``: the
     writing agent did not declare that level. ``UNDECLARED_REGION``: the
-    named region was never declared. ``BUDGET_EXHAUSTED``: a run-wide budget
-    is exhausted. ``RUN_CLOSED``: the run has closed.
+    named region was never declared. ``RUN_CLOSED``: the run has closed.
     """
 
     ADMISSION = "admission"
     NOT_PERMITTED = "not_permitted"
-    BUDGET_EXHAUSTED = "budget_exhausted"
     UNDECLARED_REGION = "undeclared_region"
     RUN_CLOSED = "run_closed"
 
@@ -326,61 +324,56 @@ TerminationPredicate: TypeAlias = Callable[["BoardReader"], TerminationDecision]
 """The predicate the control component calls when no work is outstanding."""
 
 
-class BudgetKind(Enum):
-    """The names of the three run-wide limits."""
-
-    WALL_CLOCK = "wall_clock"
-    TOTAL_WRITES = "total_writes"
-    TOTAL_NOTIFICATIONS = "total_notifications"
-
-
 @dataclass(frozen=True)
 class RunBudgets:
-    """The run-wide limits. Each is required and positive."""
+    """The two limits on a run, both durations, both required.
+
+    Time is the only bound. A count of writes limits the cause of a
+    notification and a count of notifications limits the effect, and
+    limiting the effect can leave a change that no agent hears while the run
+    is still open, which ends the shared record without closing the run.
+    """
 
     wall_clock: timedelta
-    total_writes: int
-    total_notifications: int
+    idle: timedelta
 
     def __post_init__(self) -> None:
         if self.wall_clock <= timedelta(0):
-            raise ValueError("the wall clock budget is a positive duration")
-        if self.total_writes < 1:
-            raise ValueError("the total writes budget is at least one")
-        if self.total_notifications < 1:
-            raise ValueError("the total notifications budget is at least one")
+            raise ValueError("the wall clock limit is a positive duration")
+        if self.idle <= timedelta(0):
+            raise ValueError("the idle limit is a positive duration")
 
 
 @dataclass(frozen=True)
-class Complete:
-    """The run closed with no agent presumed failed or capped, and the
-    termination predicate, where one was supplied, returned complete."""
+class Settled:
+    """Nothing happened for the idle limit, so the run closed."""
+
+    unfinished: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
-class FinishedWithFailures:
-    """The run closed with agents presumed failed or capped, named here."""
+class WallClockExpired:
+    """The wall clock limit passed while the run was open."""
 
-    presumed_failed: frozenset[str]
-    capped: frozenset[str]
-
-
-@dataclass(frozen=True)
-class BudgetExhausted:
-    """The run closed because the named run-wide limit was reached."""
-
-    budget: BudgetKind
+    unfinished: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
 class Aborted:
-    """The run closed because the application called abort."""
+    """A caller closed the run."""
 
     reason: str
+    unfinished: frozenset[str] = frozenset()
 
 
-RunOutcome: TypeAlias = Complete | FinishedWithFailures | BudgetExhausted | Aborted
-"""The four states a run closes in."""
+RunOutcome: TypeAlias = Settled | WallClockExpired | Aborted
+"""The three states a run closes in.
+
+Each names the agents that did not finish, meaning those holding an
+unacknowledged notification and those that reached their wake cap. Why a run
+ended and which agents failed to finish are separate facts, and a run
+settles normally while one agent never returns.
+"""
 
 
 @dataclass(frozen=True)
@@ -391,14 +384,6 @@ class RegisterSeeded:
     register: str
     sequence: int
     version: int
-
-
-@dataclass(frozen=True)
-class BudgetReached:
-    """The audit record of a run-wide limit being reached."""
-
-    at: datetime
-    budget: BudgetKind
 
 
 @dataclass(frozen=True)
@@ -418,7 +403,6 @@ AuditEvent: TypeAlias = (
     | DeadlineExtended
     | PresumedFailed
     | WakeCapReached
-    | BudgetReached
     | RunClosed
 )
 """Every kind of event the audit records."""
@@ -502,9 +486,9 @@ class Control:
         self._budgets = budgets
         self._outcome: RunOutcome | None = None
         self._wall_call: ScheduledCall | None = None
+        self._idle_call: ScheduledCall | None = None
+        self._idle_generation = 0
         self._condition = threading.Condition(self._lock)
-        self._writes_used = 0
-        self._notifications_used = 0
         for region in regions:
             self.declare(region)
         self._wall_call = clock.call_at(
@@ -617,7 +601,6 @@ class Control:
                     else:
                         sequence = self._board.append(level, content)
                         self._last_sequence = sequence
-                        self._writes_used += 1
                         self._audit.append(
                             WriteAccepted(
                                 at=self._clock.now(),
@@ -667,7 +650,6 @@ class Control:
                         result = self._board.set(register, value, expected_version)
                         if isinstance(result, Written):
                             self._last_sequence = result.sequence
-                            self._writes_used += 1
                             self._audit.append(
                                 WriteAccepted(
                                     at=self._clock.now(),
@@ -872,12 +854,6 @@ class Control:
     def _dispatch(self, state: _AgentState, now: datetime) -> _Delivery | None:
         # Callers hold self._lock. Returns nothing when the notification
         # budget trips: the dispatch is withheld and the run closes.
-        if self._notifications_used >= self._budgets.total_notifications:
-            self._audit.append(
-                BudgetReached(at=now, budget=BudgetKind.TOTAL_NOTIFICATIONS)
-            )
-            self._close_locked(BudgetExhausted(budget=BudgetKind.TOTAL_NOTIFICATIONS))
-            return None
         if state.window_call is not None:
             state.window_call.cancel()
             state.window_call = None
@@ -905,7 +881,6 @@ class Control:
             to_sequence=self._last_sequence,
         )
         state.wake_count += 1
-        self._notifications_used += 1
         self._audit.append(NotificationDispatched(at=now, notification=notification))
         if state.wake_count == state.declaration.wake_cap:
             state.capped = True
@@ -978,45 +953,49 @@ class Control:
         finally:
             self._delivering.active = False
 
-    def _check_completion(self) -> None:
-        # No work is outstanding when the three counters read zero together.
-        # One flat evaluation per thread: a predicate that writes re-enters
-        # through the write's own check, which returns here and lets the
-        # outer loop re-evaluate against the moved board.
-        if getattr(self._checking, "active", False):
+    def _touch_idle_locked(self) -> None:
+        # Callers hold self._lock. Silence is measured from the last event,
+        # so every event pushes the deadline out.
+        if self._outcome is not None:
             return
-        self._checking.active = True
-        try:
-            while True:
-                with self._lock:
-                    if self._outcome is not None or not self._quiescent_locked():
-                        return
-                    epoch = self._last_sequence
-                    predicate = self._termination_predicate
-                    if predicate is None:
-                        self._close_locked(self._quiescent_outcome_locked())
-                        return
-                try:
-                    decision = predicate(self._board)
-                except Exception:
-                    # The predicate is application code at the library's
-                    # boundary. Raising would reach whatever caller happened
-                    # to trigger this check; the run stays open, and the
-                    # next transition asks again.
-                    return
-                with self._lock:
-                    if self._outcome is not None:
-                        return
-                    if self._last_sequence != epoch:
-                        continue
-                    if (
-                        decision is TerminationDecision.COMPLETE
-                        and self._quiescent_locked()
-                    ):
-                        self._close_locked(self._quiescent_outcome_locked())
-                    return
-        finally:
-            self._checking.active = False
+        if self._idle_call is not None:
+            self._idle_call.cancel()
+        self._idle_generation += 1
+        self._idle_call = self._clock.call_at(
+            self._clock.now() + self._budgets.idle,
+            partial(self._idle_passed, self._idle_generation),
+        )
+
+    def _idle_passed(self, generation: int) -> None:
+        # A cancelled timer whose call already started still runs, so the
+        # generation identifies the armed deadline.
+        with self._lock:
+            if self._outcome is not None or generation != self._idle_generation:
+                return
+            predicate = self._termination_predicate
+            if predicate is None:
+                self._close_locked(Settled(unfinished=self._unfinished_locked()))
+                return
+        decision = predicate(self._board)
+        with self._lock:
+            if self._outcome is not None or generation != self._idle_generation:
+                return
+            if decision is TerminationDecision.COMPLETE:
+                self._close_locked(Settled(unfinished=self._unfinished_locked()))
+            else:
+                self._touch_idle_locked()
+
+    def _check_completion(self) -> None:
+        """Records that something happened, which pushes the idle deadline out.
+
+        A run does not close because nothing is outstanding at some instant.
+        Agents are idle between wakes and register at different times, so an
+        instant of quiet is the gap before the work rather than the end of
+        it. Sustained silence is what closes a run, and the idle timer
+        measures it.
+        """
+        with self._lock:
+            self._touch_idle_locked()
 
     def _sequencing_gate_locked(self, writer: str, region: str) -> Rejected | None:
         # The pre-admission checks ran without holding the lock across the
@@ -1026,17 +1005,6 @@ class Control:
         if self._outcome is not None:
             return self._reject_locked(
                 writer, region, RejectionCause.RUN_CLOSED, "the run has closed"
-            )
-        if self._writes_used >= self._budgets.total_writes:
-            self._audit.append(
-                BudgetReached(at=self._clock.now(), budget=BudgetKind.TOTAL_WRITES)
-            )
-            self._close_locked(BudgetExhausted(budget=BudgetKind.TOTAL_WRITES))
-            return self._reject_locked(
-                writer,
-                region,
-                RejectionCause.BUDGET_EXHAUSTED,
-                "the total-writes budget is exhausted",
             )
         return None
 
@@ -1050,12 +1018,12 @@ class Control:
         )
         return not self._outstanding and self._in_flight == 0 and windows_open == 0
 
-    def _quiescent_outcome_locked(self) -> RunOutcome:
-        capped = frozenset(name for name, state in self._agents.items() if state.capped)
-        failed = frozenset(self._presumed_failed)
-        if failed or capped:
-            return FinishedWithFailures(presumed_failed=failed, capped=capped)
-        return Complete()
+    def _unfinished_locked(self) -> frozenset[str]:
+        # An agent has not finished when it holds an unacknowledged
+        # notification or when it reached its wake cap.
+        holding = {agent for agent, _ in self._outstanding}
+        capped = {name for name, state in self._agents.items() if state.capped}
+        return frozenset(holding | capped | self._presumed_failed)
 
     def _close_locked(self, outcome: RunOutcome) -> None:
         if self._outcome is not None:
@@ -1080,10 +1048,7 @@ class Control:
         with self._lock:
             if self._outcome is not None:
                 return
-            self._audit.append(
-                BudgetReached(at=self._clock.now(), budget=BudgetKind.WALL_CLOCK)
-            )
-            self._close_locked(BudgetExhausted(budget=BudgetKind.WALL_CLOCK))
+            self._close_locked(WallClockExpired(unfinished=self._unfinished_locked()))
 
     def _refuse_region(
         self, writer: str, region: str, expected: _RegionKind
@@ -1108,17 +1073,6 @@ class Control:
                     )
                 raise RegionKindError(
                     f"{region!r} names a level, and this operation takes a register"
-                )
-            if self._writes_used >= self._budgets.total_writes:
-                self._audit.append(
-                    BudgetReached(at=self._clock.now(), budget=BudgetKind.TOTAL_WRITES)
-                )
-                self._close_locked(BudgetExhausted(budget=BudgetKind.TOTAL_WRITES))
-                return self._reject_locked(
-                    writer,
-                    region,
-                    RejectionCause.BUDGET_EXHAUSTED,
-                    "the total-writes budget is exhausted",
                 )
             return None
 

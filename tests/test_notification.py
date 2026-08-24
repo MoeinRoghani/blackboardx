@@ -31,9 +31,7 @@ from blackboard._control import Control
 START = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
 DEADLINE = timedelta(minutes=5)
 
-BUDGETS = RunBudgets(
-    wall_clock=timedelta(hours=1), total_writes=10_000, total_notifications=10_000
-)
+BUDGETS = RunBudgets(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
 def keep_open(reader: BoardReader) -> TerminationDecision:

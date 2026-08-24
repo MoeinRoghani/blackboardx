@@ -9,7 +9,6 @@ from blackboard import (
     Accepted,
     Agent,
     BoardReader,
-    Complete,
     DuplicateAgentError,
     Level,
     ManualClock,
@@ -19,15 +18,14 @@ from blackboard import (
     RunBudgets,
     RunClosedError,
     SeedError,
+    Settled,
     TerminationDecision,
     create_model,
 )
 
 START = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 DEADLINE = timedelta(minutes=5)
-BUDGETS = RunBudgets(
-    wall_clock=timedelta(hours=1), total_writes=1000, total_notifications=1000
-)
+BUDGETS = RunBudgets(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
 def keep_open(reader: BoardReader) -> TerminationDecision:
@@ -80,9 +78,7 @@ class TestCreation:
             seed={"window": "w", "service": "s"},
             termination_predicate=keep_open,
             budgets=RunBudgets(
-                wall_clock=timedelta(hours=1),
-                total_writes=1,
-                total_notifications=1000,
+                wall_clock=timedelta(hours=1), idle=timedelta(minutes=30)
             ),
             clock=ManualClock(start=START),
         )
@@ -161,13 +157,14 @@ class TestRegistration:
 
 
 class TestFullCycle:
-    def test_a_run_from_creation_to_complete(self) -> None:
+    def test_a_run_from_creation_to_settled(self) -> None:
         wakes: list[Notification] = []
+        clock = ManualClock(start=START)
         model = create_model(
             regions=[Level("platform"), Register("window")],
             seed={"window": ("t1", "t2")},
             budgets=BUDGETS,
-            clock=ManualClock(start=START),
+            clock=clock,
         )
         model.control.register_agent(declaration("ocp", wakes.append))
 
@@ -176,13 +173,14 @@ class TestFullCycle:
         model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
         model.control.ack("ocp", wake.notification_id)
 
-        assert model.control.outcome() == Complete()
+        clock.advance(timedelta(minutes=30))
+        assert model.control.outcome() == Settled()
         (contribution,) = model.reader.read_level("platform")
         assert contribution.content == {"window": ("t1", "t2"), "findings": ["oom"]}
 
 
 class TestSystemClockIntegration:
-    def test_wait_closed_returns_complete_under_the_default_clock(self) -> None:
+    def test_wait_closed_returns_the_outcome_under_the_default_clock(self) -> None:
         holder: list[object] = []
 
         def hand_off(notification: Notification) -> None:
@@ -197,9 +195,7 @@ class TestSystemClockIntegration:
             regions=[Level("platform"), Register("window")],
             seed={"window": "w"},
             budgets=RunBudgets(
-                wall_clock=timedelta(minutes=1),
-                total_writes=10,
-                total_notifications=10,
+                wall_clock=timedelta(minutes=1), idle=timedelta(seconds=1)
             ),
         )
         holder.append(model)
@@ -211,6 +207,6 @@ class TestSystemClockIntegration:
                 notify=hand_off,
             )
         )
-        assert model.control.wait_closed(timeout=timedelta(seconds=10)) == Complete()
+        assert model.control.wait_closed(timeout=timedelta(seconds=10)) == Settled()
         (contribution,) = model.reader.read_level("platform")
         assert contribution.content == "bundle"

@@ -46,9 +46,9 @@ Every public name is exported from `blackboard`; every other module is internal.
 | `UnknownNotificationError` | The named notification was never issued to the acknowledging agent |
 | `Clock`, `ScheduledCall` | The protocol for reading time and arming calls, and an armed call's handle |
 | `TerminationDecision`, `TerminationPredicate` | The predicate's two answers, and the type of the predicate the application supplies |
-| `RunBudgets`, `BudgetKind` | The three run-wide limits, and their names |
-| `Complete`, `FinishedWithFailures`, `BudgetExhausted`, `Aborted`, `RunOutcome` | The four states a run closes in, and their union |
-| `BudgetReached`, `RunClosed` | The audit's records of a limit reached and of the run closing |
+| `RunBudgets` | The two limits on a run, both durations: the wall clock and the idle limit |
+| `Settled`, `WallClockExpired`, `Aborted`, `RunOutcome` | The three states a run closes in, each naming the agents that did not finish |
+| `RunClosed` | The audit's record of the run closing |
 | `RunClosedError` | A declaration or registration reached a run that has closed |
 | `Model`, `create_model` | A running model's read handle and control component, and the one creation path. Agents are not named here |
 | `Control` | The control component an application drives: writes, acknowledgment and extension, mid-run declaration and registration, abort, the audit, and the outcome |
@@ -62,16 +62,14 @@ Every public name is exported from `blackboard`; every other module is internal.
 ```python
 from datetime import timedelta
 
-from blackboard import Agent, Complete, Level, Register, RunBudgets, create_model
+from blackboard import Agent, Level, Register, RunBudgets, Settled, create_model
 
 wakes = []
 
 model = create_model(
     regions=[Level("platform"), Register("window")],
     seed={"window": ("2026-08-16T20:00", "2026-08-16T22:00")},
-    budgets=RunBudgets(
-        wall_clock=timedelta(minutes=10), total_writes=100, total_notifications=100
-    ),
+    budgets=RunBudgets(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
 )
 
 # An agent registers itself, and registering wakes it.
@@ -90,7 +88,7 @@ window = model.reader.read_register("window").value
 model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
 model.control.ack("ocp", wake.notification_id)
 
-assert model.control.outcome() == Complete()
+assert model.control.wait_closed(timeout=timedelta(seconds=10)) == Settled()
 for contribution in model.reader.read_level("platform"):
     print(contribution.sequence, contribution.content)
 ```
