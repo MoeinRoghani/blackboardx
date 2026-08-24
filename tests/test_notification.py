@@ -5,10 +5,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from blackboard import (
+    Accepted,
     Agent,
     BoardReader,
-    Clock,
-    DeadlineExtended,
     DuplicateAgentError,
     Level,
     ManualClock,
@@ -16,14 +15,12 @@ from blackboard import (
     NotificationAcknowledged,
     NotificationDispatched,
     NotificationId,
-    PresumedFailed,
     Register,
     RunBudgets,
     ScheduledCall,
     TerminationDecision,
     UnknownNotificationError,
     UnsetRegisterError,
-    WakeCapReached,
     Written,
 )
 from blackboard._control import Control
@@ -48,11 +45,9 @@ class Recorder:
         self.received.append(notification)
 
 
-def agent(name: str, recorder: Recorder, wake_cap: int = 100) -> Agent:
+def agent(name: str, recorder: Recorder) -> Agent:
     return Agent(
         name=name,
-        acknowledgment_deadline=DEADLINE,
-        wake_cap=wake_cap,
         notify=recorder,
     )
 
@@ -75,24 +70,6 @@ def make_control(clock: ManualClock, *agents: Agent) -> Control:
 
 
 class TestDeclarations:
-    def test_a_wake_cap_below_one_is_refused(self) -> None:
-        with pytest.raises(ValueError, match="wake cap"):
-            Agent(
-                name="a",
-                acknowledgment_deadline=DEADLINE,
-                wake_cap=0,
-                notify=Recorder(),
-            )
-
-    def test_a_non_positive_deadline_is_refused(self) -> None:
-        with pytest.raises(ValueError, match="deadline"):
-            Agent(
-                name="a",
-                acknowledgment_deadline=timedelta(0),
-                wake_cap=1,
-                notify=Recorder(),
-            )
-
     def test_a_duplicate_agent_name_is_refused(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock, agent("ocp", Recorder()))
@@ -113,7 +90,6 @@ class TestZeroWindowDispatch:
                 from_sequence=1,
                 to_sequence=1,
                 regions=frozenset({"window"}),
-                deadline=START + DEADLINE,
             )
             for nid, name in ((1, "ocp"), (2, "git"))
         ]
@@ -152,8 +128,6 @@ class TestZeroWindowDispatch:
             clock,
             Agent(
                 name="ocp",
-                acknowledgment_deadline=DEADLINE,
-                wake_cap=5,
                 notify=looks_at_audit,
             ),
         )
@@ -174,8 +148,6 @@ class TestZeroWindowDispatch:
             clock,
             Agent(
                 name="ocp",
-                acknowledgment_deadline=DEADLINE,
-                wake_cap=5,
                 notify=full_cycle,
             ),
         )
@@ -251,64 +223,29 @@ class TestAcknowledgment:
         control.set_register("operator", "window", "w2", expected_version=1)
         assert recorder.received[1].from_sequence == 1
 
-    def test_a_deadline_passing_presumes_the_agent_failed(self) -> None:
+    def test_acknowledging_twice_records_it_once(self) -> None:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
         control.set_register("operator", "window", "w", expected_version=0)
-        clock.advance(DEADLINE)
-        events = [e for e in control.read_audit() if isinstance(e, PresumedFailed)]
-        assert events == [
-            PresumedFailed(
-                at=START + DEADLINE,
-                agent="ocp",
-                notification_id=recorder.received[0].notification_id,
-            )
-        ]
-
-    def test_a_late_ack_is_a_no_op(self) -> None:
-        clock = ManualClock(start=START)
-        recorder = Recorder()
-        control = make_control(clock, agent("ocp", recorder))
-        control.set_register("operator", "window", "w", expected_version=0)
-        clock.advance(DEADLINE)
-        control.ack("ocp", recorder.received[0].notification_id)
+        first = recorder.received[0].notification_id
+        control.ack("ocp", first)
+        control.ack("ocp", first)
         acknowledged = [
             e for e in control.read_audit() if isinstance(e, NotificationAcknowledged)
         ]
-        assert acknowledged == []
+        assert len(acknowledged) == 1
 
-    def test_extend_before_the_deadline_defers_presumed_failure(self) -> None:
-        clock = ManualClock(start=START)
-        recorder = Recorder()
-        control = make_control(clock, agent("ocp", recorder))
-        control.set_register("operator", "window", "w", expected_version=0)
-        clock.advance(timedelta(minutes=4))
-        new_deadline = control.extend("ocp", recorder.received[0].notification_id)
-        assert new_deadline == START + timedelta(minutes=4) + DEADLINE
-        clock.advance(timedelta(minutes=4))
-        assert not any(isinstance(e, PresumedFailed) for e in control.read_audit())
-        assert any(isinstance(e, DeadlineExtended) for e in control.read_audit())
-        clock.advance(timedelta(minutes=5))
-        assert any(isinstance(e, PresumedFailed) for e in control.read_audit())
-
-    def test_a_late_extend_returns_no_deadline(self) -> None:
-        clock = ManualClock(start=START)
-        recorder = Recorder()
-        control = make_control(clock, agent("ocp", recorder))
-        control.set_register("operator", "window", "w", expected_version=0)
-        clock.advance(DEADLINE)
-        assert control.extend("ocp", recorder.received[0].notification_id) is None
-
-    def test_a_late_ack_leaves_the_cursor_in_place(self) -> None:
+    def test_a_repeated_ack_does_not_move_the_cursor_again(self) -> None:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
         control.set_register("operator", "window", "w1", expected_version=0)
-        clock.advance(DEADLINE)
-        control.ack("ocp", recorder.received[0].notification_id)
+        first = recorder.received[0].notification_id
+        control.ack("ocp", first)
+        control.ack("ocp", first)
         control.set_register("operator", "window", "w2", expected_version=1)
-        assert recorder.received[1].from_sequence == 1
+        assert recorder.received[1].from_sequence == 2
 
     def test_a_fabricated_notification_id_raises(self) -> None:
         clock = ManualClock(start=START)
@@ -316,23 +253,6 @@ class TestAcknowledgment:
         control = make_control(clock, agent("ocp", recorder))
         with pytest.raises(UnknownNotificationError):
             control.ack("ocp", 99)  # type: ignore[arg-type]  # a raw int stands in for a fabricated id
-        with pytest.raises(UnknownNotificationError):
-            control.extend("ocp", 99)  # type: ignore[arg-type]  # a raw int stands in for a fabricated id
-
-
-class TestWakeCap:
-    def test_the_wake_that_reaches_the_cap_is_delivered_and_no_more_follow(
-        self,
-    ) -> None:
-        clock = ManualClock(start=START)
-        recorder = Recorder()
-        control = make_control(clock, agent("ocp", recorder, wake_cap=2))
-        control.set_register("operator", "window", "w1", expected_version=0)
-        control.set_register("operator", "window", "w2", expected_version=1)
-        control.set_register("operator", "window", "w3", expected_version=2)
-        assert len(recorder.received) == 2
-        capped = [e for e in control.read_audit() if isinstance(e, WakeCapReached)]
-        assert capped == [WakeCapReached(at=START, agent="ocp")]
 
 
 class TestMidRunRegistration:
@@ -384,32 +304,6 @@ class TimerFaithfulClock:
 
 
 class TestStaleTimerCalls:
-    def test_an_extension_survives_the_replaced_deadline_firing(self) -> None:
-        clock: Clock = TimerFaithfulClock(START)
-        control = Control(
-            regions=[Register("window")],
-            admission_rule=None,
-            termination_predicate=keep_open,
-            budgets=BUDGETS,
-            clock=clock,
-        )
-        recorder = Recorder()
-        control.register_agent(
-            Agent(
-                name="ocp",
-                acknowledgment_deadline=DEADLINE,
-                wake_cap=5,
-                notify=recorder,
-            )
-        )
-        control.set_register("operator", "window", "w", expected_version=0)
-        clock.advance(timedelta(minutes=4))  # type: ignore[attr-defined]
-        control.extend("ocp", recorder.received[0].notification_id)
-        clock.advance(timedelta(minutes=1))  # type: ignore[attr-defined]
-        assert not any(isinstance(e, PresumedFailed) for e in control.read_audit())
-        clock.advance(timedelta(minutes=4))  # type: ignore[attr-defined]
-        assert any(isinstance(e, PresumedFailed) for e in control.read_audit())
-
     def test_a_swept_window_call_does_not_dispatch_the_next_batch_early(self) -> None:
         clock = TimerFaithfulClock(START)
         control = Control(
@@ -426,8 +320,6 @@ class TestStaleTimerCalls:
         control.register_agent(
             Agent(
                 name="ocp",
-                acknowledgment_deadline=DEADLINE,
-                wake_cap=10,
                 notify=recorder,
             )
         )
@@ -458,8 +350,6 @@ class TestDeliveryFailure:
             clock,
             Agent(
                 name="broken",
-                acknowledgment_deadline=DEADLINE,
-                wake_cap=5,
                 notify=explode,
             ),
             agent("ocp", delivered),
@@ -467,11 +357,9 @@ class TestDeliveryFailure:
         result = control.set_register("operator", "window", "w", expected_version=0)
         assert isinstance(result, Written)
         assert len(delivered.received) == 1
-        clock.advance(DEADLINE)
-        failed = {
-            e.agent for e in control.read_audit() if isinstance(e, PresumedFailed)
-        }
-        assert "broken" in failed
+        # The raising agent never acknowledges, so it is still holding its
+        # notification when the run is asked who did not finish.
+        assert control.write("ocp", "application", "unaffected") == Accepted(sequence=2)
 
 
 class TestChainedWakes:
@@ -484,11 +372,17 @@ class TestChainedWakes:
             def notify(notification: Notification) -> None:
                 control = control_holder[0]
                 counts[me] += 1
-                try:
-                    version = control.reader.read_register(target).version
-                except UnsetRegisterError:
-                    version = 0
-                control.set_register(me, target, counts[me], expected_version=version)
+                # The agents bound the exchange themselves. Nothing in the
+                # library stops a chain now that the wake cap is gone; only
+                # the wall clock does, and that is not what this measures.
+                if counts[me] < 300:
+                    try:
+                        version = control.reader.read_register(target).version
+                    except UnsetRegisterError:
+                        version = 0
+                    control.set_register(
+                        me, target, counts[me], expected_version=version
+                    )
                 control.ack(me, notification.notification_id)
 
             return notify
@@ -505,8 +399,6 @@ class TestChainedWakes:
             control.register_agent(
                 Agent(
                     name=name,
-                    acknowledgment_deadline=DEADLINE,
-                    wake_cap=300,
                     notify=make_notify(name, target),  # type: ignore[arg-type]  # the factory returns the callback type
                 )
             )

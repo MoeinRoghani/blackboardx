@@ -51,8 +51,6 @@ def declaration(
 ) -> Agent:
     return Agent(
         name=name,
-        acknowledgment_deadline=DEADLINE,
-        wake_cap=100,
         notify=received.append,
         subscribes_to=subscribes_to,
         writes_to=writes_to,
