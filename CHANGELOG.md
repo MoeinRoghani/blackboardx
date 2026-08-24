@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/MoeinRoghani/blackboardx/compare/v0.2.1...v0.2.2) (2026-08-24)
+
+
+### Documentation
+
+* the blackboard service design ([#54](https://github.com/MoeinRoghani/blackboardx/issues/54)) ([3fb20d7](https://github.com/MoeinRoghani/blackboardx/commit/3fb20d7d6a4b94ac0605fe489bb0b6369a949439)), closes [#53](https://github.com/MoeinRoghani/blackboardx/issues/53)
+
 ## [0.2.1](https://github.com/MoeinRoghani/blackboardx/compare/v0.2.0...v0.2.1) (2026-08-17)
 
 
