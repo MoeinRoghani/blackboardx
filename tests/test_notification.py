@@ -338,16 +338,18 @@ class TestWakeCap:
 
 
 class TestMidRunRegistration:
-    def test_a_mid_run_agent_starts_at_the_current_sequence(self) -> None:
+    def test_a_mid_run_agent_is_woken_with_everything_already_written(self) -> None:
         clock = ManualClock(start=START)
         early, late = Recorder(), Recorder()
         control = make_control(clock, agent("early", early))
         control.set_register("operator", "window", "w1", expected_version=0)
         control.register_agent(agent("late", late))
-        control.set_register("operator", "window", "w2", expected_version=1)
         assert len(late.received) == 1
-        assert late.received[0].from_sequence == 2
-        assert late.received[0].to_sequence == 2
+        assert late.received[0].from_sequence == 1
+        assert late.received[0].to_sequence == 1
+        control.set_register("operator", "window", "w2", expected_version=1)
+        assert len(late.received) == 2
+        assert late.received[1].to_sequence == 2
 
     def test_a_register_declared_mid_run_notifies_from_declaration(self) -> None:
         clock = ManualClock(start=START)

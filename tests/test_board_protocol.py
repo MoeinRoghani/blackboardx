@@ -70,7 +70,6 @@ def test_the_control_component_drives_the_supplied_board() -> None:
     store = RecordingBoard()
     model = create_model(
         regions=[Level("platform"), Register("window")],
-        agents=[],
         seed={"window": "w"},
         budgets=BUDGETS,
         termination_predicate=keep_open,
@@ -89,7 +88,6 @@ def test_the_control_component_drives_the_supplied_board() -> None:
 def test_without_one_the_in_memory_board_is_used() -> None:
     model = create_model(
         regions=[Level("platform")],
-        agents=[],
         seed={},
         budgets=BUDGETS,
         termination_predicate=keep_open,

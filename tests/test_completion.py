@@ -50,6 +50,26 @@ def keep_open(reader: BoardReader) -> TerminationDecision:
     return TerminationDecision.CONTINUE
 
 
+def begin(control: Control, name: str = "worker") -> None:
+    """Registers an agent that acknowledges its opening wake immediately.
+
+    A run into which no agent ever registered has not begun, so completion
+    is only meaningful once one has.
+    """
+
+    def ack_at_once(notification: Notification) -> None:
+        control.ack(name, notification.notification_id)
+
+    control.register_agent(
+        Agent(
+            name=name,
+            acknowledgment_deadline=DEADLINE,
+            wake_cap=1000,
+            notify=ack_at_once,
+        )
+    )
+
+
 class Recorder:
     def __init__(self) -> None:
         self.received: list[Notification] = []
@@ -165,6 +185,7 @@ class TestTerminationPredicate:
             budgets=budgets(),
             clock=clock,
         )
+        begin(control)
         control.write("ocp", "application", "one")
         assert control.outcome() == Complete()
 
@@ -187,6 +208,7 @@ class TestTerminationPredicate:
             clock=clock,
         )
         holder.append(control)
+        begin(control)
         control.write("ocp", "application", "one")
         assert control.outcome() is None
         assert len(calls) == 2
@@ -231,6 +253,7 @@ class TestBudgets:
             budgets=budgets(total_writes=1),
             clock=clock,
         )
+        begin(control)
         result = control.write("ocp", "application", "one")
         assert result.sequence == 1  # type: ignore[union-attr]  # an Accepted result carries the sequence
         assert control.outcome() == Complete()
