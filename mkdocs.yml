@@ -48,6 +48,7 @@ plugins:
 # The decision records stay in the repository and off the published site.
 exclude_docs: |
   adr/
+  design/
 
 markdown_extensions:
   - admonition

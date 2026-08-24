@@ -44,3 +44,6 @@ coverage.xml
 
 # OS
 .DS_Store
+
+# Local execution state for the multi-session redesign. Never committed.
+.plan/
