@@ -52,6 +52,7 @@ from blackboard._board import (
     RegionKindError,
     Register,
     RegisterState,
+    UndeclaredRegionError,
     UnsetRegisterError,
     Written,
 )
@@ -151,12 +152,14 @@ AdmissionRule: TypeAlias = Callable[[ProposedWrite, "BoardReader"], Accept | Rej
 class RejectionCause(Enum):
     """Why the control component refused a write.
 
-    ``ADMISSION``: the admission rule rejected it. ``UNDECLARED_REGION``: the
+    ``ADMISSION``: the admission rule rejected it. ``NOT_PERMITTED``: the
+    writing agent did not declare that level. ``UNDECLARED_REGION``: the
     named region was never declared. ``BUDGET_EXHAUSTED``: a run-wide budget
     is exhausted. ``RUN_CLOSED``: the run has closed.
     """
 
     ADMISSION = "admission"
+    NOT_PERMITTED = "not_permitted"
     BUDGET_EXHAUSTED = "budget_exhausted"
     UNDECLARED_REGION = "undeclared_region"
     RUN_CLOSED = "run_closed"
@@ -222,6 +225,12 @@ class Notification:
 class Agent:
     """An agent declaration: identity, deadline, wake cap, and delivery.
 
+    ``subscribes_to`` names the registers whose changes wake this agent.
+    Omitting it subscribes the agent to every register, which is the common
+    case, since a register holds a premise and most agents read all of them.
+    ``writes_to`` names the levels the agent may write to, and omitting it
+    permits every level.
+
     The control component invokes ``notify`` to deliver a notification,
     holding no lock, on the thread that closed the batch window or, when
     deliveries chain, on a thread already draining them; two notifications
@@ -236,6 +245,8 @@ class Agent:
     acknowledgment_deadline: timedelta
     wake_cap: int
     notify: Callable[[Notification], None]
+    subscribes_to: Iterable[str] | None = None
+    writes_to: Iterable[str] | None = None
 
     def __post_init__(self) -> None:
         if self.acknowledgment_deadline <= timedelta(0):
@@ -434,6 +445,11 @@ class _Outstanding:
     generation: int = 0
 
 
+def _subscribed(state: _AgentState, register: str) -> bool:
+    declared = state.declaration.subscribes_to
+    return declared is None or register in set(declared)
+
+
 def _accept_every_write(
     proposed: ProposedWrite, reader: BoardReader
 ) -> Accept | Reject:
@@ -523,11 +539,27 @@ class Control:
                 raise DuplicateAgentError(
                     f"an agent named {agent.name!r} is already registered"
                 )
+            for named in agent.subscribes_to or ():
+                if self._kinds.get(named) is not _RegionKind.REGISTER:
+                    raise UndeclaredRegionError(
+                        f"{named!r} is not a declared register, so {agent.name!r} "
+                        "cannot subscribe to it"
+                    )
+            for named in agent.writes_to or ():
+                if self._kinds.get(named) is not _RegionKind.LEVEL:
+                    raise UndeclaredRegionError(
+                        f"{named!r} is not a declared level, so {agent.name!r} "
+                        "cannot write to it"
+                    )
             state = _AgentState(declaration=agent, cursor=0)
             self._agents[agent.name] = state
             now = self._clock.now()
             for name, kind in self._kinds.items():
-                if kind is _RegionKind.REGISTER and self._has_value(name):
+                if (
+                    kind is _RegionKind.REGISTER
+                    and self._has_value(name)
+                    and _subscribed(state, name)
+                ):
                     state.pending[name] = now + self._batch_windows[name]
             delivery = self._evaluate_dispatch_locked(state, now)
             if delivery is not None:
@@ -549,6 +581,18 @@ class Control:
         refusal = self._refuse_region(agent, level, _RegionKind.LEVEL)
         if refusal is not None:
             return refusal
+        with self._lock:
+            writer_state = self._agents.get(agent)
+            declared = (
+                None if writer_state is None else writer_state.declaration.writes_to
+            )
+            if declared is not None and level not in set(declared):
+                return self._reject_locked(
+                    agent,
+                    level,
+                    RejectionCause.NOT_PERMITTED,
+                    f"{agent!r} may not write to {level!r}",
+                )
         with self._lock:
             self._in_flight += 1
         try:
@@ -727,6 +771,8 @@ class Control:
             if self._outcome is not None:
                 break
             if state.declaration.name == writer or state.capped:
+                continue
+            if not _subscribed(state, register):
                 continue
             due = now + window
             existing = state.pending.get(register)
