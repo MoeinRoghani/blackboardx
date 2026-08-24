@@ -114,7 +114,7 @@ class TestZeroWindowDispatch:
                 agent=name,
                 from_sequence=1,
                 to_sequence=1,
-                registers=frozenset({"window"}),
+                regions=frozenset({"window"}),
                 deadline=START + DEADLINE,
             )
             for nid, name in ((1, "ocp"), (2, "git"))
@@ -204,7 +204,7 @@ class TestBatchWindows:
         assert recorder.received == []
         clock.advance(timedelta(seconds=3))
         (notification,) = recorder.received
-        assert notification.registers == frozenset({"namespace"})
+        assert notification.regions == frozenset({"namespace"})
         assert notification.from_sequence == 1
         assert notification.to_sequence == 2
 
@@ -216,7 +216,7 @@ class TestBatchWindows:
         assert recorder.received == []
         control.set_register("operator", "window", "w", expected_version=0)
         (notification,) = recorder.received
-        assert notification.registers == frozenset({"namespace", "window"})
+        assert notification.regions == frozenset({"namespace", "window"})
         assert notification.from_sequence == 1
         assert notification.to_sequence == 2
         clock.advance(timedelta(seconds=10))
@@ -358,7 +358,7 @@ class TestMidRunRegistration:
         control.declare(Register("trigger"))
         control.set_register("operator", "trigger", "alert", expected_version=0)
         assert len(recorder.received) == 1
-        assert recorder.received[0].registers == frozenset({"trigger"})
+        assert recorder.received[0].regions == frozenset({"trigger"})
         assert recorder.received[0].from_sequence == 1
         assert recorder.received[0].to_sequence == 1
 
@@ -445,7 +445,7 @@ class TestStaleTimerCalls:
         assert len(recorder.received) == 1
         clock.advance(timedelta(seconds=2))
         assert len(recorder.received) == 2
-        assert recorder.received[1].registers == frozenset({"namespace"})
+        assert recorder.received[1].regions == frozenset({"namespace"})
 
 
 class TestDeliveryFailure:

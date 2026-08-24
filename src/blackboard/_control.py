@@ -207,7 +207,7 @@ NotificationId = NewType("NotificationId", int)
 
 @dataclass(frozen=True)
 class Notification:
-    """One wake: the range it covers, the changed registers, and its deadline.
+    """One wake: the range it covers, the regions that changed, and its deadline.
 
     It carries no values. The agent reads the registers itself, and reads
     whatever else on the board it wants.
@@ -217,7 +217,7 @@ class Notification:
     agent: str
     from_sequence: int
     to_sequence: int
-    registers: frozenset[str]
+    regions: frozenset[str]
     deadline: datetime
 
 
@@ -445,9 +445,14 @@ class _Outstanding:
     generation: int = 0
 
 
-def _subscribed(state: _AgentState, register: str) -> bool:
+def _subscribed(state: _AgentState, region: str, kind: _RegionKind) -> bool:
+    # Omitting the declaration subscribes an agent to every register and to
+    # no level, because a premise bears on any agent's work while another
+    # agent's conclusion does not.
     declared = state.declaration.subscribes_to
-    return declared is None or register in set(declared)
+    if declared is not None:
+        return region in set(declared)
+    return kind is _RegionKind.REGISTER
 
 
 def _accept_every_write(
@@ -540,9 +545,9 @@ class Control:
                     f"an agent named {agent.name!r} is already registered"
                 )
             for named in agent.subscribes_to or ():
-                if self._kinds.get(named) is not _RegionKind.REGISTER:
+                if named not in self._kinds:
                     raise UndeclaredRegionError(
-                        f"{named!r} is not a declared register, so {agent.name!r} "
+                        f"{named!r} is not a declared region, so {agent.name!r} "
                         "cannot subscribe to it"
                     )
             for named in agent.writes_to or ():
@@ -555,12 +560,12 @@ class Control:
             self._agents[agent.name] = state
             now = self._clock.now()
             for name, kind in self._kinds.items():
-                if (
-                    kind is _RegionKind.REGISTER
-                    and self._has_value(name)
-                    and _subscribed(state, name)
-                ):
+                if not _subscribed(state, name, kind):
+                    continue
+                if kind is _RegionKind.REGISTER and self._has_value(name):
                     state.pending[name] = now + self._batch_windows[name]
+                elif kind is _RegionKind.LEVEL and self._board.read_level(name):
+                    state.pending[name] = now
             delivery = self._evaluate_dispatch_locked(state, now)
             if delivery is not None:
                 deliveries.append(delivery)
@@ -598,6 +603,7 @@ class Control:
         try:
             proposed = ProposedContribution(agent=agent, level=level, content=content)
             verdict = self._admission_rule(proposed, self._board)
+            deliveries: list[_Delivery] = []
             result: Accepted | Rejected
             if isinstance(verdict, Reject):
                 result = self._reject(
@@ -620,10 +626,12 @@ class Control:
                                 sequence=sequence,
                             )
                         )
+                        deliveries = self._note_region_change(level, agent)
                         result = Accepted(sequence=sequence)
         finally:
             with self._lock:
                 self._in_flight -= 1
+        self._deliver(deliveries)
         self._check_completion()
         return result
 
@@ -668,7 +676,7 @@ class Control:
                                     sequence=result.sequence,
                                 )
                             )
-                            deliveries = self._note_register_change(register, writer)
+                            deliveries = self._note_region_change(register, writer)
         finally:
             with self._lock:
                 self._in_flight -= 1
@@ -761,22 +769,22 @@ class Control:
             )
             return new_deadline
 
-    def _note_register_change(self, register: str, writer: str) -> list[_Delivery]:
+    def _note_region_change(self, region: str, writer: str) -> list[_Delivery]:
         # Callers hold self._lock. Returns the deliveries the caller makes
-        # after releasing it.
+        # after releasing it. A level carries no batch window.
         now = self._clock.now()
-        window = self._batch_windows[register]
+        window = self._batch_windows.get(region, timedelta(0))
         deliveries: list[_Delivery] = []
         for state in self._agents.values():
             if self._outcome is not None:
                 break
             if state.declaration.name == writer or state.capped:
                 continue
-            if not _subscribed(state, register):
+            if not _subscribed(state, region, self._kinds[region]):
                 continue
             due = now + window
-            existing = state.pending.get(register)
-            state.pending[register] = due if existing is None else min(existing, due)
+            existing = state.pending.get(region)
+            state.pending[region] = due if existing is None else min(existing, due)
             delivery = self._evaluate_dispatch_locked(state, now)
             if delivery is not None:
                 deliveries.append(delivery)
@@ -875,7 +883,7 @@ class Control:
             state.window_call = None
             state.window_due = None
             state.window_generation += 1
-        registers = frozenset(state.pending)
+        regions = frozenset(state.pending)
         state.pending.clear()
         notification_id = NotificationId(self._next_notification_id)
         self._next_notification_id += 1
@@ -885,7 +893,7 @@ class Control:
             agent=state.declaration.name,
             from_sequence=state.cursor + 1,
             to_sequence=self._last_sequence,
-            registers=registers,
+            regions=regions,
             deadline=deadline,
         )
         key = (state.declaration.name, notification_id)
