@@ -192,7 +192,7 @@ Every pod runs the same loop on `SWEEP_INTERVAL`, taking rows with `FOR UPDATE S
 | Notifications never delivered, older than `DELIVERY_TIMEOUT` | Record the agent unreachable, stop retrying |
 | Notifications never delivered, younger than that | Attempt delivery again |
 | Blackboards past their wall clock limit | Close as `WallClockExpired` |
-| Blackboards silent for their idle limit | Close as `Complete` or `FinishedWithFailures` |
+| Blackboards silent for their idle limit | Close as `Settled`, naming any agent that did not finish |
 
 ## Rules that hold throughout
 
