@@ -10,64 +10,14 @@ The distribution name is `blackboardx`; the import name is `blackboard`. The doc
 pip install blackboardx
 ```
 
-## The board
+## Documentation
 
-The board stores contributions in named regions under one total order, and it never reads what it stores. A region has one of two kinds. A level accumulates contributions in arrival order, and nothing stored is altered. A register holds one current value for a premise of the case; a write replaces the whole value under the version the writer read, and fails with the register's current version when another writer moved it first. One counter orders every write across all regions, so a contribution in one region stands in a definite order against a write in any other.
-
-## How a run works
-
-An application creates a model, and its agents register themselves into it. Registering wakes the agent, because it is out of date with everything already on the board.
-
-A wake names the regions that changed and carries no values. The agent reads whatever it wants, decides whether it has anything to add, writes what it has, and acknowledges. Deciding to add nothing is an ordinary outcome, and reads never pass through the control component, cost nothing, and cannot be refused.
-
-An agent declares what wakes it. Omitting the declaration subscribes it to every register and to no level, because a premise bears on any agent's work while another agent's conclusion does not. An agent that names levels is woken when those levels receive a contribution, so a finding by one agent can put another to work. No agent is ever woken by its own write.
-
-A write passes the application's admission rule before the board sequences it. The rule sees the proposed write with a read handle on the board and returns accept, or reject with a reason the writer receives.
-
-A run ends on time. It closes when nothing has happened for its idle limit, when its wall clock passes, or when a caller closes it, and every outcome names the agents that were still holding an unacknowledged wake. Nothing counts writes or notifications, because a change that lands is always told to every agent that should hear it.
-
-## Public API
-
-Every public name is exported from `blackboard`; every other module is internal.
-
-| Name | Holds |
+| | |
 | --- | --- |
-| `Board` | The board: `declare`, `append`, `set`, `read_level`, `read_register`, `read_board` |
-| `Level`, `Register` | The two region declarations |
-| `Written`, `Conflict` | A register write the board sequenced, and one that named a stale version |
-| `Contribution` | One unit read back from a level |
-| `RegisterState` | A register's current value and version |
-| `BoardChange` | One write to any region, as `read_board` returns it |
-| `BlackboardError` | The base of every error the library raises |
-| `UndeclaredRegionError` | An operation named a region that no declaration created |
-| `DuplicateRegionError` | A declaration named a region that already exists |
-| `RegionKindError` | An operation that takes a level named a register, or the reverse |
-| `UnsetRegisterError` | A register was read before any write gave it a value |
-| `BoardReader` | The three read operations, as the admission rule receives them |
-| `BoardStore` | The operations the control component performs on a board, so an application can supply its own |
-| `ProposedContribution`, `ProposedRegisterWrite`, `ProposedWrite` | A write as the admission rule sees it, before sequencing |
-| `Accept`, `Reject` | The admission rule's two verdicts |
-| `AdmissionRule` | The type of the rule the application supplies |
-| `Accepted`, `Rejected` | A write the control component admitted, and one it refused |
-| `RejectionCause` | The closed set of causes for a refused write, including a level the agent did not declare |
-| `WriteAccepted`, `WriteRejected`, `AuditEvent` | The audit's records of writes that reached the board and writes that did not |
-| `Agent` | An agent declaration: name, delivery callback, the regions it subscribes to, and the levels it may write |
-| `Notification`, `NotificationId` | One wake, naming the regions that changed, and the identifier an acknowledgment names |
-| `NotificationDispatched`, `NotificationAcknowledged` | The audit's records of a wake being dispatched and acknowledged |
-| `DuplicateAgentError` | A registration named an agent that is already registered |
-| `UnknownNotificationError` | The named notification was never issued to the acknowledging agent |
-| `Clock`, `ScheduledCall` | The protocol for reading time and arming calls, and an armed call's handle |
-| `TerminationDecision`, `TerminationPredicate` | The predicate's two answers, and the type of the predicate the application supplies |
-| `RunBudgets` | The two limits on a run, both durations: the wall clock and the idle limit |
-| `Settled`, `WallClockExpired`, `Aborted`, `RunOutcome` | The three states a run closes in, each naming the agents that did not finish |
-| `RunClosed` | The audit's record of the run closing |
-| `RunClosedError` | A declaration or registration reached a run that has closed |
-| `Model`, `create_model` | A running model's read handle and control component, and the one creation path. Agents are not named here |
-| `Control` | The control component an application drives: writes, acknowledgment, mid-run declaration and registration, abort, the audit, and the outcome |
-| `SeedError` | The seed's names are not exactly the declared registers |
-| `RegisterSeeded` | The audit's record of the seed writing one register when the run opened |
-| `SystemClock` | The default clock, the library's only reader of the operating system clock |
-| `ManualClock` | The deterministic clock a test advances by hand |
+| [Quickstart](https://moeinroghani.github.io/blackboardx/quickstart/) | A run in full, in twenty lines |
+| [Concepts](https://moeinroghani.github.io/blackboardx/concepts/board/) | What the board, the control component and a run are |
+| [Guides](https://moeinroghani.github.io/blackboardx/guides/writing-an-agent/) | Writing an agent, admission rules, ending a run, testing |
+| [API reference](https://moeinroghani.github.io/blackboardx/reference/) | Every exported name |
 
 ## Example
 
@@ -84,18 +34,14 @@ model = create_model(
     budgets=RunBudgets(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
 )
 
-# An agent registers itself, and registering wakes it.
 model.control.register_agent(Agent(name="ocp", notify=wakes.append))
 
-# The agent's cycle: read the premises, contribute, acknowledge.
 (wake,) = wakes
 window = model.reader.read_register("window").value
 model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
 model.control.ack("ocp", wake.notification_id)
 
 assert model.control.wait_closed(timeout=timedelta(seconds=10)) == Settled()
-for contribution in model.reader.read_level("platform"):
-    print(contribution.sequence, contribution.content)
 ```
 
 ## License

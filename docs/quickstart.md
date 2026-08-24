@@ -1,0 +1,53 @@
+# Quickstart
+
+A run in full: create a model, register an agent, let it contribute, and read the result.
+
+```python
+from datetime import timedelta
+
+from blackboard import Agent, Level, Register, RunBudgets, Settled, create_model
+
+wakes = []
+
+# 1. Declare the regions and the facts of the case.
+model = create_model(
+    regions=[Level("platform"), Register("window")],
+    seed={"window": ("2026-08-16T20:00", "2026-08-16T22:00")},
+    budgets=RunBudgets(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
+)
+
+# 2. An agent registers itself. Registering wakes it.
+model.control.register_agent(Agent(name="ocp", notify=wakes.append))
+
+# 3. The agent's cycle: read the premises, contribute, acknowledge.
+(wake,) = wakes
+window = model.reader.read_register("window").value
+model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
+model.control.ack("ocp", wake.notification_id)
+
+# 4. The run closes once nothing has happened for the idle limit.
+assert model.control.wait_closed(timeout=timedelta(seconds=10)) == Settled()
+
+for contribution in model.reader.read_level("platform"):
+    print(contribution.sequence, contribution.content)
+```
+
+Printing:
+
+```
+2 {'window': ('2026-08-16T20:00', '2026-08-16T22:00'), 'findings': ['oom']}
+```
+
+The contribution has sequence 2 because the seed's register write took sequence 1. Every write to any region takes the next number from one counter.
+
+## What each step means
+
+**Regions** are the named parts of the board. A `Level` accumulates contributions; a `Register` holds one current value. [The board](concepts/board.md) explains why there are exactly two kinds.
+
+**The seed** gives every declared register its first value. It must name each one exactly once.
+
+**Registering** is how an agent comes to exist. Nothing names agents at creation, because an agent supplies its own callback and a creator cannot know which agents will join.
+
+**The wake** carries no values. It says the agent is out of date, and the agent reads the board itself.
+
+**Acknowledging** says the agent has stopped working on that wake. It does not mean the agent found anything.
