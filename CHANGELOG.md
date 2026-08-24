@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.2.1...v0.3.0) (2026-08-24)
+
+
+### Features
+
+* **board:** a storage protocol so the board can be substituted ([#57](https://github.com/MoeinRoghani/blackboardx/issues/57)) ([4de8a91](https://github.com/MoeinRoghani/blackboardx/commit/4de8a911bae5b672a0c3ec38eaefa49af6729474)), closes [#55](https://github.com/MoeinRoghani/blackboardx/issues/55)
+
+
+### Documentation
+
+* the blackboard service design ([#54](https://github.com/MoeinRoghani/blackboardx/issues/54)) ([3fb20d7](https://github.com/MoeinRoghani/blackboardx/commit/3fb20d7d6a4b94ac0605fe489bb0b6369a949439)), closes [#53](https://github.com/MoeinRoghani/blackboardx/issues/53)
+
 ## [0.2.1](https://github.com/MoeinRoghani/blackboardx/compare/v0.2.0...v0.2.1) (2026-08-17)
 
 
