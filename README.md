@@ -39,7 +39,7 @@ from blackboard import (
     create_model,
 )
 
-wakes = []
+notifications = []
 
 model = create_model(
     regions=[Level("platform"), Register("window")],
@@ -48,12 +48,12 @@ model = create_model(
     board=SqliteBoard("incident.sqlite3"),
 )
 
-model.control.register_agent(Agent(name="ocp", notify=wakes.append))
+model.control.register_agent(Agent(name="ocp", notify=notifications.append))
 
-(wake,) = wakes
+(notification,) = notifications
 window = model.reader.read_register("window").value
 model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
-model.control.ack("ocp", wake.notification_id)
+model.control.ack("ocp", notification.notification_id)
 
 assert model.control.wait_closed(timeout=timedelta(seconds=10)) == Settled()
 ```

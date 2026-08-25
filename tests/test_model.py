@@ -1,4 +1,5 @@
-"""A model is created from five inputs, and agents register themselves into it."""
+"""Five things configure a model, a sixth says where it is kept, and agents register
+themselves into it."""
 
 import threading
 from datetime import UTC, datetime, timedelta

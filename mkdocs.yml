@@ -40,7 +40,9 @@ nav:
       - Write an admission rule: guides/admission-rules.md
       - End a run: guides/ending-a-run.md
       - Test an application: guides/testing.md
-  - Reference: reference.md
+  - Reference:
+      - API reference: reference.md
+      - Glossary: glossary.md
   - About:
       - Contributing: about/contributing.md
 

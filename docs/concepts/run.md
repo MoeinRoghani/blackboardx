@@ -29,7 +29,7 @@ Registering wakes the agent immediately, covering every subscribed region that a
 
 ## Ending
 
-A run does not close because nothing is outstanding at some instant. Agents are idle between wakes and register at different times, so a quiet instant is the gap before the work rather than the end of it. Sustained silence is what ends it.
+A run does not close because nothing is outstanding at some instant. Agents are idle between notifications and register at different times, so a quiet instant is the gap before the work rather than the end of it. Sustained silence is what ends it.
 
 | Outcome | Cause |
 | --- | --- |
@@ -37,7 +37,7 @@ A run does not close because nothing is outstanding at some instant. Agents are 
 | `WallClockExpired` | The wall clock limit passed |
 | `Aborted` | A caller closed the run |
 
-Each carries `unfinished`, naming the agents still holding an unacknowledged wake. Why a run ended and which agents failed to finish are separate facts, so a run settles normally while one agent never returns. That distinction matters to a consumer, because a region nobody examined and a region examined with nothing in it are different states.
+Each carries `unfinished`, naming the agents still holding an unacknowledged notification. Why a run ended and which agents failed to finish are separate facts, so a run settles normally while one agent never returns. That distinction matters to a consumer, because a region nobody examined and a region examined with nothing in it are different states.
 
 ## Time is the only bound
 

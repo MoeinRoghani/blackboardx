@@ -152,7 +152,7 @@ POST /blackboards/incident-4471/writes
 }
 ```
 
-One call carries both facts, because a contribution and the end of a wake normally occur together and committing them separately leaves a window in which the contribution is on the board while the agent still appears to be working.
+One call carries both facts, because a contribution and the end of one notification's work normally occur together and committing them separately leaves a window in which the contribution is on the board while the agent still appears to be working.
 
 | Body | Meaning |
 | --- | --- |
@@ -179,7 +179,7 @@ A register is replaced through its own call, naming the version it expects to re
 
 The idle limit measures silence, meaning the time since the last write, register write, registration, or acknowledgment. A read does not disturb it, so an agent polling the board cannot hold a blackboard open indefinitely.
 
-A blackboard is not closed because nothing is outstanding at some instant. Agents are idle between wakes and register at different times, so an instant of quiet is not the end of the work. Sustained silence is.
+A blackboard is not closed because nothing is outstanding at some instant. Agents are idle between notifications and register at different times, so an instant of quiet is not the end of the work. Sustained silence is.
 
 Every outcome carries the agents that did not finish, meaning those with an unacknowledged notification and those recorded unreachable. Why a blackboard ended and who failed to finish are separate facts, and a blackboard can settle normally while one agent never returned. A reader needs both, because a region nobody examined and a region examined with nothing in it are different states.
 
