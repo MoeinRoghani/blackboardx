@@ -11,7 +11,7 @@ from blackboard import (
     Level,
     ManualClock,
     Notification,
-    Register,
+    Premise,
     Rejected,
     RejectionCause,
     RunLimits,
@@ -34,8 +34,8 @@ def make_control(clock: ManualClock) -> Control:
         regions=[
             Level("platform"),
             Level("application"),
-            Register("window"),
-            Register("namespace"),
+            Premise("window"),
+            Premise("namespace"),
         ],
         termination_predicate=keep_open,
         limits=LIMITS,
@@ -64,8 +64,8 @@ class TestSubscription:
         control = make_control(clock)
         received: list[Notification] = []
         control.register_agent(declaration("ocp", received))
-        control.set_register("operator", "window", "w", expected_version=0)
-        control.set_register("operator", "namespace", ("ns",), expected_version=0)
+        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("operator", "namespace", ("ns",), expected_version=0)
         assert [n.regions for n in received] == [
             frozenset({"window"}),
             frozenset({"namespace"}),
@@ -76,16 +76,16 @@ class TestSubscription:
         control = make_control(clock)
         received: list[Notification] = []
         control.register_agent(declaration("ocp", received, subscribes_to=["window"]))
-        control.set_register("operator", "namespace", ("ns",), expected_version=0)
+        control.set_premise("operator", "namespace", ("ns",), expected_version=0)
         assert received == []
-        control.set_register("operator", "window", "w", expected_version=0)
+        control.set_premise("operator", "window", "w", expected_version=0)
         assert [n.regions for n in received] == [frozenset({"window"})]
 
     def test_the_opening_notification_names_only_subscribed_registers(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
-        control.set_register("operator", "window", "w", expected_version=0)
-        control.set_register("operator", "namespace", ("ns",), expected_version=0)
+        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("operator", "namespace", ("ns",), expected_version=0)
         received: list[Notification] = []
         control.register_agent(declaration("late", received, subscribes_to=["window"]))
         (notification,) = received

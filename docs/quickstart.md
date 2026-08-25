@@ -1,6 +1,6 @@
 # Quickstart
 
-A run in full: create a model, register an agent, let it contribute, and read the result.
+A run in full: create a model, premise an agent, let it contribute, and read the result.
 
 ```python
 from datetime import timedelta
@@ -8,7 +8,7 @@ from datetime import timedelta
 from blackboard import (
     Agent,
     Level,
-    Register,
+    Premise,
     RunLimits,
     Settled,
     SqliteBoard,
@@ -17,10 +17,10 @@ from blackboard import (
 
 notifications = []
 
-# 1. Declare the regions and seed the premises.
+# 1. Declare the regions and give every premise its opening value.
 model = create_model(
-    regions=[Level("platform"), Register("window")],
-    seed={"window": ["2026-08-16T20:00", "2026-08-16T22:00"]},
+    regions=[Level("platform"), Premise("window")],
+    premises={"window": ["2026-08-16T20:00", "2026-08-16T22:00"]},
     limits=RunLimits(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
     board=SqliteBoard("incident.sqlite3"),
 )
@@ -30,7 +30,7 @@ model.control.register_agent(Agent(name="ocp", notify=notifications.append))
 
 # 3. The agent's cycle: read the premises, contribute, acknowledge.
 (notification,) = notifications
-window = model.reader.read_register("window").value
+window = model.reader.read_premise("window").value
 model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
 model.control.ack("ocp", notification.notification_id)
 
@@ -47,15 +47,15 @@ Printing:
 2 {'window': ['2026-08-16T20:00', '2026-08-16T22:00'], 'findings': ['oom']}
 ```
 
-The contribution has sequence 2 because the seed's register write took sequence 1. Every write to any region takes the next number from one counter.
+The contribution has sequence 2 because the opening premise write took sequence 1. Every write to any region takes the next number from one counter.
 
 ## What each step means
 
-**Regions** are the named parts of the board. A `Level` accumulates contributions; a `Register` holds one current value. [The board](concepts/board.md) explains why there are exactly two kinds.
+**Regions** are the named parts of the board. A `Level` accumulates contributions; a `Premise` holds one current value. [The board](concepts/board.md) explains why there are exactly two kinds.
 
 **The board** is where the record is kept. It is a required argument, because a run has to write somewhere a reader can find it. `SqliteBoard` suits one machine; a deployment passes an adapter for its own database. [Storage](concepts/storage.md) covers the choice.
 
-**The seed** gives every declared register its first value. It must name each one exactly once.
+**The opening premises** give every declared premise its first value. They must name each one exactly once.
 
 **Registering** is how an agent comes to exist. Nothing names agents at creation, because an agent supplies its own callback and a creator cannot know which agents will join.
 

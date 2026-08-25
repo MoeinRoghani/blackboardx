@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from conformance import BoardConformance, SharedStoreConformance
 
-from blackboard import BoardStore, Level, Register, SqliteBoard
+from blackboard import BoardStore, Level, Premise, SqliteBoard
 
 
 class TestSqliteInProcess(BoardConformance):
@@ -30,13 +30,13 @@ def test_the_record_survives_the_process_that_made_it(tmp_path: Path) -> None:
 
     first = SqliteBoard(path)
     first.declare(Level("platform"))
-    first.declare(Register("window"))
+    first.declare(Premise("window"))
     first.set("window", ["t1", "t2"], expected_version=0)
     first.append("platform", {"findings": ["oom"]})
     first.close()
 
     reopened = SqliteBoard(path)
-    assert reopened.read_register("window").value == ["t1", "t2"]
+    assert reopened.read_premise("window").value == ["t1", "t2"]
     assert [c.content for c in reopened.read_level("platform")] == [
         {"findings": ["oom"]}
     ]

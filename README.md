@@ -1,6 +1,6 @@
 # blackboardx
 
-A group of agents works on one problem. Each writes what it finds into a single shared record, every agent can read all of it, and no agent calls another; the record is the only channel between them. The blackboard literature calls a system skeletal when it supplies this structure with no domain knowledge inside, so that an application system is built on it by adding knowledge and control. `blackboardx` is skeletal in that sense. It supplies the board and the control component; an application creates a model by supplying its regions, seed, admission rule, termination predicate, and limits, and its agents register themselves into it.
+A group of agents works on one problem. Each writes what it finds into a single shared record, every agent can read all of it, and no agent calls another; the record is the only channel between them. The blackboard literature calls a system skeletal when it supplies this structure with no domain knowledge inside, so that an application system is built on it by adding knowledge and control. `blackboardx` is skeletal in that sense. It supplies the board and the control component; an application creates a model by supplying its regions, their opening premise values, an admission rule, a termination predicate, and limits, and its agents register themselves into it.
 
 The distribution name is `blackboardx`; the import name is `blackboard`. The documentation, including the API reference, is at <https://moeinroghani.github.io/blackboardx/>.
 
@@ -32,7 +32,7 @@ from datetime import timedelta
 from blackboard import (
     Agent,
     Level,
-    Register,
+    Premise,
     RunLimits,
     Settled,
     SqliteBoard,
@@ -42,8 +42,8 @@ from blackboard import (
 notifications = []
 
 model = create_model(
-    regions=[Level("platform"), Register("window")],
-    seed={"window": ["2026-08-16T20:00", "2026-08-16T22:00"]},
+    regions=[Level("platform"), Premise("window")],
+    premises={"window": ["2026-08-16T20:00", "2026-08-16T22:00"]},
     limits=RunLimits(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
     board=SqliteBoard("incident.sqlite3"),
 )
@@ -51,7 +51,7 @@ model = create_model(
 model.control.register_agent(Agent(name="ocp", notify=notifications.append))
 
 (notification,) = notifications
-window = model.reader.read_register("window").value
+window = model.reader.read_premise("window").value
 model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
 model.control.ack("ocp", notification.notification_id)
 

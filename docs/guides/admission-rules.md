@@ -18,14 +18,14 @@ It runs on **every** proposed write, of both kinds, before the board sequences a
 ## Telling the two kinds apart
 
 ```python
-from blackboard import ProposedContribution, ProposedRegisterWrite
+from blackboard import ProposedContribution, ProposedPremiseWrite
 
 
 def rule(proposed, reader):
     if isinstance(proposed, ProposedContribution):
         return validate_bundle(proposed.content)
-    if isinstance(proposed, ProposedRegisterWrite):
-        return Accept() if proposed.register != "window" else Reject("window is fixed")
+    if isinstance(proposed, ProposedPremiseWrite):
+        return Accept() if proposed.premise != "window" else Reject("window is fixed")
     return Accept()
 ```
 
@@ -60,8 +60,8 @@ def refuse_duplicates(proposed, reader):
 
 The rule runs without the control component's lock, so two writes judged at the same moment both see the board as it was before either landed. A duplicate-refusing rule therefore bounds concurrent duplicates rather than preventing them.
 
-A register write closes that window itself, because it names the version it expects to replace. A level write has no equivalent, so a rule that must be exact needs the uniqueness enforced where the contributions are stored.
+A premise write closes that window itself, because it names the version it expects to replace. A level write has no equivalent, so a rule that must be exact needs the uniqueness enforced where the contributions are stored.
 
 ## Where it does not apply
 
-The seed bypasses admission. It reaches the board and takes a sequence number like any other write, but it is the application's own input rather than a proposal from a writer, so there is nothing for the rule to judge.
+A premise's opening value bypasses admission. It reaches the board and takes a sequence number like any other write, but it is the application's own input rather than a proposal from a writer, so there is nothing for the rule to judge.

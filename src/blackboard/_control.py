@@ -4,16 +4,16 @@ A write made through the control component passes the application's
 admission rule before the board sequences it. The rule sees the proposed
 write with a read handle on the board and returns accept or a reasoned
 rejection. An admitted level write is sequenced and audited. An admitted
-register write may still fail with a conflict, which returns to the writer
+premise write may still fail with a conflict, which returns to the writer
 unaudited. A rejected write returns its reason to the writer, never reaches
 the board, and is audited without a sequence number.
 
-An admitted register write also notifies the registered agents, each
+An admitted premise write also notifies the registered agents, each
 through its batch window, except the agent that wrote the change. Which
 agents hold an unacknowledged notification is tracked here.
 
 The run closes in exactly one of three states: settled, wall clock
-expired, or aborted. It closes on silence: every write, register write,
+expired, or aborted. It closes on silence: every write, premise write,
 registration and acknowledgment pushes the idle deadline out, and when
 that deadline passes the control component consults the application's
 termination predicate, which with none supplied lets the run close.
@@ -26,7 +26,7 @@ is the only part of a run that a second process can read.
 
 The rule runs without the control component's lock, so two writes judged
 at the same moment are both judged against the board as it was before
-either landed. A register write closes that window with its expected
+either landed. A premise write closes that window with its expected
 version; a level write does not, so a rule refusing duplicates bounds
 concurrent duplicates rather than preventing them.
 """
@@ -36,7 +36,7 @@ from __future__ import annotations
 import threading
 import warnings
 from collections import deque
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -50,11 +50,11 @@ from blackboard._board import (
     Conflict,
     Contribution,
     Level,
+    Premise,
+    PremiseState,
     RegionKindError,
-    Register,
-    RegisterState,
     UndeclaredRegionError,
-    UnsetRegisterError,
+    UnsetPremiseError,
     Written,
 )
 from blackboard._clock import Clock, ScheduledCall
@@ -72,7 +72,7 @@ class BoardStore(Protocol):
     cannot carry raises ``TypeError`` before anything is stored.
     """
 
-    def declare(self, region: Level | Register) -> None:
+    def declare(self, region: Level | Premise) -> None:
         """Creates a region."""
         ...
 
@@ -81,17 +81,17 @@ class BoardStore(Protocol):
         ...
 
     def set(
-        self, register: str, value: object, expected_version: int
+        self, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
-        """Replaces a register's value under the version the caller expects."""
+        """Replaces a premise's value under the version the caller expects."""
         ...
 
     def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
         """Returns a level's contributions from the sequence bound, inclusive."""
         ...
 
-    def read_register(self, register: str) -> RegisterState:
-        """Returns a register's current value and version."""
+    def read_premise(self, premise: str) -> PremiseState:
+        """Returns a premise's current value and version."""
         ...
 
     def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
@@ -106,8 +106,8 @@ class BoardReader(Protocol):
         """Returns a level's contributions from the sequence bound, inclusive."""
         ...
 
-    def read_register(self, register: str) -> RegisterState:
-        """Returns a register's current value and version."""
+    def read_premise(self, premise: str) -> PremiseState:
+        """Returns a premise's current value and version."""
         ...
 
     def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
@@ -136,16 +136,16 @@ class ProposedContribution:
 
 
 @dataclass(frozen=True)
-class ProposedRegisterWrite:
-    """A register write as the admission rule sees it, before sequencing."""
+class ProposedPremiseWrite:
+    """A premise write as the admission rule sees it, before sequencing."""
 
     writer: str
-    register: str
+    premise: str
     value: object
     expected_version: int
 
 
-ProposedWrite: TypeAlias = ProposedContribution | ProposedRegisterWrite
+ProposedWrite: TypeAlias = ProposedContribution | ProposedPremiseWrite
 """A proposed write of either kind, as the admission rule receives it."""
 
 
@@ -233,8 +233,8 @@ class Agent:
 
     ``subscribes_to`` names the regions, of either kind, whose changes wake
     this agent, and naming any excludes every region not named. Omitting it
-    subscribes the agent to every register and to no level, which is the
-    common case: a register holds a premise that bears on any agent's work,
+    subscribes the agent to every premise and to no level, which is the
+    common case: a premise holds a premise that bears on any agent's work,
     while another agent's conclusion does not. ``writes_to`` names the
     levels the agent may write to, and omitting it permits every level.
 
@@ -258,8 +258,8 @@ class DuplicateAgentError(BlackboardError):
     """A registration named an agent that is already registered."""
 
 
-class SeedError(BlackboardError):
-    """The seed's names are not exactly the declared registers."""
+class PremiseError(BlackboardError):
+    """The opening premises are not exactly the premises that were declared."""
 
 
 class UnknownNotificationError(BlackboardError):
@@ -351,11 +351,11 @@ never returns.
 
 
 @dataclass(frozen=True)
-class RegisterSeeded:
-    """The audit record of the seed writing one register when the run opened."""
+class PremiseOpened:
+    """The audit record of one premise receiving its opening value."""
 
     at: datetime
-    register: str
+    premise: str
     sequence: int
     version: int
 
@@ -369,7 +369,7 @@ class RunClosed:
 
 
 AuditEvent: TypeAlias = (
-    RegisterSeeded
+    PremiseOpened
     | WriteAccepted
     | WriteRejected
     | NotificationDispatched
@@ -398,13 +398,32 @@ class _Outstanding:
 
 
 def _subscribed(state: _AgentState, region: str, kind: _RegionKind) -> bool:
-    # Omitting the declaration subscribes an agent to every register and to
+    # Omitting the declaration subscribes an agent to every premise and to
     # no level, because a premise bears on any agent's work while another
     # agent's conclusion does not.
     declared = state.declaration.subscribes_to
     if declared is not None:
         return region in set(declared)
-    return kind is _RegionKind.REGISTER
+    return kind is _RegionKind.PREMISE
+
+
+def _resolve_premises(
+    premises: Mapping[str, object] | None, seed: Mapping[str, object] | None
+) -> Mapping[str, object]:
+    """Takes the opening premise values from either keyword, warning on the old one."""
+    if seed is not None:
+        warnings.warn(
+            "The seed keyword is renamed premises, and the old name is "
+            "removed in 0.6.0.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        if premises is not None:
+            raise TypeError("pass premises, not both premises and seed")
+        return seed
+    if premises is None:
+        raise TypeError("create_model() requires premises")
+    return premises
 
 
 def _resolve_limits(limits: RunLimits | None, budgets: RunLimits | None) -> RunLimits:
@@ -432,7 +451,7 @@ def _accept_every_write(
 
 class _RegionKind(Enum):
     LEVEL = "level"
-    REGISTER = "register"
+    PREMISE = "premise"
 
 
 class Control:
@@ -447,7 +466,7 @@ class Control:
     def __init__(
         self,
         *,
-        regions: Iterable[Level | Register] = (),
+        regions: Iterable[Level | Premise] = (),
         admission_rule: AdmissionRule | None = None,
         termination_predicate: TerminationPredicate | None = None,
         limits: RunLimits | None = None,
@@ -490,7 +509,7 @@ class Control:
         """The board's read side. Reads bypass the control component entirely."""
         return self._board
 
-    def declare(self, region: Level | Register) -> None:
+    def declare(self, region: Level | Premise) -> None:
         """Creates a region on the board and records its kind."""
         with self._lock:
             if self._outcome is not None:
@@ -499,14 +518,14 @@ class Control:
             if isinstance(region, Level):
                 self._kinds[region.name] = _RegionKind.LEVEL
             else:
-                self._kinds[region.name] = _RegionKind.REGISTER
+                self._kinds[region.name] = _RegionKind.PREMISE
                 self._batch_windows[region.name] = region.batch_window
 
     def register_agent(self, agent: Agent) -> None:
         """Registers an agent and wakes it.
 
         The agent is out of date with everything already on the board, so
-        registering issues one notification covering the registers that
+        registering issues one notification covering the premises that
         currently hold a value. Its cursor starts at zero, since it has
         read nothing.
         """
@@ -536,7 +555,7 @@ class Control:
             for name, kind in self._kinds.items():
                 if not _subscribed(state, name, kind):
                     continue
-                if kind is _RegionKind.REGISTER and self._has_value(name):
+                if kind is _RegionKind.PREMISE and self._has_value(name):
                     state.pending[name] = now + self._batch_windows[name]
                 elif kind is _RegionKind.LEVEL and self._board.read_level(name):
                     state.pending[name] = now
@@ -547,11 +566,11 @@ class Control:
         # work, not the end of it.
         self._deliver(deliveries)
 
-    def _has_value(self, register: str) -> bool:
+    def _has_value(self, premise: str) -> bool:
         # Callers hold self._lock.
         try:
-            self._board.read_register(register)
-        except UnsetRegisterError:
+            self._board.read_premise(premise)
+        except UnsetPremiseError:
             return False
         return True
 
@@ -602,16 +621,16 @@ class Control:
         self._check_completion()
         return result
 
-    def set_register(
-        self, writer: str, register: str, value: object, expected_version: int
+    def set_premise(
+        self, writer: str, premise: str, value: object, expected_version: int
     ) -> Written | Conflict | Rejected:
-        """Runs one register write through admission and, if admitted, the board."""
-        refusal = self._refuse_region(writer, register, _RegionKind.REGISTER)
+        """Runs one premise write through admission and, if admitted, the board."""
+        refusal = self._refuse_region(writer, premise, _RegionKind.PREMISE)
         if refusal is not None:
             return refusal
-        proposed = ProposedRegisterWrite(
+        proposed = ProposedPremiseWrite(
             writer=writer,
-            register=register,
+            premise=premise,
             value=value,
             expected_version=expected_version,
         )
@@ -620,29 +639,41 @@ class Control:
         result: Written | Conflict | Rejected
         if isinstance(verdict, Reject):
             result = self._reject(
-                writer, register, RejectionCause.ADMISSION, verdict.reason
+                writer, premise, RejectionCause.ADMISSION, verdict.reason
             )
         else:
             with self._lock:
-                gate = self._sequencing_gate_locked(writer, register)
+                gate = self._sequencing_gate_locked(writer, premise)
                 if gate is not None:
                     result = gate
                 else:
-                    result = self._board.set(register, value, expected_version)
+                    result = self._board.set(premise, value, expected_version)
                     if isinstance(result, Written):
                         self._last_sequence = result.sequence
                         self._audit.append(
                             WriteAccepted(
                                 at=self._clock.now(),
                                 writer=writer,
-                                region=register,
+                                region=premise,
                                 sequence=result.sequence,
                             )
                         )
-                        deliveries = self._note_region_change(register, writer)
+                        deliveries = self._note_region_change(premise, writer)
         self._deliver(deliveries)
         self._check_completion()
         return result
+
+    def set_register(
+        self, writer: str, register: str, value: object, expected_version: int
+    ) -> Written | Conflict | Rejected:
+        """Deprecated since 0.5.0. Use ``set_premise``; removed in 0.6.0."""
+        warnings.warn(
+            "set_register is renamed set_premise, and the old name is "
+            "removed in 0.6.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.set_premise(writer, register, value, expected_version)
 
     def read_audit(self) -> list[AuditEvent]:
         """Returns every audit event in the order each occurred."""
@@ -738,7 +769,7 @@ class Control:
             )
         return None
 
-    def _seed(self, seed: dict[str, object]) -> None:
+    def _open_premises(self, premises: dict[str, object]) -> None:
         # Called by create_model while the run opens; not a proposed
         # write, so admission does not apply.
         deliveries: list[_Delivery] = []
@@ -748,41 +779,42 @@ class Control:
             declared = {
                 name
                 for name, kind in self._kinds.items()
-                if kind is _RegionKind.REGISTER
+                if kind is _RegionKind.PREMISE
             }
-            missing = declared - set(seed)
-            unknown = set(seed) - declared
+            missing = declared - set(premises)
+            unknown = set(premises) - declared
             if missing or unknown:
                 parts = []
                 if missing:
                     parts.append(
-                        "the seed misses " + ", ".join(sorted(repr(n) for n in missing))
+                        "the opening premises miss "
+                        + ", ".join(sorted(repr(n) for n in missing))
                     )
                 if unknown:
                     parts.append(
-                        "the seed names undeclared "
+                        "the opening premises name undeclared "
                         + ", ".join(sorted(repr(n) for n in unknown))
                     )
-                raise SeedError("; ".join(parts))
+                raise PremiseError("; ".join(parts))
             now = self._clock.now()
-            for register, value in seed.items():
-                result = self._board.set(register, value, expected_version=0)
-                assert isinstance(result, Written)  # a fresh register cannot conflict
-                assert result.version is not None  # a register write carries one
+            for premise, value in premises.items():
+                result = self._board.set(premise, value, expected_version=0)
+                assert isinstance(result, Written)  # a fresh premise cannot conflict
+                assert result.version is not None  # a premise write carries one
                 self._last_sequence = result.sequence
                 self._audit.append(
-                    RegisterSeeded(
+                    PremiseOpened(
                         at=now,
-                        register=register,
+                        premise=premise,
                         sequence=result.sequence,
                         version=result.version,
                     )
                 )
-                window = self._batch_windows[register]
+                window = self._batch_windows[premise]
                 due = now + window
                 for state in self._agents.values():
-                    existing = state.pending.get(register)
-                    state.pending[register] = (
+                    existing = state.pending.get(premise)
+                    state.pending[premise] = (
                         due if existing is None else min(existing, due)
                     )
             for state in self._agents.values():
@@ -843,7 +875,7 @@ class Control:
         self._check_completion()
 
     def _deliver(self, deliveries: list[_Delivery]) -> None:
-        # One flat drain loop per thread: a callback that writes a register
+        # One flat drain loop per thread: a callback that writes a premise
         # enqueues the resulting deliveries and returns, so chained notifications
         # cost queue entries, not stack frames.
         self._delivery_queue.extend(deliveries)
@@ -902,7 +934,7 @@ class Control:
         """Records that something happened, which pushes the idle deadline out.
 
         A run does not close because nothing is outstanding at some instant.
-        Agents are idle between notifications and register at different times, so an
+        Agents are idle between notifications and premise at different times, so an
         instant of quiet is the gap before the work rather than the end of
         it. Sustained silence is what closes a run, and the idle timer
         measures it.
@@ -973,10 +1005,10 @@ class Control:
             if kind is not expected:
                 if expected is _RegionKind.LEVEL:
                     raise RegionKindError(
-                        f"{region!r} names a register, and this operation takes a level"
+                        f"{region!r} names a premise, and this operation takes a level"
                     )
                 raise RegionKindError(
-                    f"{region!r} names a level, and this operation takes a register"
+                    f"{region!r} names a level, and this operation takes a premise"
                 )
             return None
 

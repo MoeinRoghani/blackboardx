@@ -16,11 +16,11 @@ from blackboard import (
     Contribution,
     DuplicateRegionError,
     Level,
+    Premise,
+    PremiseState,
     RegionKindError,
-    Register,
-    RegisterState,
     UndeclaredRegionError,
-    UnsetRegisterError,
+    UnsetPremiseError,
     Written,
 )
 
@@ -40,7 +40,7 @@ class BoardConformance:
     def ready(self, board: BoardStore) -> BoardStore:
         board.declare(Level("application"))
         board.declare(Level("platform"))
-        board.declare(Register("window"))
+        board.declare(Premise("window"))
         return board
 
     # Declaring
@@ -53,7 +53,7 @@ class BoardConformance:
         with pytest.raises(DuplicateRegionError):
             ready.declare(Level("application"))
         with pytest.raises(DuplicateRegionError):
-            ready.declare(Register("application"))
+            ready.declare(Premise("application"))
 
     def test_a_refused_declaration_leaves_the_region_intact(
         self, ready: BoardStore
@@ -71,9 +71,9 @@ class BoardConformance:
         assert ready.read_level("change") == []
 
     def test_a_register_declared_later_holds_no_value(self, ready: BoardStore) -> None:
-        ready.declare(Register("trigger"))
-        with pytest.raises(UnsetRegisterError):
-            ready.read_register("trigger")
+        ready.declare(Premise("trigger"))
+        with pytest.raises(UnsetPremiseError):
+            ready.read_premise("trigger")
 
     # The total order
 
@@ -124,7 +124,7 @@ class BoardConformance:
         assert ready.set("window", "w2", expected_version=1) == Written(
             sequence=2, version=2
         )
-        assert ready.read_register("window") == RegisterState(value="w2", version=2)
+        assert ready.read_premise("window") == PremiseState(value="w2", version=2)
 
     def test_a_stale_version_returns_the_current_one(self, ready: BoardStore) -> None:
         ready.set("window", "w1", expected_version=0)
@@ -136,7 +136,7 @@ class BoardConformance:
     def test_a_conflict_changes_nothing(self, ready: BoardStore) -> None:
         ready.set("window", "w1", expected_version=0)
         ready.set("window", "late", expected_version=0)
-        assert ready.read_register("window") == RegisterState(value="w1", version=1)
+        assert ready.read_premise("window") == PremiseState(value="w1", version=1)
 
     def test_a_conflict_takes_no_sequence_number(self, ready: BoardStore) -> None:
         ready.set("window", "w1", expected_version=0)
@@ -156,7 +156,7 @@ class BoardConformance:
 
     def test_a_register_may_hold_none(self, ready: BoardStore) -> None:
         ready.set("window", None, expected_version=0)
-        assert ready.read_register("window") == RegisterState(value=None, version=1)
+        assert ready.read_premise("window") == PremiseState(value=None, version=1)
 
     # Reading the whole board
 
@@ -188,7 +188,7 @@ class BoardConformance:
         with pytest.raises(UndeclaredRegionError):
             ready.read_level("missing")
         with pytest.raises(UndeclaredRegionError):
-            ready.read_register("missing")
+            ready.read_premise("missing")
 
     # Content
 
@@ -214,7 +214,7 @@ class BoardConformance:
         ready.set("window", ("c", "d"), expected_version=0)
         (contribution,) = ready.read_level("application")
         assert contribution.content == ["a", "b"]
-        assert ready.read_register("window").value == ["c", "d"]
+        assert ready.read_premise("window").value == ["c", "d"]
 
     def test_content_comes_back_detached_from_what_the_caller_wrote(
         self, ready: BoardStore
@@ -256,7 +256,7 @@ class BoardConformance:
         def add(item: int) -> None:
             barrier.wait()
             for _ in range(500):
-                state = ready.read_register("window")
+                state = ready.read_premise("window")
                 assert isinstance(state.value, list)
                 result = ready.set(
                     "window", [*state.value, item], expected_version=state.version
@@ -270,7 +270,7 @@ class BoardConformance:
             thread.start()
         for thread in threads:
             thread.join()
-        state = ready.read_register("window")
+        state = ready.read_premise("window")
         assert isinstance(state.value, list)
         assert sorted(state.value) == list(range(4))
         assert state.version == 5
@@ -327,12 +327,12 @@ class SharedStoreConformance:
         self, two_boards: tuple[BoardStore, BoardStore]
     ) -> None:
         first, second = two_boards
-        first.declare(Register("window"))
-        second.declare(Register("window"))
+        first.declare(Premise("window"))
+        second.declare(Premise("window"))
         first.set("window", "first", expected_version=0)
         assert isinstance(second.set("window", "second", expected_version=0), Written)
-        assert first.read_register("window").value == "first"
-        assert second.read_register("window").value == "second"
+        assert first.read_premise("window").value == "first"
+        assert second.read_premise("window").value == "second"
 
     @pytest.fixture
     def same_board_twice(self) -> tuple[BoardStore, BoardStore]:
@@ -359,7 +359,7 @@ class SharedStoreConformance:
         with pytest.raises(DuplicateRegionError):
             second.declare(Level("application"))
         with pytest.raises(DuplicateRegionError):
-            second.declare(Register("application"))
+            second.declare(Premise("application"))
 
     def test_the_whole_board_read_names_only_this_board_s_writes(
         self, two_boards: tuple[BoardStore, BoardStore]

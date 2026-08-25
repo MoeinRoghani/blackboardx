@@ -23,25 +23,25 @@ A pod would keep nothing between requests: it would read what a request needs fr
 | --- | --- |
 | `blackboards` | One row per blackboard: status, outcome, wall clock limit, idle limit |
 | `regions` | The named regions of a blackboard and their kind |
-| `registers` | The current value and version of each register |
+| `premises` | The current value and version of each premise |
 | `contributions` | Every contribution, with its sequence number and region |
 | `agents` | Each registered agent: callback address, level subscriptions, write permissions |
 | `notifications` | Every notification issued, delivered or not, acknowledged or not |
 | `audit` | Every event, in the order each occurred |
 
-Two columns carry the model's reconciliation rules. `contributions.sequence` is taken by incrementing a counter row inside the writing transaction, not from a database sequence: a sequence does not roll back, and a gap is a hole in a record whose numbers are addresses. `registers.version` makes a register write a compare and set, where an update matching no row is the conflict the model returns. The shipped adapters already work this way; see [Storage](../concepts/storage.md).
+Two columns carry the model's reconciliation rules. `contributions.sequence` is taken by incrementing a counter row inside the writing transaction, not from a database sequence: a sequence does not roll back, and a gap is a hole in a record whose numbers are addresses. `premises.version` makes a premise write a compare and set, where an update matching no row is the conflict the model returns. The shipped adapters already work this way; see [Storage](../concepts/storage.md).
 
 ## The HTTP surface
 
 | Call | From | Purpose |
 | --- | --- | --- |
 | `POST /blackboards` | Any caller | Create a blackboard |
-| `GET /blackboards/{id}` | Anyone | Read regions, register values, agents, sequence |
+| `GET /blackboards/{id}` | Anyone | Read regions, premise values, agents, sequence |
 | `GET /blackboards/{id}?from=N` | Anyone | Everything written after sequence N |
 | `GET /blackboards/{id}?levels=a,b` | Anyone | Those levels in full |
-| `POST /blackboards/{id}/agents` | An agent | Register or re-register |
+| `POST /blackboards/{id}/agents` | An agent | Premise or re-premise |
 | `POST /blackboards/{id}/writes` | An agent or any component | Contribute, acknowledge, or both |
-| `POST /blackboards/{id}/registers/{name}` | An agent or any component | Replace a register value under its version |
+| `POST /blackboards/{id}/premises/{name}` | An agent or any component | Replace a premise value under its version |
 | `POST /blackboards/{id}/close` | Any caller | End the blackboard |
 | `POST {callback_url}` | The service | Notify one agent |
 
@@ -62,13 +62,13 @@ POST /blackboards
 {
   "name": "incident-4471",
   "regions": [
-    {"name": "service",     "kind": "register"},
-    {"name": "window",      "kind": "register"},
-    {"name": "namespace",   "kind": "register"},
+    {"name": "service",     "kind": "premise"},
+    {"name": "window",      "kind": "premise"},
+    {"name": "namespace",   "kind": "premise"},
     {"name": "application", "kind": "level"},
     {"name": "platform",    "kind": "level"}
   ],
-  "seed": {
+  "premises": {
     "service":   "checkout-api",
     "window":    ["2026-08-20T09:00Z", "2026-08-20T09:40Z"],
     "namespace": ["prod-checkout"]
@@ -80,7 +80,7 @@ POST /blackboards
 
 The caller declares the regions it wants. There are no preset kinds of blackboard and no stored configuration.
 
-The seed writes every declared register once. A seed naming a register that was not declared, or omitting one that was, is refused.
+The opening values write every declared premise once. A body naming a premise that was not declared, or omitting one that was, is refused.
 
 No agent is named, because an agent registers itself and cannot be known at this moment.
 
@@ -88,14 +88,14 @@ No agent is named, because an agent registers itself and cannot be known at this
 | --- | --- |
 | `blackboards` | 1 |
 | `regions` | 5 |
-| `registers` | 3, each at version 1 |
+| `premises` | 3, each at version 1 |
 | `audit` | 3 |
 
 Nothing is notified, because no agent exists.
 
 ## Step 2. An agent registers
 
-An agent reads the blackboard to learn which regions exist, then registers.
+An agent reads the blackboard to learn which regions exist, then premises.
 
 ```http
 POST /blackboards/incident-4471/agents
@@ -107,11 +107,11 @@ POST /blackboards/incident-4471/agents
 }
 ```
 
-`subscribes_to` names the regions this agent wants to hear about, of either kind. Omitting it subscribes the agent to every register, which is the common case, since a register holds a premise of the case and most agents compute from all of them. An agent that reads only some of the premises names those, and is not woken for the others.
+`subscribes_to` names the regions this agent wants to hear about, of either kind. Omitting it subscribes the agent to every premise, which is the common case, since a premise holds a premise of the case and most agents compute from all of them. An agent that reads only some of the premises names those, and is not woken for the others.
 
 `writes_to` names the levels the agent may write to. It is a permission rather than a subscription, so subscribing to three regions and writing to one is ordinary.
 
-A name already registered updates that row rather than failing, because a pod restart re-registers. Anything outstanding for that agent is delivered again to the address it just supplied.
+A name already registered updates that row rather than failing, because a pod restart re-premises. Anything outstanding for that agent is delivered again to the address it just supplied.
 
 Registration names a region that was not declared, or reaches a closed blackboard, and is refused.
 
@@ -167,7 +167,7 @@ A write is refused when the blackboard has closed, when the level is outside the
 
 An accepted write to a level notifies every agent subscribed to that level except the agent that wrote it.
 
-A register is replaced through its own call, naming the version it expects to replace, and a write naming a version other than the current one fails and returns the current one. An accepted register write notifies every agent except the writer.
+A premise is replaced through its own call, naming the version it expects to replace, and a write naming a version other than the current one fails and returns the current one. An accepted premise write notifies every agent except the writer.
 
 ## Step 5. The blackboard closes
 
@@ -177,13 +177,13 @@ A register is replaced through its own call, naming the version it expects to re
 | The wall clock limit passed | `WallClockExpired` |
 | Nothing happened for the idle limit | `Settled` |
 
-The idle limit measures silence, meaning the time since the last write, register write, registration, or acknowledgment. A read does not disturb it, so an agent polling the board cannot hold a blackboard open indefinitely.
+The idle limit measures silence, meaning the time since the last write, premise write, registration, or acknowledgment. A read does not disturb it, so an agent polling the board cannot hold a blackboard open indefinitely.
 
-A blackboard is not closed because nothing is outstanding at some instant. Agents are idle between notifications and register at different times, so an instant of quiet is not the end of the work. Sustained silence is.
+A blackboard is not closed because nothing is outstanding at some instant. Agents are idle between notifications and premise at different times, so an instant of quiet is not the end of the work. Sustained silence is.
 
 Every outcome carries the agents that did not finish, meaning those with an unacknowledged notification and those recorded unreachable. Why a blackboard ended and who failed to finish are separate facts, and a blackboard can settle normally while one agent never returned. A reader needs both, because a region nobody examined and a region examined with nothing in it are different states.
 
-After closing, reads continue to work. Writes, register writes, and registrations are refused.
+After closing, reads continue to work. Writes, premise writes, and registrations are refused.
 
 ## The sweep
 

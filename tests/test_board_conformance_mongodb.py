@@ -14,7 +14,7 @@ from uuid import uuid4
 import pytest
 from conformance import BoardConformance, SharedStoreConformance
 
-from blackboard import BoardStore, Conflict, Level, MongoBoard, Register
+from blackboard import BoardStore, Conflict, Level, MongoBoard, Premise
 
 URI = os.environ.get("BLACKBOARD_TEST_MONGODB_URI")
 
@@ -70,13 +70,13 @@ def test_a_run_survives_the_process_that_made_it(database: Any) -> None:
     board_id = str(uuid4())
     first = MongoBoard(database, board_id=board_id)
     first.declare(Level("platform"))
-    first.declare(Register("window"))
+    first.declare(Premise("window"))
     first.set("window", ["t1", "t2"], expected_version=0)
     first.append("platform", {"findings": ["oom"]})
 
     # A second adapter over the same database is what another pod holds.
     second = MongoBoard(database, board_id=board_id)
-    assert second.read_register("window").value == ["t1", "t2"]
+    assert second.read_premise("window").value == ["t1", "t2"]
     assert [c.content for c in second.read_level("platform")] == [{"findings": ["oom"]}]
     assert second.append("platform", "later") == 3
 
@@ -84,7 +84,7 @@ def test_a_run_survives_the_process_that_made_it(database: Any) -> None:
 def test_a_conflict_takes_no_sequence_number(database: Any) -> None:
     board = MongoBoard(database, board_id=str(uuid4()))
     board.declare(Level("platform"))
-    board.declare(Register("window"))
+    board.declare(Premise("window"))
     board.set("window", "w1", expected_version=0)
     assert board.set("window", "w2", expected_version=0) == Conflict(current_version=1)
     # The number the conflicting write took went back, so the next write

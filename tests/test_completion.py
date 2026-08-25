@@ -12,7 +12,7 @@ from blackboard import (
     Level,
     ManualClock,
     Notification,
-    Register,
+    Premise,
     Rejected,
     RejectionCause,
     RunClosed,
@@ -55,7 +55,7 @@ def declaration(name: str, notify: object) -> Agent:
 
 def make_control(clock: ManualClock, **kwargs: object) -> Control:
     return Control(
-        regions=[Level("application"), Register("window")],
+        regions=[Level("application"), Premise("window")],
         limits=limits(),
         clock=clock,
         board=InMemoryBoard(),
@@ -100,7 +100,7 @@ class TestSilence:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock)
-        control.set_register("operator", "window", "w", expected_version=0)
+        control.set_premise("operator", "window", "w", expected_version=0)
         control.register_agent(declaration("ocp", recorder))
         # The agent never acknowledges. Nothing but the idle limit is
         # measuring anything, so that alone closes the run.
@@ -116,7 +116,7 @@ class TestSilence:
 
         control = make_control(clock)
         holder.append(control)
-        control.set_register("operator", "window", "w", expected_version=0)
+        control.set_premise("operator", "window", "w", expected_version=0)
         control.register_agent(declaration("ocp", ack_at_once))
         clock.advance(IDLE)
         assert control.outcome() == Settled()
@@ -158,7 +158,7 @@ class TestWallClock:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, termination_predicate=keep_open)
-        control.set_register("operator", "window", "w", expected_version=0)
+        control.set_premise("operator", "window", "w", expected_version=0)
         control.register_agent(declaration("ocp", recorder))
         clock.advance(timedelta(hours=1))
         assert control.outcome() == WallClockExpired(unfinished=frozenset({"ocp"}))
@@ -178,7 +178,7 @@ class TestAbortAndAfterClose:
     ) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
-        control.set_register("operator", "window", "w", expected_version=0)
+        control.set_premise("operator", "window", "w", expected_version=0)
         control.abort("stopped")
         assert control.write("ocp", "application", "late") == Rejected(
             cause=RejectionCause.RUN_CLOSED, reason="the run has closed"
@@ -187,7 +187,7 @@ class TestAbortAndAfterClose:
             control.declare(Level("change"))
         with pytest.raises(RunClosedError):
             control.register_agent(declaration("late", Recorder()))
-        assert control.reader.read_register("window").value == "w"
+        assert control.reader.read_premise("window").value == "w"
         assert any(isinstance(e, RunClosed) for e in control.read_audit())
 
     def test_the_idle_timer_does_not_fire_after_close(self) -> None:

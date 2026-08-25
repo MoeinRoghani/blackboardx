@@ -1,7 +1,7 @@
 """The board stores contributions and decides nothing about them.
 
 Writes go to declared regions of two kinds. A level accumulates contributions
-in arrival order. A register holds one current value under a version number,
+in arrival order. A premise holds one current value under a version number,
 and a write naming a version other than the current one fails. One counter
 orders every write across all regions, and reads are open to any caller.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
+import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -41,11 +42,11 @@ class DuplicateRegionError(BlackboardError):
 
 
 class RegionKindError(BlackboardError):
-    """An operation that takes a level named a register, or the reverse."""
+    """An operation that takes a level named a premise, or the reverse."""
 
 
-class UnsetRegisterError(BlackboardError):
-    """A register was read before any write gave it a value."""
+class UnsetPremiseError(BlackboardError):
+    """A premise was read before any write gave it a value."""
 
 
 @dataclass(frozen=True)
@@ -56,11 +57,11 @@ class Level:
 
 
 @dataclass(frozen=True)
-class Register:
+class Premise:
     """A declaration of a region that holds one current value under a version.
 
     The control component reads the batch window when a change to this
-    register lands, to schedule its notification. The board ignores it.
+    premise lands, to schedule its notification. The board ignores it.
     """
 
     name: str
@@ -75,7 +76,7 @@ class Register:
 class Written:
     """A write the board sequenced, at the sequence number it received.
 
-    ``version`` is the register's new revision count. A level write leaves
+    ``version`` is the premise's new revision count. A level write leaves
     it ``None``, because a level holds no version to replace.
     """
 
@@ -85,7 +86,7 @@ class Written:
 
 @dataclass(frozen=True)
 class Conflict:
-    """A register write that failed because the version it named is not current."""
+    """A premise write that failed because the version it named is not current."""
 
     current_version: int
 
@@ -99,8 +100,8 @@ class Contribution:
 
 
 @dataclass(frozen=True)
-class RegisterState:
-    """The current value of a register and the version its write produced."""
+class PremiseState:
+    """The current value of a premise and the version its write produced."""
 
     value: object
     version: int
@@ -133,31 +134,31 @@ class InMemoryBoard:
     sequence numbers.
     """
 
-    def __init__(self, regions: Iterable[Level | Register] = ()) -> None:
+    def __init__(self, regions: Iterable[Level | Premise] = ()) -> None:
         self._lock = threading.Lock()
         self._sequence = 0
         self._levels: dict[str, list[Contribution]] = {}
-        self._registers: dict[str, RegisterState | None] = {}
+        self._premises: dict[str, PremiseState | None] = {}
         self._changes: list[BoardChange] = []
         for region in regions:
             self.declare(region)
 
-    def declare(self, region: Level | Register) -> None:
+    def declare(self, region: Level | Premise) -> None:
         """Creates a region. A name already declared, of either kind, is refused."""
-        if not isinstance(region, Level | Register):
+        if not isinstance(region, Level | Premise):
             raise TypeError(
-                "a region declaration is a Level or a Register, "
+                "a region declaration is a Level or a Premise, "
                 f"not {type(region).__name__}"
             )
         with self._lock:
-            if region.name in self._levels or region.name in self._registers:
+            if region.name in self._levels or region.name in self._premises:
                 raise DuplicateRegionError(
                     f"a region named {region.name!r} is already declared"
                 )
             if isinstance(region, Level):
                 self._levels[region.name] = []
             else:
-                self._registers[region.name] = None
+                self._premises[region.name] = None
 
     def append(self, level: str, content: object) -> int:
         """Adds one contribution to a level and returns its sequence number."""
@@ -172,27 +173,27 @@ class InMemoryBoard:
             return self._sequence
 
     def set(
-        self, register: str, value: object, expected_version: int
+        self, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
-        """Replaces a register's value under the version the caller expects.
+        """Replaces a premise's value under the version the caller expects.
 
-        A write naming any version other than the register's current one
+        A write naming any version other than the premise's current one
         fails: it returns a conflict carrying the current version, takes no
-        sequence number, and leaves the register unchanged. A register never
+        sequence number, and leaves the premise unchanged. A premise never
         written has version 0.
         """
         with self._lock:
-            state = self._register_state(register)
+            state = self._premise_state(premise)
             current_version = 0 if state is None else state.version
             carried = _as_json(value)
             if expected_version != current_version:
                 return Conflict(current_version=current_version)
             self._sequence += 1
-            self._registers[register] = RegisterState(
+            self._premises[premise] = PremiseState(
                 value=carried, version=current_version + 1
             )
             self._changes.append(
-                BoardChange(sequence=self._sequence, region=register, content=carried)
+                BoardChange(sequence=self._sequence, region=premise, content=carried)
             )
             return Written(sequence=self._sequence, version=current_version + 1)
 
@@ -202,15 +203,25 @@ class InMemoryBoard:
             contributions = self._level_contributions(level)
             return [c for c in contributions if c.sequence >= from_sequence]
 
-    def read_register(self, register: str) -> RegisterState:
-        """Returns a register's current value and version."""
+    def read_premise(self, premise: str) -> PremiseState:
+        """Returns a premise's current value and version."""
         with self._lock:
-            state = self._register_state(register)
+            state = self._premise_state(premise)
             if state is None:
-                raise UnsetRegisterError(
-                    f"the register {register!r} has no value until one is written"
+                raise UnsetPremiseError(
+                    f"the premise {premise!r} has no value until one is written"
                 )
             return state
+
+    def read_register(self, register: str) -> PremiseState:
+        """Deprecated since 0.5.0. Use ``read_premise``; removed in 0.6.0."""
+        warnings.warn(
+            "read_register is renamed read_premise, and the old name is "
+            "removed in 0.6.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.read_premise(register)
 
     def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
         """Returns every write to every region, in sequence order, from the bound."""
@@ -223,18 +234,18 @@ class InMemoryBoard:
         # Callers hold self._lock.
         if name in self._levels:
             return self._levels[name]
-        if name in self._registers:
+        if name in self._premises:
             raise RegionKindError(
-                f"{name!r} names a register, and this operation takes a level"
+                f"{name!r} names a premise, and this operation takes a level"
             )
         raise UndeclaredRegionError(f"no region is declared with the name {name!r}")
 
-    def _register_state(self, name: str) -> RegisterState | None:
+    def _premise_state(self, name: str) -> PremiseState | None:
         # Callers hold self._lock.
-        if name in self._registers:
-            return self._registers[name]
+        if name in self._premises:
+            return self._premises[name]
         if name in self._levels:
             raise RegionKindError(
-                f"{name!r} names a level, and this operation takes a register"
+                f"{name!r} names a level, and this operation takes a premise"
             )
         raise UndeclaredRegionError(f"no region is declared with the name {name!r}")

@@ -1,6 +1,6 @@
 """Creating a model.
 
-Five things configure a model: region declarations, seed register values,
+Five things configure a model: region declarations, opening premise values,
 an admission rule, a termination predicate, and run limits. A sixth
 argument, the board, says where the record is kept rather than configuring
 what the model is. The clock is dependency injection rather than
@@ -21,7 +21,7 @@ from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 
-from blackboard._board import Level, Register
+from blackboard._board import Level, Premise
 from blackboard._clock import Clock, SystemClock
 from blackboard._control import (
     AdmissionRule,
@@ -32,6 +32,7 @@ from blackboard._control import (
     RunLimits,
     TerminationPredicate,
     _resolve_limits,
+    _resolve_premises,
 )
 
 
@@ -50,14 +51,15 @@ class Model:
 
 def create_model(
     *,
-    regions: Iterable[Level | Register],
-    seed: Mapping[str, object],
+    regions: Iterable[Level | Premise],
+    premises: Mapping[str, object] | None = None,
     admission_rule: AdmissionRule | None = None,
     termination_predicate: TerminationPredicate | None = None,
     limits: RunLimits | None = None,
     board: BoardStore,
     clock: Clock | None = None,
     budgets: RunLimits | None = None,
+    seed: Mapping[str, object] | None = None,
 ) -> Model:
     """Opens a run and returns the model.
 
@@ -69,14 +71,20 @@ def create_model(
     model. ``SqliteBoard`` serves one machine; an adapter against your own
     database serves a deployment.
 
-    The seed writes every declared register once, bypassing admission. No
-    agent is registered yet, so the seed wakes nobody; an agent registering
+    ``premises`` gives every declared premise its opening value, naming
+    each one exactly once. Those writes bypass admission, because they are
+    the application's own input rather than a proposal from a writer. The
+    ``seed`` keyword is the former name for it, accepted for one release.
+
+    No agent is registered yet, so opening the premises wakes nobody; an
+    agent registering
     afterwards is woken then. With no admission rule a write is accepted
     subject to the region existing, the limits holding, and the run being
     open; with no termination predicate the run closes when nothing has
     happened for the idle limit; with no clock the operating system clock
     serves.
     """
+    opening = _resolve_premises(premises, seed)
     control = Control(
         regions=regions,
         admission_rule=admission_rule,
@@ -86,7 +94,7 @@ def create_model(
         clock=clock if clock is not None else SystemClock(),
     )
     # The wall clock can expire while the run is opening, in which case the
-    # model returns already closed and the seed never lands.
+    # model returns already closed and no premise receives its value.
     with suppress(RunClosedError):
-        control._seed(dict(seed))
+        control._open_premises(dict(opening))
     return Model(reader=control.reader, control=control)

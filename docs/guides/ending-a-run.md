@@ -10,7 +10,7 @@ The usual case. Nothing has happened for the idle limit.
 RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=10))
 ```
 
-Every write, register write, registration and acknowledgment pushes the deadline out. Reads do not, so an agent polling the board cannot hold a run open.
+Every write, premise write, registration and acknowledgment pushes the deadline out. Reads do not, so an agent polling the board cannot hold a run open.
 
 Choose the idle limit by how long an agent's slowest step takes. Shorter than that and a run closes while an agent is still thinking; much longer and a finished run sits open.
 
