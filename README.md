@@ -1,6 +1,12 @@
 # blackboardx
 
-A group of agents works on one problem. Each writes what it finds into a single shared record, every agent can read all of it, and no agent calls another; the record is the only channel between them. The blackboard literature calls a system skeletal when it supplies this structure with no domain knowledge inside, so that an application system is built on it by adding knowledge and control. `blackboardx` is skeletal in that sense. It supplies the board and the control component; an application creates a model by supplying its regions, their opening premise values, an admission rule, a termination predicate, and limits, and its agents register themselves into it.
+A skeletal blackboard system for Python.
+
+The blackboard architecture came out of HEARSAY-II, a speech understanding system built at Carnegie Mellon in the early 1970s under a DARPA programme. Its difficulty was that a stretch of speech admits several readings, and the knowledge that settles which one is right arrives in unrelated kinds: acoustic, lexical, syntactic, semantic. Which kind will settle a given stretch is not known until that stretch is examined, so the system could not be written as procedures calling one another, because a call fixes what runs next. HEARSAY-II gave its specialists a shared structure to work on instead. Each reads what bears on its own expertise and writes back what it concludes, and none of them calls another.
+
+Later systems kept that arrangement and replaced the knowledge, HASP interpreting sonar where HEARSAY-II interpreted speech. H. Penny Nii, surveying blackboard systems in AI Magazine in 1986, named a system *skeletal* when it supplies the components alone and leaves the knowledge and the control to whoever builds on it.
+
+`blackboardx` is skeletal in that sense. It supplies the board, which stores what agents write and puts every write in one order, and the control component, which determines who is notified of a change, whether a write is admitted, and when the run ends. An application supplies its regions, their opening premise values, an admission rule, a termination predicate, and limits, and its agents register themselves into it.
 
 The distribution name is `blackboardx`; the import name is `blackboard`. The documentation, including the API reference, is at <https://moeinroghani.github.io/blackboardx/>.
 
