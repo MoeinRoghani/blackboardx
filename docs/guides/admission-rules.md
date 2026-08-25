@@ -45,7 +45,7 @@ The reason reaches the writing agent, so write it for whoever has to fix the cal
 
 ## Reading the board
 
-The rule receives a read handle. Reading contributions is permitted here, because the limit against reading applies to the board and not to a rule the application wrote.
+The rule receives a read handle, so it can refuse a write for what the board already holds rather than for the write alone.
 
 ```python
 def refuse_duplicates(proposed, reader):
