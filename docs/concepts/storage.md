@@ -1,6 +1,6 @@
 # Storage
 
-The board is a record, and a record has to be somewhere a reader can find it. Which database holds it is the application's decision, so `create_model` takes the board as a required argument and the library defaults to nothing.
+The board is a record, and a record has to be somewhere a reader can find it. Which database holds it is the application's decision, so `create_model` takes the board as a required argument and supplies no default.
 
 ## What to pass
 
@@ -18,7 +18,7 @@ pip install 'blackboardx[postgres]'
 pip install 'blackboardx[mongodb]'
 ```
 
-Naming it without the extra installed raises an `ImportError` saying which extra supplies it.
+Naming a board whose extra is not installed raises an `ImportError` saying which extra supplies it.
 
 ## Local
 
@@ -47,7 +47,7 @@ board.create_schema()
 model = create_model(..., board=board)
 ```
 
-The adapter is handed the pool and neither opens nor closes it, so pooling, credentials, failover, and migrations stay where an operator configures them. A script with no pool to pass can open one for the duration of a block:
+Pooling, credentials, failover, and migrations stay where an operator configures them. A script with no pool to pass can open one for the duration of a block:
 
 ```python
 with PostgresBoard.from_dsn("postgresql://...", board_id="incident-4471") as board:
@@ -62,6 +62,8 @@ Agents deployed as separate services each hold their own connection to the same 
 
 ```python
 from pymongo import MongoClient
+
+from blackboard import MongoBoard, create_model
 
 # The client is the application's own, and the adapter neither opens nor
 # closes it.
@@ -80,13 +82,22 @@ Content is stored as a document rather than as encoded text, so the record is qu
 db.blackboard_contributions.find({board_id: "incident-4471", "content.finding": "oom"})
 ```
 
+A script with no client to pass can open one for the duration of a block, as on Postgres:
+
+```python
+with MongoBoard.from_uri("mongodb://...", "incidents") as board:
+    ...
+```
+
 `MongoBoard` requires a replica set or a sharded cluster. Every write spans two documents, which on MongoDB is a session transaction, and only a replica set runs one. Production MongoDB is a replica set and Atlas is always one. Against a standalone server the first write raises and says why, rather than running the record under weaker rules than it needs.
 
-### What holds across processes
+## What holds across processes
 
 Two guarantees are what make a board a board, and in a deployment they have to hold between processes rather than merely between the threads of one.
 
-**The sequence is gapless.** Every write takes its number by incrementing one counter inside the transaction that carries the write, so a number a rolled-back write took is returned rather than skipped. On Postgres the row lock that increment acquires also serialises writes to one board. A Postgres sequence would be faster and would leave gaps, and a gap is a hole in a record whose numbers are addresses.
+**The sequence is gapless.** Every write takes its number by incrementing one counter inside the transaction that carries the write, so a number a rolled-back write took is returned rather than skipped. A Postgres sequence would be faster and would leave gaps, and a gap is a hole in a record whose numbers are addresses.
+
+The two servers reach that differently. Postgres blocks a second writer on the row lock the increment acquires and holds to commit, so writes to one board serialise. MongoDB does not block: it aborts one of two contending transactions and labels the failure transient, so the adapter runs the write again through the driver's retrying transaction, and a register write puts its version guard before the counter so a losing write never contends for it at all.
 
 **A register write is a conditional update on the version.** Two writers naming the same version produce one winner and one `Conflict`, whichever process reaches the record first, and the conflict takes no sequence number.
 
