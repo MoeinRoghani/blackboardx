@@ -55,3 +55,14 @@ class TestSqliteHoldsManyBoards(SharedStoreConformance):
         yield first, second
         first.close()
         second.close()
+
+    @pytest.fixture
+    def same_board_twice(
+        self, tmp_path: Path
+    ) -> Iterator[tuple[BoardStore, BoardStore]]:
+        path = str(tmp_path / "board.sqlite3")
+        first = SqliteBoard(path, board_id="incident-1")
+        second = SqliteBoard(path, board_id="incident-1")
+        yield first, second
+        first.close()
+        second.close()

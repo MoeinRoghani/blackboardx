@@ -198,6 +198,33 @@ class BoardConformance:
         (contribution,) = ready.read_level("application")
         assert contribution.content == content
 
+    def test_content_that_json_cannot_carry_is_refused(self, ready: BoardStore) -> None:
+        with pytest.raises(TypeError):
+            ready.append("application", {"a set"})
+        with pytest.raises(TypeError):
+            ready.set("window", {"a set"}, expected_version=0)
+
+    def test_refused_content_takes_no_sequence_number(self, ready: BoardStore) -> None:
+        with pytest.raises(TypeError):
+            ready.append("application", {"a set"})
+        assert ready.append("application", "carried") == 1
+
+    def test_a_tuple_comes_back_as_a_list(self, ready: BoardStore) -> None:
+        ready.append("application", ("a", "b"))
+        ready.set("window", ("c", "d"), expected_version=0)
+        (contribution,) = ready.read_level("application")
+        assert contribution.content == ["a", "b"]
+        assert ready.read_register("window").value == ["c", "d"]
+
+    def test_content_comes_back_detached_from_what_the_caller_wrote(
+        self, ready: BoardStore
+    ) -> None:
+        content = {"findings": ["oom"]}
+        ready.append("application", content)
+        content["findings"].append("added after the write")
+        (contribution,) = ready.read_level("application")
+        assert contribution.content == {"findings": ["oom"]}
+
     # Concurrency
 
     def test_concurrent_appends_take_distinct_sequences(
@@ -306,6 +333,33 @@ class SharedStoreConformance:
         assert isinstance(second.set("window", "second", expected_version=0), Written)
         assert first.read_register("window").value == "first"
         assert second.read_register("window").value == "second"
+
+    @pytest.fixture
+    def same_board_twice(self) -> tuple[BoardStore, BoardStore]:
+        raise NotImplementedError("supply a same_board_twice fixture")
+
+    def test_a_second_handle_on_one_board_reads_what_the_first_wrote(
+        self, same_board_twice: tuple[BoardStore, BoardStore]
+    ) -> None:
+        first, second = same_board_twice
+        first.declare(Level("application"))
+        first.append("application", "from the first")
+        assert [c.content for c in second.read_level("application")] == [
+            "from the first"
+        ]
+
+    def test_a_name_one_handle_declared_is_refused_to_the_other(
+        self, same_board_twice: tuple[BoardStore, BoardStore]
+    ) -> None:
+        first, second = same_board_twice
+        first.declare(Level("application"))
+        # Two handles on one board are two processes. Neither an in-process
+        # lock nor a read this handle already made can catch this, so the
+        # refusal rests on the store, and it has to be the same refusal.
+        with pytest.raises(DuplicateRegionError):
+            second.declare(Level("application"))
+        with pytest.raises(DuplicateRegionError):
+            second.declare(Register("application"))
 
     def test_the_whole_board_read_names_only_this_board_s_writes(
         self, two_boards: tuple[BoardStore, BoardStore]
