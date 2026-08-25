@@ -77,12 +77,11 @@ def create_model(
     ``seed`` keyword is the former name for it, accepted for one release.
 
     No agent is registered yet, so opening the premises wakes nobody; an
-    agent registering
-    afterwards is woken then. With no admission rule a write is accepted
-    subject to the region existing, the limits holding, and the run being
-    open; with no termination predicate the run closes when nothing has
-    happened for the idle limit; with no clock the operating system clock
-    serves.
+    agent registering afterwards is woken then. With no admission rule a
+    write is accepted subject to the region existing, the limits holding,
+    and the run being open; with no termination predicate the run closes
+    when nothing has happened for the idle limit; with no clock the
+    operating system clock serves.
     """
     opening = _resolve_premises(premises, seed)
     control = Control(
