@@ -7,7 +7,6 @@ import pytest
 
 from blackboard import (
     Accept,
-    Accepted,
     AdmissionRule,
     BoardReader,
     Conflict,
@@ -22,7 +21,7 @@ from blackboard import (
     Reject,
     Rejected,
     RejectionCause,
-    RunBudgets,
+    RunLimits,
     TerminationDecision,
     WriteAccepted,
     WriteRejected,
@@ -32,7 +31,7 @@ from blackboard._control import Control
 
 START = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
 
-BUDGETS = RunBudgets(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
+LIMITS = RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
 def keep_open(reader: BoardReader) -> TerminationDecision:
@@ -44,7 +43,7 @@ def make_control(rule: AdmissionRule | None = None) -> Control:
         regions=[Level("application"), Register("window")],
         admission_rule=rule,
         termination_predicate=keep_open,
-        budgets=BUDGETS,
+        limits=LIMITS,
         clock=ManualClock(start=START),
         board=InMemoryBoard(),
     )
@@ -75,7 +74,7 @@ class TestAdmission:
     def test_an_accepted_write_is_sequenced_and_audited(self) -> None:
         control = make_control()
         result = control.write("dynatrace", "application", {"finding": "f1"})
-        assert result == Accepted(sequence=1)
+        assert result == Written(sequence=1)
         (contribution,) = control.reader.read_level("application")
         assert contribution.content == {"finding": "f1"}
         assert control.read_audit() == [
@@ -86,7 +85,7 @@ class TestAdmission:
 
     def test_no_admission_rule_accepts_every_write(self) -> None:
         control = make_control()
-        assert control.write("a", "application", "one") == Accepted(sequence=1)
+        assert control.write("a", "application", "one") == Written(sequence=1)
         assert isinstance(
             control.set_register("operator", "window", "w", expected_version=0),
             Written,
@@ -101,7 +100,7 @@ class TestAdmission:
             return Accept()
 
         control = make_control(rule)
-        assert control.write("a", "application", "one") == Accepted(sequence=1)
+        assert control.write("a", "application", "one") == Written(sequence=1)
         assert control.write("a", "application", "one") == Rejected(
             cause=RejectionCause.ADMISSION, reason="already on the board"
         )
@@ -218,7 +217,7 @@ class TestAudit:
             regions=[Level("application")],
             admission_rule=None,
             termination_predicate=keep_open,
-            budgets=BUDGETS,
+            limits=LIMITS,
             clock=clock,
             board=InMemoryBoard(),
         )
@@ -258,3 +257,26 @@ class TestAudit:
         ]
         assert sequences == sorted(sequences)
         assert len(sequences) == 400
+
+
+class TestWhoWrites:
+    def test_a_writer_that_never_registered_may_still_write(self) -> None:
+        control = make_control()
+        # Nothing named this has registered. The parameter is a writer, not
+        # an agent, and the audit records it under that name.
+        assert control.write("an-operator", "application", "x") == Written(sequence=1)
+        (event,) = control.read_audit()
+        assert isinstance(event, WriteAccepted)
+        assert event.writer == "an-operator"
+
+    def test_the_admission_rule_sees_the_same_writer_on_both_kinds(self) -> None:
+        seen: list[str] = []
+
+        def rule(proposed: ProposedWrite, reader: BoardReader) -> Accept | Reject:
+            seen.append(proposed.writer)
+            return Accept()
+
+        control = make_control(rule)
+        control.write("ocp", "application", "one")
+        control.set_register("ocp", "window", "w", expected_version=0)
+        assert seen == ["ocp", "ocp"]

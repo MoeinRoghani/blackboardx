@@ -3,7 +3,6 @@
 from datetime import UTC, datetime, timedelta
 
 from blackboard import (
-    Accepted,
     BoardChange,
     BoardReader,
     BoardStore,
@@ -14,14 +13,14 @@ from blackboard import (
     ManualClock,
     Register,
     RegisterState,
-    RunBudgets,
+    RunLimits,
     TerminationDecision,
     Written,
     create_model,
 )
 
 START = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
-BUDGETS = RunBudgets(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
+LIMITS = RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
 def keep_open(reader: BoardReader) -> TerminationDecision:
@@ -69,12 +68,12 @@ def test_the_control_component_drives_the_supplied_board() -> None:
     model = create_model(
         regions=[Level("platform"), Register("window")],
         seed={"window": "w"},
-        budgets=BUDGETS,
+        limits=LIMITS,
         termination_predicate=keep_open,
         board=store,
         clock=ManualClock(start=START),
     )
-    assert model.control.write("ocp", "platform", "finding") == Accepted(sequence=2)
+    assert model.control.write("ocp", "platform", "finding") == Written(sequence=2)
     assert store.calls == [
         "declare:platform",
         "declare:window",
@@ -87,10 +86,10 @@ def test_without_one_the_in_memory_board_is_used() -> None:
     model = create_model(
         regions=[Level("platform")],
         seed={},
-        budgets=BUDGETS,
+        limits=LIMITS,
         termination_predicate=keep_open,
         clock=ManualClock(start=START),
         board=InMemoryBoard(),
     )
-    assert model.control.write("ocp", "platform", "finding") == Accepted(sequence=1)
+    assert model.control.write("ocp", "platform", "finding") == Written(sequence=1)
     assert [c.content for c in model.reader.read_level("platform")] == ["finding"]

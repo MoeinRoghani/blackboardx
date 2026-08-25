@@ -32,8 +32,8 @@ Every term this project uses, and what it means here. A term is defined once, in
 
 | Term | Meaning |
 | --- | --- |
-| **Writer** | Whoever made a write. Usually an agent, and not necessarily one: an operator, a supervising component, or a scheduled job reaches a register the same way. |
-| **Write** | Putting content into a region. A level write adds a contribution; a register write replaces a value under its version. Both take a sequence number. |
+| **Writer** | Whoever made a write, named in every write call and every audit event. Usually an agent, and not necessarily one: an operator, a supervising component, or a scheduled job reaches a region the same way, and no write call checks that its writer registered. `agent` is used only where the caller must be registered, meaning the recipient of a notification and the caller of `ack`. |
+| **Write** | Putting content into a region. A level write adds a contribution; a register write replaces a value under its version. Both take a sequence number and both report `Written`, whose version is absent on a level write because a level has none. |
 | **Admission rule** | The application's function, called on every proposed write before the board sequences anything. It answers `Accept()` or `Reject(reason)`. |
 | **Seed** | The initial value of every register, written when the run opens. The seed is a write: it reaches the board and takes a sequence number. It bypasses admission, because it is the application's own input rather than a proposal from a writer. |
 | **Conflict** | A register write that named a version other than the current one. It changes nothing and takes no sequence number. |

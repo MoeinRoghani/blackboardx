@@ -12,7 +12,7 @@ model = create_model(
     seed={...},  # 2. the first value of every register
     admission_rule=rule,  # 3. optional; none accepts every write
     termination_predicate=done,  # 4. optional; none lets silence close the run
-    budgets=RunBudgets(...),  # 5. the two limits
+    limits=RunLimits(...),  # 5. the two limits
     board=SqliteBoard(...),  # where the record is kept
 )
 ```
@@ -42,7 +42,7 @@ Each carries `unfinished`, naming the agents still holding an unacknowledged not
 ## Time is the only bound
 
 ```python
-RunBudgets(wall_clock=timedelta(hours=1), idle=timedelta(minutes=10))
+RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=10))
 ```
 
 Nothing counts writes or notifications. A write is the cause of a notification and a notification is its effect, and limiting the effect would mean that past some count a change lands and nobody is told, while the run stays open and still accepts writes. A record whose changes reach nobody has stopped being shared, and it would stop silently.

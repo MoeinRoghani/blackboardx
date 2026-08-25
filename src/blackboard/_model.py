@@ -28,9 +28,10 @@ from blackboard._control import (
     BoardReader,
     BoardStore,
     Control,
-    RunBudgets,
     RunClosedError,
+    RunLimits,
     TerminationPredicate,
+    _resolve_limits,
 )
 
 
@@ -53,11 +54,15 @@ def create_model(
     seed: Mapping[str, object],
     admission_rule: AdmissionRule | None = None,
     termination_predicate: TerminationPredicate | None = None,
-    budgets: RunBudgets,
+    limits: RunLimits | None = None,
     board: BoardStore,
     clock: Clock | None = None,
+    budgets: RunLimits | None = None,
 ) -> Model:
     """Opens a run and returns the model.
+
+    ``limits`` carries the run's wall clock and idle durations. The
+    ``budgets`` keyword is the former name for it, accepted for one release.
 
     ``board`` says where the record is kept and has no default, because a
     run whose record no second process can read is not a shared solution
@@ -76,7 +81,7 @@ def create_model(
         regions=regions,
         admission_rule=admission_rule,
         termination_predicate=termination_predicate,
-        budgets=budgets,
+        limits=_resolve_limits(limits, budgets),
         board=board,
         clock=clock if clock is not None else SystemClock(),
     )

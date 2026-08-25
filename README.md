@@ -33,7 +33,7 @@ from blackboard import (
     Agent,
     Level,
     Register,
-    RunBudgets,
+    RunLimits,
     Settled,
     SqliteBoard,
     create_model,
@@ -44,7 +44,7 @@ notifications = []
 model = create_model(
     regions=[Level("platform"), Register("window")],
     seed={"window": ["2026-08-16T20:00", "2026-08-16T22:00"]},
-    budgets=RunBudgets(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
+    limits=RunLimits(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
     board=SqliteBoard("incident.sqlite3"),
 )
 

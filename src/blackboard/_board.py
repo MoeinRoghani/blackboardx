@@ -73,10 +73,14 @@ class Register:
 
 @dataclass(frozen=True)
 class Written:
-    """A register write the board sequenced, and the version it produced."""
+    """A write the board sequenced, at the sequence number it received.
+
+    ``version`` is the register's new revision count. A level write leaves
+    it ``None``, because a level holds no version to replace.
+    """
 
     sequence: int
-    version: int
+    version: int | None = None
 
 
 @dataclass(frozen=True)

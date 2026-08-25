@@ -34,6 +34,7 @@ concurrent duplicates rather than preventing them.
 from __future__ import annotations
 
 import threading
+import warnings
 from collections import deque
 from collections.abc import Callable, Iterable
 from contextlib import suppress
@@ -118,9 +119,20 @@ class BoardReader(Protocol):
 class ProposedContribution:
     """A level write as the admission rule sees it, before sequencing."""
 
-    agent: str
+    writer: str
     level: str
     content: object
+
+    @property
+    def agent(self) -> str:
+        """Deprecated since 0.5.0. Use ``writer``; removed in 0.6.0."""
+        warnings.warn(
+            "ProposedContribution.agent is renamed writer, and the old name "
+            "is removed in 0.6.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.writer
 
 
 @dataclass(frozen=True)
@@ -165,13 +177,6 @@ class RejectionCause(Enum):
     NOT_PERMITTED = "not_permitted"
     UNDECLARED_REGION = "undeclared_region"
     RUN_CLOSED = "run_closed"
-
-
-@dataclass(frozen=True)
-class Accepted:
-    """A write the control component admitted, with the sequence it received."""
-
-    sequence: int
 
 
 @dataclass(frozen=True)
@@ -294,7 +299,7 @@ TerminationPredicate: TypeAlias = Callable[["BoardReader"], TerminationDecision]
 
 
 @dataclass(frozen=True)
-class RunBudgets:
+class RunLimits:
     """The two limits on a run, both durations, both required.
 
     Time is the only bound. A count of writes limits the cause of a
@@ -402,6 +407,23 @@ def _subscribed(state: _AgentState, region: str, kind: _RegionKind) -> bool:
     return kind is _RegionKind.REGISTER
 
 
+def _resolve_limits(limits: RunLimits | None, budgets: RunLimits | None) -> RunLimits:
+    """Takes the run's limits from either keyword, warning on the old one."""
+    if budgets is not None:
+        warnings.warn(
+            "The budgets keyword is renamed limits, and RunBudgets is renamed "
+            "RunLimits. The old names are removed in 0.6.0.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        if limits is not None:
+            raise TypeError("pass limits, not both limits and budgets")
+        return budgets
+    if limits is None:
+        raise TypeError("create_model() and Control() require limits")
+    return limits
+
+
 def _accept_every_write(
     proposed: ProposedWrite, reader: BoardReader
 ) -> Accept | Reject:
@@ -428,10 +450,12 @@ class Control:
         regions: Iterable[Level | Register] = (),
         admission_rule: AdmissionRule | None = None,
         termination_predicate: TerminationPredicate | None = None,
-        budgets: RunBudgets,
+        limits: RunLimits | None = None,
         board: BoardStore,
         clock: Clock,
+        budgets: RunLimits | None = None,
     ) -> None:
+        resolved = _resolve_limits(limits, budgets)
         self._board: BoardStore = board
         self._clock = clock
         self._admission_rule = (
@@ -449,7 +473,7 @@ class Control:
         self._delivery_queue: deque[_Delivery] = deque()
         self._delivering = threading.local()
         self._termination_predicate = termination_predicate
-        self._budgets = budgets
+        self._limits = resolved
         self._outcome: RunOutcome | None = None
         self._wall_call: ScheduledCall | None = None
         self._idle_call: ScheduledCall | None = None
@@ -458,7 +482,7 @@ class Control:
         for region in regions:
             self.declare(region)
         self._wall_call = clock.call_at(
-            clock.now() + budgets.wall_clock, self._wall_clock_expired
+            clock.now() + resolved.wall_clock, self._wall_clock_expired
         )
 
     @property
@@ -531,34 +555,34 @@ class Control:
             return False
         return True
 
-    def write(self, agent: str, level: str, content: object) -> Accepted | Rejected:
+    def write(self, writer: str, level: str, content: object) -> Written | Rejected:
         """Runs one level write through admission and, if admitted, the board."""
-        refusal = self._refuse_region(agent, level, _RegionKind.LEVEL)
+        refusal = self._refuse_region(writer, level, _RegionKind.LEVEL)
         if refusal is not None:
             return refusal
         with self._lock:
-            writer_state = self._agents.get(agent)
+            writer_state = self._agents.get(writer)
             declared = (
                 None if writer_state is None else writer_state.declaration.writes_to
             )
             if declared is not None and level not in set(declared):
                 return self._reject_locked(
-                    agent,
+                    writer,
                     level,
                     RejectionCause.NOT_PERMITTED,
-                    f"{agent!r} may not write to {level!r}",
+                    f"{writer!r} may not write to {level!r}",
                 )
-        proposed = ProposedContribution(agent=agent, level=level, content=content)
+        proposed = ProposedContribution(writer=writer, level=level, content=content)
         verdict = self._admission_rule(proposed, self._board)
         deliveries: list[_Delivery] = []
-        result: Accepted | Rejected
+        result: Written | Rejected
         if isinstance(verdict, Reject):
             result = self._reject(
-                agent, level, RejectionCause.ADMISSION, verdict.reason
+                writer, level, RejectionCause.ADMISSION, verdict.reason
             )
         else:
             with self._lock:
-                gate = self._sequencing_gate_locked(agent, level)
+                gate = self._sequencing_gate_locked(writer, level)
                 if gate is not None:
                     result = gate
                 else:
@@ -567,13 +591,13 @@ class Control:
                     self._audit.append(
                         WriteAccepted(
                             at=self._clock.now(),
-                            writer=agent,
+                            writer=writer,
                             region=level,
                             sequence=sequence,
                         )
                     )
-                    deliveries = self._note_region_change(level, agent)
-                    result = Accepted(sequence=sequence)
+                    deliveries = self._note_region_change(level, writer)
+                    result = Written(sequence=sequence)
         self._deliver(deliveries)
         self._check_completion()
         return result
@@ -744,6 +768,7 @@ class Control:
             for register, value in seed.items():
                 result = self._board.set(register, value, expected_version=0)
                 assert isinstance(result, Written)  # a fresh register cannot conflict
+                assert result.version is not None  # a register write carries one
                 self._last_sequence = result.sequence
                 self._audit.append(
                     RegisterSeeded(
@@ -850,7 +875,7 @@ class Control:
             self._idle_call.cancel()
         self._idle_generation += 1
         self._idle_call = self._clock.call_at(
-            self._clock.now() + self._budgets.idle,
+            self._clock.now() + self._limits.idle,
             partial(self._idle_passed, self._idle_generation),
         )
 

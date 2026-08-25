@@ -7,7 +7,7 @@ Three things end a run, and each produces an outcome that names the agents still
 The usual case. Nothing has happened for the idle limit.
 
 ```python
-RunBudgets(wall_clock=timedelta(hours=1), idle=timedelta(minutes=10))
+RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=10))
 ```
 
 Every write, register write, registration and acknowledgment pushes the deadline out. Reads do not, so an agent polling the board cannot hold a run open.

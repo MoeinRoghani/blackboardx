@@ -15,9 +15,9 @@ from blackboard import (
     Register,
     Rejected,
     RejectionCause,
-    RunBudgets,
     RunClosed,
     RunClosedError,
+    RunLimits,
     Settled,
     TerminationDecision,
     WallClockExpired,
@@ -29,10 +29,10 @@ DEADLINE = timedelta(minutes=5)
 IDLE = timedelta(minutes=10)
 
 
-def budgets(
+def limits(
     wall_clock: timedelta = timedelta(hours=1), idle: timedelta = IDLE
-) -> RunBudgets:
-    return RunBudgets(wall_clock=wall_clock, idle=idle)
+) -> RunLimits:
+    return RunLimits(wall_clock=wall_clock, idle=idle)
 
 
 def keep_open(reader: BoardReader) -> TerminationDecision:
@@ -57,7 +57,7 @@ def declaration(name: str, notify: object) -> Agent:
 def make_control(clock: ManualClock, **kwargs: object) -> Control:
     return Control(
         regions=[Level("application"), Register("window")],
-        budgets=budgets(),
+        limits=limits(),
         clock=clock,
         board=InMemoryBoard(),
         **kwargs,  # type: ignore[arg-type]  # forwarded keyword arguments
@@ -67,9 +67,9 @@ def make_control(clock: ManualClock, **kwargs: object) -> Control:
 class TestLimits:
     def test_both_limits_are_positive(self) -> None:
         with pytest.raises(ValueError, match="wall clock"):
-            budgets(wall_clock=timedelta(0))
+            limits(wall_clock=timedelta(0))
         with pytest.raises(ValueError, match="idle"):
-            budgets(idle=timedelta(0))
+            limits(idle=timedelta(0))
 
 
 class TestSilence:
