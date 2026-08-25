@@ -1,17 +1,29 @@
 # The board
 
-The board stores contributions and decides nothing about them. It never reads what it stores, and that single limit determines everything else about it.
+The board holds what the agents write, gives every write a position in a single order, and hands any of it back to any reader.
+
+It never opens what it holds. A contribution's content belongs to the application that wrote it, and reading that content takes the expertise of the agent that produced it, which the board does not have.
 
 ## Why there are two kinds of region
 
-Reconciling two writes to one place means either keeping both or keeping one. Combining them would require reading both, and the board never reads. So there are two kinds of region and there cannot be a third.
+Suppose two agents write to the same region at the same moment. The board has to decide what the region holds afterwards, and in principle three answers are available: keep both writes, keep one of them, or combine them into a single value.
 
-| Kind | Reconciliation | Holds |
+Combining is not available to the board. Working out the combination of two values means reading both of them first, and reading is the thing the board does not do. A merge function the application supplies does not rescue it, because the board would still have to open what it holds in order to pass it to that function.
+
+Keeping both and keeping one remain, and each needs one further rule before it works.
+
+Keeping both needs an order, so that a reader sees the two writes in the sequence they arrived rather than in an arbitrary one.
+
+Keeping one needs a way for a writer to learn which value it replaced. Without that, a writer that read a value, computed a longer one from it, and wrote the result would silently discard whatever another writer had put there in the meantime.
+
+The two remaining answers, with those rules attached, are the two kinds of region. There is no third, because the third answer was combining.
+
+| Kind | What it does with two writes | What it holds |
 | --- | --- | --- |
 | `Level` | Keeps both, in arrival order | What the agents concluded |
-| `Premise` | Keeps one, guarded by a version | A premise of the case |
+| `Premise` | Keeps one, and the writer names the version it expects to replace | What the work was given |
 
-A merge function supplied by the application, or a counter the board sums, would both require the board to open what it holds. The kind carries the rule, so no second setting exists through which kind and rule could disagree.
+The kind carries the rule, so no second setting exists through which kind and rule could disagree.
 
 ## Levels accumulate
 

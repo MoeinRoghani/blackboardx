@@ -1,14 +1,32 @@
 # blackboardx
 
-A group of agents works on one problem. Each writes what it finds into a single shared record, every agent can read all of it, and no agent calls another. The record is the only channel between them.
+## The problem this architecture was built for
 
-The blackboard literature calls a system *skeletal* when it supplies that structure carrying no domain knowledge, so that an application is built on it by adding knowledge and control. `blackboardx` is skeletal in that sense: it supplies the board and the control component, and an application supplies its regions, its agents, and its rules.
+In the early 1970s DARPA funded a programme in speech understanding, and one of the systems built under it was HEARSAY-II, at Carnegie Mellon. What made the task hard was not noise in the recording. It was the shape of the evidence. A stretch of recorded speech admits several readings at once, and the knowledge that settles which reading is right arrives in kinds that have little to do with each other: how the sound behaves, which words exist, which sequences of words are grammatical, which meanings the surrounding conversation makes plausible. Any of those kinds might be the one that resolves a given stretch, and which one it will be is not known until that stretch has been examined.
 
-## What it is for
+That rules out writing the system as procedures that call one another. A call fixes what runs next. Fixing what runs next requires knowing which kind of knowledge the next step needs, and that is precisely what nobody knows in advance.
 
-Four questions arise whenever independent agents work on one problem, and this library answers each.
+HEARSAY-II therefore gave its specialists a structure to work on rather than a way to reach each other. Each specialist watches that structure, reads whatever on it bears on its own expertise, and writes back what it can conclude. No specialist invokes another, and none of them needs to know which others exist. What puts a specialist to work is the state of the structure.
 
-| Question | Answer |
+That structure is the blackboard. It holds partial answers, meaning pieces that settle nothing on their own and that combine into a result, and it holds them where every specialist can see them.
+
+## How the arrangement outlived the problem
+
+Later systems kept the arrangement and replaced the knowledge. HASP, at Stanford, interpreted sonar rather than speech, and its specialists knew about ocean acoustics rather than about phonemes. The arrangement carried over unchanged, which showed that what HEARSAY-II had contributed was separable from what it knew about speech.
+
+H. Penny Nii set that separation out in a survey of blackboard systems published in AI Magazine in 1986. Some systems carry the knowledge of one problem inside them, as HEARSAY-II carried speech and HASP carried sonar. Others supply the machinery alone and leave the knowledge to whoever builds on them. Nii named the second kind *skeletal*: a system that holds "the essential system components from which application systems can be built by the addition of knowledge and the specification of control". AGE, BB1 and GBB were built that way and distributed to be built on. The term marks the absence of domain knowledge rather than the absence of working parts.
+
+## What this library is
+
+`blackboardx` is skeletal in that sense. It supplies the board, which stores what the agents write and puts every write in one order, and the control component, which determines which agents are told of a change, whether a proposed write is admitted, and when the run ends.
+
+Everything belonging to a particular problem stays with the application: the agents, the content they write, the regions the board holds, and the rules the control component applies. The library never interprets a contribution, because interpreting one takes the expertise of the agent that produced it.
+
+## What the arrangement leaves open
+
+Agents that share a record still need four questions answered before any of them can run.
+
+| Question | The answer here |
 | --- | --- |
 | What causes an agent to run, when nothing assigns it work | A change to a region it subscribes to |
 | How an agent learns what the others found, when no agent calls another | It reads the board |
