@@ -13,17 +13,17 @@ from blackboard import (
     DuplicateRegionError,
     InMemoryBoard,
     Level,
+    Premise,
+    PremiseState,
     RegionKindError,
-    Register,
-    RegisterState,
     UndeclaredRegionError,
-    UnsetRegisterError,
+    UnsetPremiseError,
     Written,
 )
 
 
 def make_board() -> InMemoryBoard:
-    return InMemoryBoard([Level("application"), Level("platform"), Register("window")])
+    return InMemoryBoard([Level("application"), Level("platform"), Premise("window")])
 
 
 @pytest.fixture
@@ -99,7 +99,7 @@ class TestSet:
         board.set("window", "w1", expected_version=0)
         result = board.set("window", "w2", expected_version=1)
         assert result == Written(sequence=2, version=2)
-        assert board.read_register("window") == RegisterState(value="w2", version=2)
+        assert board.read_premise("window") == PremiseState(value="w2", version=2)
 
     def test_a_stale_version_returns_conflict_with_the_current_version(self) -> None:
         board = make_board()
@@ -112,7 +112,7 @@ class TestSet:
         board = make_board()
         board.set("window", "w1", expected_version=0)
         board.set("window", "late", expected_version=0)
-        assert board.read_register("window") == RegisterState(value="w1", version=1)
+        assert board.read_premise("window") == PremiseState(value="w1", version=1)
 
     def test_a_conflicting_write_takes_no_sequence_number(self) -> None:
         board = make_board()
@@ -141,14 +141,14 @@ class TestSet:
     def test_concurrent_register_writers_lose_no_update(
         self, frequent_thread_switches: None
     ) -> None:
-        board = InMemoryBoard([Register("namespace")])
+        board = InMemoryBoard([Premise("namespace")])
         board.set("namespace", [], expected_version=0)
         barrier = threading.Barrier(8)
 
         def add(item: int) -> None:
             barrier.wait()
             for _ in range(1000):
-                state = board.read_register("namespace")
+                state = board.read_premise("namespace")
                 assert isinstance(state.value, list)
                 result = board.set(
                     "namespace", [*state.value, item], expected_version=state.version
@@ -162,7 +162,7 @@ class TestSet:
             thread.start()
         for thread in threads:
             thread.join()
-        state = board.read_register("namespace")
+        state = board.read_premise("namespace")
         assert isinstance(state.value, list)
         assert sorted(state.value) == list(range(8))
         assert state.version == 9
@@ -195,10 +195,10 @@ class TestReads:
         (contribution,) = board.read_level("application")
         assert contribution.content == {"finding": ["f1"]}
 
-    def test_read_register_before_any_write_raises_unset_register_error(self) -> None:
+    def test_read_premise_before_any_write_raises_unset_premise_error(self) -> None:
         board = make_board()
-        with pytest.raises(UnsetRegisterError):
-            board.read_register("window")
+        with pytest.raises(UnsetPremiseError):
+            board.read_premise("window")
 
     def test_read_board_returns_every_change_in_sequence_order(self) -> None:
         board = make_board()
@@ -253,9 +253,9 @@ class TestDeclarations:
     def test_a_register_declared_later_has_no_value_until_written(self) -> None:
         board = make_board()
         board.append("application", "a")
-        board.declare(Register("trigger"))
-        with pytest.raises(UnsetRegisterError):
-            board.read_register("trigger")
+        board.declare(Premise("trigger"))
+        with pytest.raises(UnsetPremiseError):
+            board.read_premise("trigger")
         assert board.set("trigger", "alert", expected_version=0) == Written(
             sequence=2, version=1
         )
@@ -263,7 +263,7 @@ class TestDeclarations:
     def test_redeclaring_a_name_with_the_other_kind_is_refused(self) -> None:
         board = make_board()
         with pytest.raises(DuplicateRegionError):
-            board.declare(Register("application"))
+            board.declare(Premise("application"))
 
     def test_redeclaring_a_name_with_the_same_kind_is_refused(self) -> None:
         board = make_board()
@@ -275,8 +275,8 @@ class TestDeclarations:
         ]
         board.set("window", "w", expected_version=0)
         with pytest.raises(DuplicateRegionError):
-            board.declare(Register("window"))
-        assert board.read_register("window") == RegisterState(value="w", version=1)
+            board.declare(Premise("window"))
+        assert board.read_premise("window") == PremiseState(value="w", version=1)
 
     def test_a_declaration_of_neither_kind_is_refused(self) -> None:
         board = make_board()

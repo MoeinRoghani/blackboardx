@@ -2,7 +2,7 @@
 
 This is what a developer runs locally and what a test runs against when it
 wants the storage semantics a deployment has: one sequence across every
-region, and a register write guarded by the version it expects to replace.
+region, and a premise write guarded by the version it expects to replace.
 Pointed at a file, a run's record survives the process that made it.
 
 One file holds many boards, each under its own identifier, as one server
@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import warnings
 from typing import Any
 
 from blackboard._board import (
@@ -27,11 +28,11 @@ from blackboard._board import (
     Contribution,
     DuplicateRegionError,
     Level,
+    Premise,
+    PremiseState,
     RegionKindError,
-    Register,
-    RegisterState,
     UndeclaredRegionError,
-    UnsetRegisterError,
+    UnsetPremiseError,
     Written,
 )
 
@@ -39,7 +40,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS regions (
     board_id TEXT NOT NULL,
     name     TEXT NOT NULL,
-    kind     TEXT NOT NULL CHECK (kind IN ('level', 'register')),
+    kind     TEXT NOT NULL CHECK (kind IN ('level', 'premise')),
     PRIMARY KEY (board_id, name)
 );
 CREATE TABLE IF NOT EXISTS contributions (
@@ -49,7 +50,7 @@ CREATE TABLE IF NOT EXISTS contributions (
     content  TEXT NOT NULL,
     PRIMARY KEY (board_id, sequence)
 );
-CREATE TABLE IF NOT EXISTS registers (
+CREATE TABLE IF NOT EXISTS premises (
     board_id TEXT NOT NULL,
     name     TEXT NOT NULL,
     value    TEXT,
@@ -61,7 +62,7 @@ CREATE INDEX IF NOT EXISTS contributions_by_region
 """
 
 _LEVEL = "level"
-_REGISTER = "register"
+_PREMISE = "premise"
 
 
 class SqliteBoard:
@@ -92,13 +93,13 @@ class SqliteBoard:
         with self._lock:
             self._connection.close()
 
-    def declare(self, region: Level | Register) -> None:
-        if not isinstance(region, Level | Register):
+    def declare(self, region: Level | Premise) -> None:
+        if not isinstance(region, Level | Premise):
             raise TypeError(
-                "a region declaration is a Level or a Register, "
+                "a region declaration is a Level or a Premise, "
                 f"not {type(region).__name__}"
             )
-        kind = _LEVEL if isinstance(region, Level) else _REGISTER
+        kind = _LEVEL if isinstance(region, Level) else _PREMISE
         with self._lock, self._connection:
             if self._kind_of(region.name) is not None:
                 raise DuplicateRegionError(
@@ -115,9 +116,9 @@ class SqliteBoard:
                 raise DuplicateRegionError(
                     f"a region named {region.name!r} is already declared"
                 ) from clash
-            if kind == _REGISTER:
+            if kind == _PREMISE:
                 self._connection.execute(
-                    "INSERT INTO registers (board_id, name, value, version) "
+                    "INSERT INTO premises (board_id, name, value, version) "
                     "VALUES (?, ?, NULL, 0)",
                     (self._board_id, region.name),
                 )
@@ -135,28 +136,28 @@ class SqliteBoard:
             return sequence
 
     def set(
-        self, register: str, value: object, expected_version: int
+        self, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
         carried = json.dumps(value)
         with self._lock, self._connection:
-            self._require(register, _REGISTER)
+            self._require(premise, _PREMISE)
             row = self._connection.execute(
-                "SELECT version FROM registers WHERE board_id = ? AND name = ?",
-                (self._board_id, register),
+                "SELECT version FROM premises WHERE board_id = ? AND name = ?",
+                (self._board_id, premise),
             ).fetchone()
             current = int(row[0])
             if expected_version != current:
                 return Conflict(current_version=current)
             sequence = self._next_sequence()
             self._connection.execute(
-                "UPDATE registers SET value = ?, version = ? "
+                "UPDATE premises SET value = ?, version = ? "
                 "WHERE board_id = ? AND name = ?",
-                (carried, current + 1, self._board_id, register),
+                (carried, current + 1, self._board_id, premise),
             )
             self._connection.execute(
                 "INSERT INTO contributions (board_id, sequence, region, content) "
                 "VALUES (?, ?, ?, ?)",
-                (self._board_id, sequence, register, carried),
+                (self._board_id, sequence, premise, carried),
             )
             return Written(sequence=sequence, version=current + 1)
 
@@ -171,18 +172,28 @@ class SqliteBoard:
             ).fetchall()
         return [Contribution(sequence=r[0], content=json.loads(r[1])) for r in rows]
 
-    def read_register(self, register: str) -> RegisterState:
+    def read_premise(self, premise: str) -> PremiseState:
         with self._lock:
-            self._require(register, _REGISTER)
+            self._require(premise, _PREMISE)
             row = self._connection.execute(
-                "SELECT value, version FROM registers WHERE board_id = ? AND name = ?",
-                (self._board_id, register),
+                "SELECT value, version FROM premises WHERE board_id = ? AND name = ?",
+                (self._board_id, premise),
             ).fetchone()
         if int(row[1]) == 0:
-            raise UnsetRegisterError(
-                f"the register {register!r} has no value until one is written"
+            raise UnsetPremiseError(
+                f"the premise {premise!r} has no value until one is written"
             )
-        return RegisterState(value=json.loads(row[0]), version=int(row[1]))
+        return PremiseState(value=json.loads(row[0]), version=int(row[1]))
+
+    def read_register(self, register: str) -> PremiseState:
+        """Deprecated since 0.5.0. Use ``read_premise``; removed in 0.6.0."""
+        warnings.warn(
+            "read_register is renamed read_premise, and the old name is "
+            "removed in 0.6.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.read_premise(register)
 
     def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
         with self._lock:
@@ -212,10 +223,10 @@ class SqliteBoard:
         if found != kind:
             if kind == _LEVEL:
                 raise RegionKindError(
-                    f"{name!r} names a register, and this operation takes a level"
+                    f"{name!r} names a premise, and this operation takes a level"
                 )
             raise RegionKindError(
-                f"{name!r} names a level, and this operation takes a register"
+                f"{name!r} names a level, and this operation takes a premise"
             )
 
     def _next_sequence(self) -> int:

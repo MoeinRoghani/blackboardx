@@ -17,7 +17,7 @@ from blackboard import Agent
 
 
 def investigate(notification):
-    window = model.reader.read_register("window").value
+    window = model.reader.read_premise("window").value
     findings = look_for_trouble(window)  # your own work
     if findings:
         model.control.write("ocp", "platform", {"findings": findings})
@@ -38,7 +38,7 @@ Agent(
 )
 ```
 
-Omit `subscribes_to` and the agent is woken by every register and by no level. Name a level and a contribution to it wakes the agent, which is how one agent's finding starts another's work.
+Omit `subscribes_to` and the agent is woken by every premise and by no level. Name a level and a contribution to it wakes the agent, which is how one agent's finding starts another's work.
 
 Omit `writes_to` and every level is permitted. Name one and a write anywhere else is refused with `NOT_PERMITTED`, at registration time if the level does not exist.
 

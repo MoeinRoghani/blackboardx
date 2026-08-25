@@ -9,7 +9,7 @@ Five things configure a model, and a sixth says where the record is kept.
 ```python
 model = create_model(
     regions=[...],  # 1. the named parts of the board
-    seed={...},  # 2. the first value of every register
+    premises={...},  # 2. the opening value of every premise
     admission_rule=rule,  # 3. optional; none accepts every write
     termination_predicate=done,  # 4. optional; none lets silence close the run
     limits=RunLimits(...),  # 5. the two limits
@@ -19,7 +19,7 @@ model = create_model(
 
 The board has no default, because a run that keeps its record nowhere a second process can read is not a shared solution model. [Storage](storage.md) covers what to pass. The clock is injected the same way and defaults to the system clock, so a test substitutes one without changing what the model is.
 
-The seed must name each declared register exactly once. It bypasses admission, and it wakes nobody, because no agent has registered yet.
+`premises` must name each declared premise exactly once. Those writes bypass admission, and they wake nobody, because no agent has registered yet.
 
 ## Agents arrive by registering
 
@@ -29,7 +29,7 @@ Registering wakes the agent immediately, covering every subscribed region that a
 
 ## Ending
 
-A run does not close because nothing is outstanding at some instant. Agents are idle between notifications and register at different times, so a quiet instant is the gap before the work rather than the end of it. Sustained silence is what ends it.
+A run does not close because nothing is outstanding at some instant. Agents are idle between notifications and premise at different times, so a quiet instant is the gap before the work rather than the end of it. Sustained silence is what ends it.
 
 | Outcome | Cause |
 | --- | --- |
@@ -51,4 +51,4 @@ So the rule is absolute: **a change that lands is always told to every agent tha
 
 ## After closing
 
-Reads and the audit keep working. Writes, register writes, and registrations are refused.
+Reads and the audit keep working. Writes, premise writes, and registrations are refused.

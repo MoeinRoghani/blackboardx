@@ -4,8 +4,9 @@ The library supplies the board, the shared structure through which
 independent agents contribute to one result, and the control component,
 which determines which agents are notified of a change, whether a proposed
 write is admitted, whether budgets hold, and when the run has finished. An
-application creates a model by supplying its regions, agents, seed,
-admission rule, termination predicate, and budgets. The public surface is
+application creates a model by supplying its regions, their opening
+premise values, an admission rule, a termination predicate, and limits.
+Agents register themselves into it. The public surface is
 the set of names in ``__all__``; every other name is internal.
 """
 
@@ -20,11 +21,11 @@ from blackboard._board import (
     DuplicateRegionError,
     InMemoryBoard,
     Level,
+    Premise,
+    PremiseState,
     RegionKindError,
-    Register,
-    RegisterState,
     UndeclaredRegionError,
-    UnsetRegisterError,
+    UnsetPremiseError,
     Written,
 )
 from blackboard._clock import Clock, ManualClock, ScheduledCall, SystemClock
@@ -42,10 +43,11 @@ from blackboard._control import (
     NotificationAcknowledged,
     NotificationDispatched,
     NotificationId,
+    PremiseError,
+    PremiseOpened,
     ProposedContribution,
-    ProposedRegisterWrite,
+    ProposedPremiseWrite,
     ProposedWrite,
-    RegisterSeeded,
     Reject,
     Rejected,
     RejectionCause,
@@ -53,7 +55,6 @@ from blackboard._control import (
     RunClosedError,
     RunLimits,
     RunOutcome,
-    SeedError,
     Settled,
     TerminationDecision,
     TerminationPredicate,
@@ -98,7 +99,12 @@ __all__ = [
     "NotificationDispatched",
     "NotificationId",
     "PostgresBoard",
+    "Premise",
+    "PremiseError",
+    "PremiseOpened",
+    "PremiseState",
     "ProposedContribution",
+    "ProposedPremiseWrite",
     "ProposedRegisterWrite",
     "ProposedWrite",
     "RegionKindError",
@@ -122,6 +128,7 @@ __all__ = [
     "TerminationPredicate",
     "UndeclaredRegionError",
     "UnknownNotificationError",
+    "UnsetPremiseError",
     "UnsetRegisterError",
     "WallClockExpired",
     "WriteAccepted",
@@ -142,6 +149,19 @@ _RENAMED = {
         "RunLimits",
         "a run has two limits, both durations, and nothing countable is consumed",
     ),
+    "Register": (
+        "Premise",
+        "register belongs to computer architecture, and the region holds what "
+        "the work is given",
+    ),
+    "RegisterState": ("PremiseState", "the region is a Premise"),
+    "UnsetRegisterError": ("UnsetPremiseError", "the region is a Premise"),
+    "ProposedRegisterWrite": ("ProposedPremiseWrite", "the region is a Premise"),
+    "RegisterSeeded": (
+        "PremiseOpened",
+        "a premise receives an opening value rather than being seeded",
+    ),
+    "SeedError": ("PremiseError", "the opening values are premises"),
 }
 _REMOVED_IN = "0.6.0"
 

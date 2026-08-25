@@ -9,7 +9,7 @@ Reconciling two writes to one place means either keeping both or keeping one. Co
 | Kind | Reconciliation | Holds |
 | --- | --- | --- |
 | `Level` | Keeps both, in arrival order | What the agents concluded |
-| `Register` | Keeps one, guarded by a version | A premise of the case |
+| `Premise` | Keeps one, guarded by a version | A premise of the case |
 
 A merge function supplied by the application, or a counter the board sums, would both require the board to open what it holds. The kind carries the rule, so no second setting exists through which kind and rule could disagree.
 
@@ -25,10 +25,10 @@ Nothing already stored is altered, so a contribution an agent read is still ther
 
 ## Registers replace under a version
 
-A register write names the version it expects to replace, and fails if the register moved past it.
+A premise write names the version it expects to replace, and fails if the premise moved past it.
 
 ```python
-state = board.read_register("namespace")
+state = board.read_premise("namespace")
 result = board.set("namespace", [*state.value, "prod-payments"], state.version)
 ```
 
@@ -50,7 +50,7 @@ Any caller may read anything, at any time. Reads bypass the control component en
 
 ```python
 board.read_level("platform", from_sequence=4)  # that level, from a bound
-board.read_register("window")  # value and version
+board.read_premise("window")  # value and version
 board.read_board(from_sequence=4)  # every region, in order
 ```
 
@@ -60,4 +60,4 @@ Reads return snapshots, so mutating the returned list changes nothing. Content c
 
 `Control` takes a `BoardStore`, the protocol covering the six operations it performs. There is no default: a run has to be told where its record goes.
 
-`SqliteBoard` keeps it in a file, and an adapter you write keeps it in your own database. The two reconciliation rules map onto ordinary primitives: the total order is a sequence, and a register write is an update guarded by a version. [Storage](storage.md) covers the choice and what an implementation has to guarantee.
+`SqliteBoard` keeps it in a file, and an adapter you write keeps it in your own database. The two reconciliation rules map onto ordinary primitives: the total order is a sequence, and a premise write is an update guarded by a version. [Storage](storage.md) covers the choice and what an implementation has to guarantee.

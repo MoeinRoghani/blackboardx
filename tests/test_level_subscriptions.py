@@ -9,7 +9,7 @@ from blackboard import (
     Level,
     ManualClock,
     Notification,
-    Register,
+    Premise,
     RunLimits,
     TerminationDecision,
 )
@@ -25,7 +25,7 @@ def keep_open(reader: BoardReader) -> TerminationDecision:
 
 def make_control(clock: ManualClock) -> Control:
     return Control(
-        regions=[Level("platform"), Level("application"), Register("window")],
+        regions=[Level("platform"), Level("application"), Premise("window")],
         termination_predicate=keep_open,
         limits=LIMITS,
         clock=clock,

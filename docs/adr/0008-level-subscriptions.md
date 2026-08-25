@@ -14,7 +14,7 @@ That holds when every agent computes from the premises alone. It does not hold w
 
 The specification's own path for that case is to promote the finding into a register. Doing so states that a conclusion is a premise, which it is not, and it wakes every agent rather than the ones that care.
 
-The rule was also defended on the grounds that levels notifying nobody makes a run terminate by construction. It does not. An agent may call `set_register`, which wakes every agent, any of which may set another register, so a cycle was always reachable through the premises.
+The rule was also defended on the grounds that levels notifying nobody makes a run terminate by construction. It does not. An agent may call `set_premise`, which wakes every agent, any of which may set another register, so a cycle was always reachable through the premises.
 
 ## Decision
 

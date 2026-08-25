@@ -97,9 +97,49 @@ Two guarantees are what make a board a board, and in a deployment they have to h
 
 **The sequence is gapless.** Every write takes its number by incrementing one counter inside the transaction that carries the write, so a number a rolled-back write took is returned rather than skipped. A Postgres sequence would be faster and would leave gaps, and a gap is a hole in a record whose numbers are addresses.
 
-The two servers reach that differently. Postgres blocks a second writer on the row lock the increment acquires and holds to commit, so writes to one board serialise. MongoDB does not block: it aborts one of two contending transactions and labels the failure transient, so the adapter runs the write again through the driver's retrying transaction, and a register write puts its version guard before the counter so a losing write never contends for it at all.
+The two servers reach that differently. Postgres blocks a second writer on the row lock the increment acquires and holds to commit, so writes to one board serialise. MongoDB does not block: it aborts one of two contending transactions and labels the failure transient, so the adapter runs the write again through the driver's retrying transaction, and a premise write puts its version guard before the counter so a losing write never contends for it at all.
 
-**A register write is a conditional update on the version.** Two writers naming the same version produce one winner and one `Conflict`, whichever process reaches the record first, and the conflict takes no sequence number.
+**A premise write is a conditional update on the version.** Two writers naming the same version produce one winner and one `Conflict`, whichever process reaches the record first, and the conflict takes no sequence number.
+
+## Moving a database written by 0.4.0
+
+0.5.0 renames the region kind from `Register` to `Premise`, and the storage identifiers follow. A database a 0.4.0 run wrote holds a table the adapter no longer reads, so it needs one migration before a 0.5.0 run opens against it. A fresh database needs nothing.
+
+Postgres:
+
+```sql
+ALTER TABLE blackboard_registers RENAME TO blackboard_premises;
+ALTER TABLE blackboard_regions DROP CONSTRAINT blackboard_regions_kind_check;
+UPDATE blackboard_regions SET kind = 'premise' WHERE kind = 'register';
+ALTER TABLE blackboard_regions
+    ADD CONSTRAINT blackboard_regions_kind_check
+    CHECK (kind IN ('level', 'premise'));
+```
+
+MongoDB:
+
+```javascript
+db.blackboard_registers.renameCollection("blackboard_premises")
+db.blackboard_regions.updateMany({kind: "register"}, {$set: {kind: "premise"}})
+```
+
+SQLite, against the file the run wrote. SQLite enforces a `CHECK` constraint on update and cannot drop one, so the region table is rebuilt rather than updated in place:
+
+```sql
+ALTER TABLE registers RENAME TO premises;
+CREATE TABLE regions_migrated (
+    board_id TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    kind     TEXT NOT NULL CHECK (kind IN ('level', 'premise')),
+    PRIMARY KEY (board_id, name)
+);
+INSERT INTO regions_migrated (board_id, name, kind)
+SELECT board_id, name,
+       CASE kind WHEN 'register' THEN 'premise' ELSE kind END
+FROM regions;
+DROP TABLE regions;
+ALTER TABLE regions_migrated RENAME TO regions;
+```
 
 ## Many boards, one database
 
@@ -111,11 +151,11 @@ Every persistent board carries a `board_id`, and every row is scoped by it. Two 
 
 ## An adapter of your own
 
-`BoardStore` is the protocol, and it has six methods: `declare`, `append`, and `set` write; `read_level`, `read_register`, and `read_board` read. An implementation of those six is a board, and the control component names no concrete type.
+`BoardStore` is the protocol, and it has six methods: `declare`, `append`, and `set` write; `read_level`, `read_premise`, and `read_board` read. An implementation of those six is a board, and the control component names no concrete type.
 
 Two rules hold every implementation together, and the conformance suite in `tests/conformance.py` checks both against each one, the deployment adapters against real servers:
 
 - **One counter.** Every write to any region takes the next number from a single sequence. The number is the position in the total order and the address of the write.
-- **Version-guarded register writes.** A register write names the version it expects to replace. If that is not the current version, the write returns `Conflict` carrying the current version, takes no sequence number, and changes nothing.
+- **Version-guarded premise writes.** A premise write names the version it expects to replace. If that is not the current version, the write returns `Conflict` carrying the current version, takes no sequence number, and changes nothing.
 
 Content crosses the protocol as JSON, because a deployed board crosses a process boundary. A tuple written comes back a list, and content JSON cannot carry raises `TypeError` before anything is stored. Every implementation behaves this way, including the in-memory one, so a test cannot pass against content a deployment would refuse.

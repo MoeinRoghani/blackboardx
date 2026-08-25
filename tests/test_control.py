@@ -13,11 +13,11 @@ from blackboard import (
     InMemoryBoard,
     Level,
     ManualClock,
+    Premise,
     ProposedContribution,
-    ProposedRegisterWrite,
+    ProposedPremiseWrite,
     ProposedWrite,
     RegionKindError,
-    Register,
     Reject,
     Rejected,
     RejectionCause,
@@ -40,7 +40,7 @@ def keep_open(reader: BoardReader) -> TerminationDecision:
 
 def make_control(rule: AdmissionRule | None = None) -> Control:
     return Control(
-        regions=[Level("application"), Register("window")],
+        regions=[Level("application"), Premise("window")],
         admission_rule=rule,
         termination_predicate=keep_open,
         limits=LIMITS,
@@ -87,7 +87,7 @@ class TestAdmission:
         control = make_control()
         assert control.write("a", "application", "one") == Written(sequence=1)
         assert isinstance(
-            control.set_register("operator", "window", "w", expected_version=0),
+            control.set_premise("operator", "window", "w", expected_version=0),
             Written,
         )
 
@@ -113,13 +113,13 @@ class TestAdmission:
             return Reject("nothing enters")
 
         control = make_control(rule)
-        result = control.set_register("operator", "window", "w", expected_version=0)
+        result = control.set_premise("operator", "window", "w", expected_version=0)
         assert result == Rejected(
             cause=RejectionCause.ADMISSION, reason="nothing enters"
         )
         assert seen == [
-            ProposedRegisterWrite(
-                writer="operator", register="window", value="w", expected_version=0
+            ProposedPremiseWrite(
+                writer="operator", premise="window", value="w", expected_version=0
             )
         ]
         assert control.read_audit() == [
@@ -149,17 +149,17 @@ class TestAdmission:
 class TestSetRegister:
     def test_an_accepted_register_write_returns_written_and_is_audited(self) -> None:
         control = make_control()
-        result = control.set_register("operator", "window", "w", expected_version=0)
+        result = control.set_premise("operator", "window", "w", expected_version=0)
         assert result == Written(sequence=1, version=1)
-        assert control.reader.read_register("window").value == "w"
+        assert control.reader.read_premise("window").value == "w"
         assert control.read_audit() == [
             WriteAccepted(at=START, writer="operator", region="window", sequence=1)
         ]
 
     def test_a_conflict_passes_through_without_an_audit_event(self) -> None:
         control = make_control()
-        control.set_register("operator", "window", "w1", expected_version=0)
-        result = control.set_register("late", "window", "w2", expected_version=0)
+        control.set_premise("operator", "window", "w1", expected_version=0)
+        result = control.set_premise("late", "window", "w2", expected_version=0)
         assert result == Conflict(current_version=1)
         assert control.read_audit() == [
             WriteAccepted(at=START, writer="operator", region="window", sequence=1)
@@ -186,7 +186,7 @@ class TestRegionRefusals:
 
     def test_a_register_write_to_an_undeclared_region_is_rejected(self) -> None:
         control = make_control()
-        result = control.set_register("a", "missing", "x", expected_version=0)
+        result = control.set_premise("a", "missing", "x", expected_version=0)
         assert isinstance(result, Rejected)
         assert result.cause is RejectionCause.UNDECLARED_REGION
 
@@ -206,7 +206,7 @@ class TestRegionRefusals:
         with pytest.raises(RegionKindError):
             control.write("a", "window", "x")
         with pytest.raises(RegionKindError):
-            control.set_register("a", "application", "x", expected_version=0)
+            control.set_premise("a", "application", "x", expected_version=0)
         assert control.read_audit() == []
 
 
@@ -278,5 +278,5 @@ class TestWhoWrites:
 
         control = make_control(rule)
         control.write("ocp", "application", "one")
-        control.set_register("ocp", "window", "w", expected_version=0)
+        control.set_premise("ocp", "window", "w", expected_version=0)
         assert seen == ["ocp", "ocp"]

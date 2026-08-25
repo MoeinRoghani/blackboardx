@@ -23,7 +23,7 @@ A board adapter makes the **record** durable. It does not make the **run** durab
 
 | Held where | What |
 | --- | --- |
-| The database, through the board | Regions, contributions, register values and versions, the sequence |
+| The database, through the board | Regions, contributions, premise values and versions, the sequence |
 | The process, in `Control` | The agent registry, outstanding notifications, the audit, the idle and wall-clock timers |
 
 A `Control` lives in one process. A second replica holding its own `Control` for the same board knows no agent the first registered, owes no notification the first dispatched, and measures silence from its own start. Losing the replica that holds one ends that run: the record survives and the run does not resume.

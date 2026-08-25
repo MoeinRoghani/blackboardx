@@ -12,7 +12,7 @@ Four questions arise whenever independent agents work on one problem, and this l
 | --- | --- |
 | What causes an agent to run, when nothing assigns it work | A change to a region it subscribes to |
 | How an agent learns what the others found, when no agent calls another | It reads the board |
-| What the record holds when two agents write to one place at once | A level keeps both in order; a register keeps one, guarded by a version |
+| What the record holds when two agents write to one place at once | A level keeps both in order; a premise keeps one, guarded by a version |
 | How the group establishes that nothing further is coming | The run closes on silence, or on time |
 
 ## Where to start

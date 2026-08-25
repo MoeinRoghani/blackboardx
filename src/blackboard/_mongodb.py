@@ -12,10 +12,10 @@ Two guarantees hold across processes, not merely across the threads of one,
 and both span more than one document:
 
 The sequence is gapless. A write takes it by incrementing a counter
-document, and a register write that loses its version returns the number it
+document, and a premise write that loses its version returns the number it
 took rather than skipping it.
 
-A register write is a conditional update on the version. Two writers naming
+A premise write is a conditional update on the version. Two writers naming
 the same version produce one winner and one ``Conflict``.
 
 Spanning documents on MongoDB means a session transaction, and a session
@@ -27,6 +27,7 @@ than the record needs.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -40,11 +41,11 @@ from blackboard._board import (
     Contribution,
     DuplicateRegionError,
     Level,
+    Premise,
+    PremiseState,
     RegionKindError,
-    Register,
-    RegisterState,
     UndeclaredRegionError,
-    UnsetRegisterError,
+    UnsetPremiseError,
     Written,
     _as_json,
 )
@@ -55,10 +56,10 @@ if TYPE_CHECKING:
 _BOARDS = "blackboard_boards"
 _REGIONS = "blackboard_regions"
 _CONTRIBUTIONS = "blackboard_contributions"
-_REGISTERS = "blackboard_registers"
+_PREMISES = "blackboard_premises"
 
 _LEVEL = "level"
-_REGISTER = "register"
+_PREMISE = "premise"
 
 _Result = TypeVar("_Result")
 
@@ -118,7 +119,7 @@ class MongoBoard:
         self._database[_REGIONS].create_index(
             [("board_id", ASCENDING), ("name", ASCENDING)], unique=True
         )
-        self._database[_REGISTERS].create_index(
+        self._database[_PREMISES].create_index(
             [("board_id", ASCENDING), ("name", ASCENDING)], unique=True
         )
         self._database[_CONTRIBUTIONS].create_index(
@@ -128,13 +129,13 @@ class MongoBoard:
             [("board_id", ASCENDING), ("region", ASCENDING), ("sequence", ASCENDING)]
         )
 
-    def declare(self, region: Level | Register) -> None:
-        if not isinstance(region, Level | Register):
+    def declare(self, region: Level | Premise) -> None:
+        if not isinstance(region, Level | Premise):
             raise TypeError(
-                "a region declaration is a Level or a Register, "
+                "a region declaration is a Level or a Premise, "
                 f"not {type(region).__name__}"
             )
-        kind = _LEVEL if isinstance(region, Level) else _REGISTER
+        kind = _LEVEL if isinstance(region, Level) else _PREMISE
 
         def work(session: Any) -> None:
             if self._kind_of(region.name, session) is not None:
@@ -158,8 +159,8 @@ class MongoBoard:
                         f"a region named {region.name!r} is already declared"
                     ) from clash
                 raise
-            if kind == _REGISTER:
-                self._database[_REGISTERS].insert_one(
+            if kind == _PREMISE:
+                self._database[_PREMISES].insert_one(
                     {
                         "board_id": self._board_id,
                         "name": region.name,
@@ -191,22 +192,22 @@ class MongoBoard:
         return self._in_a_transaction(work)
 
     def set(
-        self, register: str, value: object, expected_version: int
+        self, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
         carried = _as_json(value)
         losses: list[Conflict] = []
 
         def work(session: Any) -> Written | None:
             losses.clear()
-            self._require(register, _REGISTER, session)
+            self._require(premise, _PREMISE, session)
             # The version guard comes first, so a write that loses it never
             # touches the counter. That is what keeps a conflict from taking
             # a sequence number, and it keeps three of every four writers in
             # a race off the one document they would all abort against.
-            updated = self._database[_REGISTERS].find_one_and_update(
+            updated = self._database[_PREMISES].find_one_and_update(
                 {
                     "board_id": self._board_id,
-                    "name": register,
+                    "name": premise,
                     "version": expected_version,
                 },
                 {"$set": {"value": carried}, "$inc": {"version": 1}},
@@ -215,7 +216,7 @@ class MongoBoard:
             )
             if updated is None:
                 losses.append(
-                    Conflict(current_version=self._current_version(register, session))
+                    Conflict(current_version=self._current_version(premise, session))
                 )
                 return None
             sequence = self._take_sequence(session)
@@ -223,7 +224,7 @@ class MongoBoard:
                 {
                     "board_id": self._board_id,
                     "sequence": sequence,
-                    "region": register,
+                    "region": premise,
                     "content": carried,
                 },
                 session=session,
@@ -253,16 +254,26 @@ class MongoBoard:
             for document in documents
         ]
 
-    def read_register(self, register: str) -> RegisterState:
-        self._require(register, _REGISTER, None)
-        document = self._database[_REGISTERS].find_one(
-            {"board_id": self._board_id, "name": register}
+    def read_premise(self, premise: str) -> PremiseState:
+        self._require(premise, _PREMISE, None)
+        document = self._database[_PREMISES].find_one(
+            {"board_id": self._board_id, "name": premise}
         )
         if document is None or int(document["version"]) == 0:
-            raise UnsetRegisterError(
-                f"the register {register!r} has no value until one is written"
+            raise UnsetPremiseError(
+                f"the premise {premise!r} has no value until one is written"
             )
-        return RegisterState(value=document["value"], version=int(document["version"]))
+        return PremiseState(value=document["value"], version=int(document["version"]))
+
+    def read_register(self, register: str) -> PremiseState:
+        """Deprecated since 0.5.0. Use ``read_premise``; removed in 0.6.0."""
+        warnings.warn(
+            "read_register is renamed read_premise, and the old name is "
+            "removed in 0.6.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.read_premise(register)
 
     def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
         documents = (
@@ -325,9 +336,9 @@ class MongoBoard:
         )
         return None if document is None else str(document["kind"])
 
-    def _current_version(self, register: str, session: Any) -> int:
-        document = self._database[_REGISTERS].find_one(
-            {"board_id": self._board_id, "name": register}, session=session
+    def _current_version(self, premise: str, session: Any) -> int:
+        document = self._database[_PREMISES].find_one(
+            {"board_id": self._board_id, "name": premise}, session=session
         )
         return 0 if document is None else int(document["version"])
 
@@ -338,10 +349,10 @@ class MongoBoard:
         if found != kind:
             if kind == _LEVEL:
                 raise RegionKindError(
-                    f"{name!r} names a register, and this operation takes a level"
+                    f"{name!r} names a premise, and this operation takes a level"
                 )
             raise RegionKindError(
-                f"{name!r} names a level, and this operation takes a register"
+                f"{name!r} names a level, and this operation takes a premise"
             )
 
 

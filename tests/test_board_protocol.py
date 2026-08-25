@@ -11,8 +11,8 @@ from blackboard import (
     InMemoryBoard,
     Level,
     ManualClock,
-    Register,
-    RegisterState,
+    Premise,
+    PremiseState,
     RunLimits,
     TerminationDecision,
     Written,
@@ -34,7 +34,7 @@ class RecordingBoard:
         self._inner = InMemoryBoard()
         self.calls: list[str] = []
 
-    def declare(self, region: Level | Register) -> None:
+    def declare(self, region: Level | Premise) -> None:
         self.calls.append(f"declare:{region.name}")
         self._inner.declare(region)
 
@@ -43,16 +43,16 @@ class RecordingBoard:
         return self._inner.append(level, content)
 
     def set(
-        self, register: str, value: object, expected_version: int
+        self, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
-        self.calls.append(f"set:{register}")
-        return self._inner.set(register, value, expected_version)
+        self.calls.append(f"set:{premise}")
+        return self._inner.set(premise, value, expected_version)
 
     def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
         return self._inner.read_level(level, from_sequence)
 
-    def read_register(self, register: str) -> RegisterState:
-        return self._inner.read_register(register)
+    def read_premise(self, premise: str) -> PremiseState:
+        return self._inner.read_premise(premise)
 
     def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
         return self._inner.read_board(from_sequence)
@@ -66,8 +66,8 @@ def test_a_substitute_board_satisfies_the_protocol() -> None:
 def test_the_control_component_drives_the_supplied_board() -> None:
     store = RecordingBoard()
     model = create_model(
-        regions=[Level("platform"), Register("window")],
-        seed={"window": "w"},
+        regions=[Level("platform"), Premise("window")],
+        premises={"window": "w"},
         limits=LIMITS,
         termination_predicate=keep_open,
         board=store,
@@ -85,7 +85,7 @@ def test_the_control_component_drives_the_supplied_board() -> None:
 def test_without_one_the_in_memory_board_is_used() -> None:
     model = create_model(
         regions=[Level("platform")],
-        seed={},
+        premises={},
         limits=LIMITS,
         termination_predicate=keep_open,
         clock=ManualClock(start=START),

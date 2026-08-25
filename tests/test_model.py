@@ -14,11 +14,11 @@ from blackboard import (
     Level,
     ManualClock,
     Notification,
-    Register,
-    RegisterSeeded,
+    Premise,
+    PremiseError,
+    PremiseOpened,
     RunClosedError,
     RunLimits,
-    SeedError,
     Settled,
     SqliteBoard,
     TerminationDecision,
@@ -46,7 +46,7 @@ class TestCreation:
         with pytest.raises(TypeError, match="board"):
             create_model(  # type: ignore[call-arg]  # the omission is the subject
                 regions=[Level("platform")],
-                seed={},
+                premises={},
                 limits=LIMITS,
                 clock=ManualClock(start=START),
             )
@@ -54,8 +54,8 @@ class TestCreation:
     def test_the_board_passed_is_the_board_written_to(self) -> None:
         board = SqliteBoard()
         model = create_model(
-            regions=[Level("platform"), Register("window")],
-            seed={"window": "w"},
+            regions=[Level("platform"), Premise("window")],
+            premises={"window": "w"},
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
@@ -63,46 +63,44 @@ class TestCreation:
         )
         model.control.write("ocp", "platform", "a finding")
         assert [c.content for c in board.read_level("platform")] == ["a finding"]
-        assert board.read_register("window").value == "w"
+        assert board.read_premise("window").value == "w"
         board.close()
 
     def test_creation_takes_no_agents_and_wakes_nobody(self) -> None:
         model = create_model(
-            regions=[Level("platform"), Register("window")],
-            seed={"window": "w"},
+            regions=[Level("platform"), Premise("window")],
+            premises={"window": "w"},
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
         )
-        seeded = [
-            e for e in model.control.read_audit() if isinstance(e, RegisterSeeded)
-        ]
-        assert [e.register for e in seeded] == ["window"]
-        assert model.reader.read_register("window").value == "w"
+        opened = [e for e in model.control.read_audit() if isinstance(e, PremiseOpened)]
+        assert [e.premise for e in opened] == ["window"]
+        assert model.reader.read_premise("window").value == "w"
 
-    def test_the_seed_names_exactly_the_declared_registers(self) -> None:
-        with pytest.raises(SeedError, match="misses"):
+    def test_the_opening_premises_name_exactly_the_declared_premises(self) -> None:
+        with pytest.raises(PremiseError, match="miss"):
             create_model(
-                regions=[Register("window"), Register("service")],
-                seed={"window": "w"},
+                regions=[Premise("window"), Premise("service")],
+                premises={"window": "w"},
                 limits=LIMITS,
                 clock=ManualClock(start=START),
                 board=InMemoryBoard(),
             )
-        with pytest.raises(SeedError, match="undeclared"):
+        with pytest.raises(PremiseError, match="undeclared"):
             create_model(
-                regions=[Register("window")],
-                seed={"window": "w", "unknown": "x"},
+                regions=[Premise("window")],
+                premises={"window": "w", "unknown": "x"},
                 limits=LIMITS,
                 clock=ManualClock(start=START),
                 board=InMemoryBoard(),
             )
 
-    def test_seed_writes_bypass_the_write_budget(self) -> None:
+    def test_opening_writes_bypass_admission(self) -> None:
         model = create_model(
-            regions=[Level("platform"), Register("window"), Register("service")],
-            seed={"window": "w", "service": "s"},
+            regions=[Level("platform"), Premise("window"), Premise("service")],
+            premises={"window": "w", "service": "s"},
             termination_predicate=keep_open,
             limits=RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30)),
             clock=ManualClock(start=START),
@@ -115,8 +113,8 @@ class TestRegistration:
     def test_registering_wakes_the_agent_once(self) -> None:
         notifications: list[Notification] = []
         model = create_model(
-            regions=[Register("window"), Register("service")],
-            seed={"window": "w", "service": "s"},
+            regions=[Premise("window"), Premise("service")],
+            premises={"window": "w", "service": "s"},
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
@@ -131,8 +129,8 @@ class TestRegistration:
         first: list[Notification] = []
         second: list[Notification] = []
         model = create_model(
-            regions=[Register("window")],
-            seed={"window": "w"},
+            regions=[Premise("window")],
+            premises={"window": "w"},
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
@@ -150,14 +148,14 @@ class TestRegistration:
     ) -> None:
         notifications: list[Notification] = []
         model = create_model(
-            regions=[Register("window")],
-            seed={"window": "w"},
+            regions=[Premise("window")],
+            premises={"window": "w"},
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
         )
-        model.control.declare(Register("trigger"))
+        model.control.declare(Premise("trigger"))
         model.control.register_agent(declaration("ocp", notifications.append))
         (notification,) = notifications
         assert notification.regions == frozenset({"window"})
@@ -165,8 +163,8 @@ class TestRegistration:
     def test_a_duplicate_name_is_refused(self) -> None:
         notifications: list[Notification] = []
         model = create_model(
-            regions=[Register("window")],
-            seed={"window": "w"},
+            regions=[Premise("window")],
+            premises={"window": "w"},
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
@@ -178,8 +176,8 @@ class TestRegistration:
 
     def test_registering_into_a_closed_run_is_refused(self) -> None:
         model = create_model(
-            regions=[Register("window")],
-            seed={"window": "w"},
+            regions=[Premise("window")],
+            premises={"window": "w"},
             limits=LIMITS,
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
@@ -194,8 +192,8 @@ class TestFullCycle:
         notifications: list[Notification] = []
         clock = ManualClock(start=START)
         model = create_model(
-            regions=[Level("platform"), Register("window")],
-            seed={"window": ["t1", "t2"]},
+            regions=[Level("platform"), Premise("window")],
+            premises={"window": ["t1", "t2"]},
             limits=LIMITS,
             clock=clock,
             board=InMemoryBoard(),
@@ -203,7 +201,7 @@ class TestFullCycle:
         model.control.register_agent(declaration("ocp", notifications.append))
 
         (notification,) = notifications
-        window = model.reader.read_register("window").value
+        window = model.reader.read_premise("window").value
         model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
         model.control.ack("ocp", notification.notification_id)
 
@@ -226,8 +224,8 @@ class TestSystemClockIntegration:
             threading.Timer(0.03, work).start()
 
         model = create_model(
-            regions=[Level("platform"), Register("window")],
-            seed={"window": "w"},
+            regions=[Level("platform"), Premise("window")],
+            premises={"window": "w"},
             limits=RunLimits(
                 wall_clock=timedelta(minutes=1), idle=timedelta(seconds=1)
             ),

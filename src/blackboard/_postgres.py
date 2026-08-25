@@ -17,7 +17,7 @@ serialised, and a number a rolled-back write took is returned rather than
 skipped. A Postgres sequence would be faster and would leave gaps, and a
 gap is a hole in a record whose numbers are addresses.
 
-A register write is a conditional update on the version. Two writers
+A premise write is a conditional update on the version. Two writers
 naming the same version produce one winner and one ``Conflict``, whichever
 processes reach the row.
 """
@@ -25,6 +25,7 @@ processes reach the row.
 from __future__ import annotations
 
 import json
+import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol
@@ -38,11 +39,11 @@ from blackboard._board import (
     Contribution,
     DuplicateRegionError,
     Level,
+    Premise,
+    PremiseState,
     RegionKindError,
-    Register,
-    RegisterState,
     UndeclaredRegionError,
-    UnsetRegisterError,
+    UnsetPremiseError,
     Written,
 )
 
@@ -58,7 +59,7 @@ CREATE TABLE IF NOT EXISTS blackboard_boards (
 CREATE TABLE IF NOT EXISTS blackboard_regions (
     board_id TEXT NOT NULL,
     name     TEXT NOT NULL,
-    kind     TEXT NOT NULL CHECK (kind IN ('level', 'register')),
+    kind     TEXT NOT NULL CHECK (kind IN ('level', 'premise')),
     PRIMARY KEY (board_id, name)
 );
 CREATE TABLE IF NOT EXISTS blackboard_contributions (
@@ -68,7 +69,7 @@ CREATE TABLE IF NOT EXISTS blackboard_contributions (
     content  JSONB  NOT NULL,
     PRIMARY KEY (board_id, sequence)
 );
-CREATE TABLE IF NOT EXISTS blackboard_registers (
+CREATE TABLE IF NOT EXISTS blackboard_premises (
     board_id TEXT   NOT NULL,
     name     TEXT   NOT NULL,
     value    JSONB,
@@ -80,7 +81,7 @@ CREATE INDEX IF NOT EXISTS blackboard_contributions_by_region
 """
 
 _LEVEL = "level"
-_REGISTER = "register"
+_PREMISE = "premise"
 
 
 class _RollBack(Exception):
@@ -143,13 +144,13 @@ class PostgresBoard:
         with self._pool.connection() as connection:
             connection.execute(_SCHEMA)
 
-    def declare(self, region: Level | Register) -> None:
-        if not isinstance(region, Level | Register):
+    def declare(self, region: Level | Premise) -> None:
+        if not isinstance(region, Level | Premise):
             raise TypeError(
-                "a region declaration is a Level or a Register, "
+                "a region declaration is a Level or a Premise, "
                 f"not {type(region).__name__}"
             )
-        kind = _LEVEL if isinstance(region, Level) else _REGISTER
+        kind = _LEVEL if isinstance(region, Level) else _PREMISE
         with self._pool.connection() as connection, connection.transaction():
             self._open_board(connection)
             if self._kind_of(connection, region.name) is not None:
@@ -168,9 +169,9 @@ class PostgresBoard:
                 raise DuplicateRegionError(
                     f"a region named {region.name!r} is already declared"
                 ) from clash
-            if kind == _REGISTER:
+            if kind == _PREMISE:
                 connection.execute(
-                    "INSERT INTO blackboard_registers (board_id, name, value, version) "
+                    "INSERT INTO blackboard_premises (board_id, name, value, version) "
                     "VALUES (%s, %s, NULL, 0)",
                     (self._board_id, region.name),
                 )
@@ -188,28 +189,28 @@ class PostgresBoard:
             return sequence
 
     def set(
-        self, register: str, value: object, expected_version: int
+        self, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
         carried = json.dumps(value)
         outcome: Written | Conflict
         with self._pool.connection() as connection:
             try:
                 with connection.transaction():
-                    self._require(connection, register, _REGISTER)
+                    self._require(connection, premise, _PREMISE)
                     # Taking the sequence first locks the board row, so no
                     # concurrent write to this board can interleave with the
                     # conditional update below.
                     sequence = self._take_sequence(connection)
                     updated = connection.execute(
-                        "UPDATE blackboard_registers SET value = %s::jsonb, "
+                        "UPDATE blackboard_premises SET value = %s::jsonb, "
                         "version = version + 1 "
                         "WHERE board_id = %s AND name = %s AND version = %s "
                         "RETURNING version",
-                        (carried, self._board_id, register, expected_version),
+                        (carried, self._board_id, premise, expected_version),
                     ).fetchone()
                     if updated is None:
                         outcome = Conflict(
-                            current_version=self._current_version(connection, register)
+                            current_version=self._current_version(connection, premise)
                         )
                         # Leaving by an exception is what undoes the
                         # sequence this write took, so a conflict skips no
@@ -219,7 +220,7 @@ class PostgresBoard:
                         "INSERT INTO blackboard_contributions "
                         "(board_id, sequence, region, content) "
                         "VALUES (%s, %s, %s, %s::jsonb)",
-                        (self._board_id, sequence, register, carried),
+                        (self._board_id, sequence, premise, carried),
                     )
                     outcome = Written(sequence=sequence, version=int(updated[0]))
             except _RollBack:
@@ -237,19 +238,29 @@ class PostgresBoard:
             ).fetchall()
         return [Contribution(sequence=int(r[0]), content=r[1]) for r in rows]
 
-    def read_register(self, register: str) -> RegisterState:
+    def read_premise(self, premise: str) -> PremiseState:
         with self._pool.connection() as connection:
-            self._require(connection, register, _REGISTER)
+            self._require(connection, premise, _PREMISE)
             row = connection.execute(
-                "SELECT value, version FROM blackboard_registers "
+                "SELECT value, version FROM blackboard_premises "
                 "WHERE board_id = %s AND name = %s",
-                (self._board_id, register),
+                (self._board_id, premise),
             ).fetchone()
         if row is None or int(row[1]) == 0:
-            raise UnsetRegisterError(
-                f"the register {register!r} has no value until one is written"
+            raise UnsetPremiseError(
+                f"the premise {premise!r} has no value until one is written"
             )
-        return RegisterState(value=row[0], version=int(row[1]))
+        return PremiseState(value=row[0], version=int(row[1]))
+
+    def read_register(self, register: str) -> PremiseState:
+        """Deprecated since 0.5.0. Use ``read_premise``; removed in 0.6.0."""
+        warnings.warn(
+            "read_register is renamed read_premise, and the old name is "
+            "removed in 0.6.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.read_premise(register)
 
     def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
         with self._pool.connection() as connection:
@@ -290,11 +301,10 @@ class PostgresBoard:
         ).fetchone()
         return None if row is None else str(row[0])
 
-    def _current_version(self, connection: Any, register: str) -> int:
+    def _current_version(self, connection: Any, premise: str) -> int:
         row = connection.execute(
-            "SELECT version FROM blackboard_registers "
-            "WHERE board_id = %s AND name = %s",
-            (self._board_id, register),
+            "SELECT version FROM blackboard_premises WHERE board_id = %s AND name = %s",
+            (self._board_id, premise),
         ).fetchone()
         return 0 if row is None else int(row[0])
 
@@ -305,8 +315,8 @@ class PostgresBoard:
         if found != kind:
             if kind == _LEVEL:
                 raise RegionKindError(
-                    f"{name!r} names a register, and this operation takes a level"
+                    f"{name!r} names a premise, and this operation takes a level"
                 )
             raise RegionKindError(
-                f"{name!r} names a level, and this operation takes a register"
+                f"{name!r} names a level, and this operation takes a premise"
             )
