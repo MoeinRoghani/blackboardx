@@ -12,7 +12,7 @@ lock-check:
 	uv lock --check
 
 typecheck:
-	uv run mypy src tests
+	MYPYPATH=tests uv run mypy src tests
 
 test:
 	uv run pytest

@@ -63,3 +63,4 @@ strict = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--import-mode=importlib --strict-markers -ra"
+pythonpath = ["tests"]
