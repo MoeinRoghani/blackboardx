@@ -7,7 +7,7 @@ A deployment that holds blackboards for agents which run as separate services. I
 | Part | What it is | Owned by | Run by |
 | --- | --- | --- | --- |
 | `blackboardx` | A pip package: the board, the control component, the storage protocol | This repository | Imported, never run alone |
-| Storage adapter | A class in that package implementing the protocol for one database | This repository | Imported |
+| Storage adapter | An implementation of that package's protocol for one database | The application | Imported by the service |
 | Blackboard service | A container that imports the library and serves HTTP | This repository | Kubernetes, several pods |
 | Agent client | A small package agents import, wrapping the HTTP surface | This repository | Imported by agents |
 | Database | One PostgreSQL primary | The platform | Already running |
