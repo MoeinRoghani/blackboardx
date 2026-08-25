@@ -40,6 +40,7 @@ The deployment drivers are extras, `blackboardx[postgres]` and `blackboardx[mong
 
 - Every caller states where its record goes, and no application reaches deployment holding its record in process memory because an argument was omitted.
 - `Board` is renamed and `board` is required, which is a breaking change in both directions: the name and the signature.
+- ADR 0007 says `create_model` takes five things. It now takes those five and the board, which is not configuration but a statement of where the five are recorded.
 - A tuple written to any board reads back as a list, and content JSON cannot carry raises `TypeError` at the write rather than at the first process boundary.
 - A conformance suite defines what an implementation owes, and the deployment adapters are held to it against real servers in CI. A skip in that job fails it, because a skip means a server did not come up.
 - `MongoBoard` requires a replica set, because both guarantees span documents and that is a session transaction. A standalone server raises and says so.
