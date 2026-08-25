@@ -17,7 +17,7 @@ from blackboard import (
 
 notifications = []
 
-# 1. Declare the regions and the facts of the case.
+# 1. Declare the regions and seed the premises.
 model = create_model(
     regions=[Level("platform"), Register("window")],
     seed={"window": ["2026-08-16T20:00", "2026-08-16T22:00"]},
