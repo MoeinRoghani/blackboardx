@@ -3,10 +3,10 @@
 import pytest
 from conformance import BoardConformance
 
-from blackboard import Board, BoardStore
+from blackboard import BoardStore, InMemoryBoard
 
 
 class TestInMemoryBoard(BoardConformance):
     @pytest.fixture
     def board(self) -> BoardStore:
-        return Board()
+        return InMemoryBoard()

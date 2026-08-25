@@ -29,7 +29,7 @@ A register write names the version it expects to replace, and fails if the regis
 
 ```python
 state = board.read_register("namespace")
-result = board.set("namespace", (*state.value, "prod-payments"), state.version)
+result = board.set("namespace", [*state.value, "prod-payments"], state.version)
 ```
 
 `result` is `Written` with the new version, or `Conflict` carrying the version now current. The board neither retries nor merges; the writer re-reads and decides again.
@@ -54,10 +54,10 @@ board.read_register("window")  # value and version
 board.read_board(from_sequence=4)  # every region, in order
 ```
 
-Reads return snapshots, so mutating the returned list changes nothing. Content itself comes back **by identity**: the board does not copy what it stores, so a caller that mutates a stored object changes what every later reader sees.
+Reads return snapshots, so mutating the returned list changes nothing. Content crosses the board as JSON and comes back detached from what the caller wrote, so mutating a stored object afterwards changes nothing a later reader sees. A tuple written comes back a list, and content JSON cannot carry raises `TypeError` before anything is stored.
 
 ## Substituting the board
 
-`Control` takes a `BoardStore`, the protocol covering the six operations it performs. Supplying none uses the in-memory board.
+`Control` takes a `BoardStore`, the protocol covering the six operations it performs. There is no default: a run has to be told where its record goes.
 
-An application that needs the record to outlive the process implements that protocol against its own database. The two reconciliation rules map onto ordinary primitives: the total order is a sequence, and a register write is an update guarded by a version.
+`SqliteBoard` keeps it in a file, and an adapter you write keeps it in your own database. The two reconciliation rules map onto ordinary primitives: the total order is a sequence, and a register write is an update guarded by a version. [Storage](storage.md) covers the choice and what an implementation has to guarantee.

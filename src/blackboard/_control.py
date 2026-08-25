@@ -43,7 +43,6 @@ from typing import NewType, Protocol, TypeAlias
 
 from blackboard._board import (
     BlackboardError,
-    Board,
     BoardChange,
     Conflict,
     Contribution,
@@ -61,9 +60,13 @@ from blackboard._clock import Clock, ScheduledCall
 class BoardStore(Protocol):
     """The operations the control component performs on a board.
 
-    The in-memory ``Board`` satisfies it. An application supplying its own
-    implementation puts the record wherever it needs it, and the control
-    component names no concrete type.
+    ``InMemoryBoard`` and ``SqliteBoard`` satisfy it, as does any adapter an
+    application writes against its own database. The control component names
+    no concrete type, and holds every implementation to one conformance suite.
+
+    Content crosses this protocol as JSON. An implementation returns what
+    JSON carries, so a tuple written comes back a list, and content JSON
+    cannot carry raises ``TypeError`` before anything is stored.
     """
 
     def declare(self, region: Level | Register) -> None:
@@ -417,10 +420,10 @@ class Control:
         admission_rule: AdmissionRule | None = None,
         termination_predicate: TerminationPredicate | None = None,
         budgets: RunBudgets,
-        board: BoardStore | None = None,
+        board: BoardStore,
         clock: Clock,
     ) -> None:
-        self._board: BoardStore = board if board is not None else Board()
+        self._board: BoardStore = board
         self._clock = clock
         self._admission_rule = (
             admission_rule if admission_rule is not None else _accept_every_write

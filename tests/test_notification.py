@@ -9,6 +9,7 @@ from blackboard import (
     Agent,
     BoardReader,
     DuplicateAgentError,
+    InMemoryBoard,
     Level,
     ManualClock,
     Notification,
@@ -63,6 +64,7 @@ def make_control(clock: ManualClock, *agents: Agent) -> Control:
         termination_predicate=keep_open,
         budgets=BUDGETS,
         clock=clock,
+        board=InMemoryBoard(),
     )
     for declared in agents:
         control.register_agent(declared)
@@ -166,10 +168,10 @@ class TestBatchWindows:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
-        control.set_register("operator", "namespace", ("ns1",), expected_version=0)
+        control.set_register("operator", "namespace", ["ns1"], expected_version=0)
         clock.advance(timedelta(seconds=2))
         control.set_register(
-            "operator", "namespace", ("ns1", "ns2"), expected_version=1
+            "operator", "namespace", ["ns1", "ns2"], expected_version=1
         )
         assert recorder.received == []
         clock.advance(timedelta(seconds=3))
@@ -182,7 +184,7 @@ class TestBatchWindows:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
-        control.set_register("operator", "namespace", ("ns1",), expected_version=0)
+        control.set_register("operator", "namespace", ["ns1"], expected_version=0)
         assert recorder.received == []
         control.set_register("operator", "window", "w", expected_version=0)
         (notification,) = recorder.received
@@ -196,10 +198,10 @@ class TestBatchWindows:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
-        control.set_register("operator", "namespace", ("ns1",), expected_version=0)
+        control.set_register("operator", "namespace", ["ns1"], expected_version=0)
         clock.advance(timedelta(seconds=4))
         control.set_register(
-            "operator", "namespace", ("ns1", "ns2"), expected_version=1
+            "operator", "namespace", ["ns1", "ns2"], expected_version=1
         )
         clock.advance(timedelta(seconds=1))
         assert len(recorder.received) == 1
@@ -315,6 +317,7 @@ class TestStaleTimerCalls:
             termination_predicate=keep_open,
             budgets=BUDGETS,
             clock=clock,
+            board=InMemoryBoard(),
         )
         recorder = Recorder()
         control.register_agent(
@@ -323,13 +326,13 @@ class TestStaleTimerCalls:
                 notify=recorder,
             )
         )
-        control.set_register("operator", "namespace", ("ns1",), expected_version=0)
+        control.set_register("operator", "namespace", ["ns1"], expected_version=0)
         clock.advance(timedelta(seconds=1))
         control.set_register("operator", "window", "w", expected_version=0)
         assert len(recorder.received) == 1
         clock.advance(timedelta(seconds=1))
         control.set_register(
-            "operator", "namespace", ("ns1", "ns2"), expected_version=1
+            "operator", "namespace", ["ns1", "ns2"], expected_version=1
         )
         clock.advance(timedelta(seconds=3))
         assert len(recorder.received) == 1
@@ -393,6 +396,7 @@ class TestChainedWakes:
             termination_predicate=keep_open,
             budgets=BUDGETS,
             clock=clock,
+            board=InMemoryBoard(),
         )
         control_holder.append(control)
         for name, target in (("a", "rb"), ("b", "ra")):

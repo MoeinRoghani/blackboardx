@@ -2,9 +2,12 @@
 
 A model is created by supplying five things: region declarations, seed
 register values, an admission rule, a termination predicate, and run
-budgets. Nothing else configures it, and the board and the clock are
-dependency injection rather than configuration. Opening the run creates
-the board and writes the seed.
+budgets. Nothing else configures it, and the clock is dependency injection
+rather than configuration.
+
+Where the record is kept is stated, never defaulted. An application names
+the board it wants, so none reaches deployment holding its record in
+process memory because an argument was omitted.
 
 No agent is named at creation. An agent comes to exist by registering,
 which is the only path carrying its callback, and a creator cannot know
@@ -50,10 +53,15 @@ def create_model(
     admission_rule: AdmissionRule | None = None,
     termination_predicate: TerminationPredicate | None = None,
     budgets: RunBudgets,
-    board: BoardStore | None = None,
+    board: BoardStore,
     clock: Clock | None = None,
 ) -> Model:
     """Opens a run and returns the model.
+
+    ``board`` says where the record is kept and has no default, because a
+    run whose record no second process can read is not a shared solution
+    model. ``SqliteBoard`` serves one machine; an adapter against your own
+    database serves a deployment.
 
     The seed writes every declared register once, bypassing admission and
     the write budget. No agent is registered yet, so the seed wakes nobody;

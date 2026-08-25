@@ -10,19 +10,18 @@ The distribution is named `blackboardx` and the import name is `blackboard`.
 from blackboard import create_model
 ```
 
-It requires Python 3.11 or later and has no runtime dependencies. The package ships `py.typed`, so type checkers use its annotations without a stub package.
+It requires Python 3.11 or later. The base install has no runtime dependencies, because the board it ships is backed by SQLite, which comes with Python. The package ships `py.typed`, so type checkers use its annotations without a stub package.
 
 ## What the package contains, and what it does not
 
-There are no optional extras. One install gives you everything the distribution has.
-
 | Ships | Does not ship |
 | --- | --- |
-| The board, the control component, model creation | Any database adapter |
-| The `BoardStore` protocol | Any implementation of it besides the in-memory board |
-| `SystemClock` and `ManualClock` | Any transport to remote agents |
+| `SqliteBoard`, for one machine | Any transport to remote agents |
+| The `BoardStore` protocol, for anything else | Any agent implementation |
+| The control component and model creation | Any process supervisor |
+| `SystemClock` and `ManualClock` | |
 
-Keeping the record somewhere other than process memory means implementing `BoardStore` against your own database, which is six methods. [The board](concepts/board.md) describes what each has to guarantee.
+Keeping the record in your own database means implementing `BoardStore` against it, which is six methods. [Storage](concepts/storage.md) describes what each has to guarantee.
 
 ## Supported versions
 

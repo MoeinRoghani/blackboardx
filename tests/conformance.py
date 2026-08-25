@@ -223,16 +223,16 @@ class BoardConformance:
     def test_concurrent_register_writers_lose_no_update(
         self, ready: BoardStore
     ) -> None:
-        ready.set("window", (), expected_version=0)
+        ready.set("window", [], expected_version=0)
         barrier = threading.Barrier(4)
 
         def add(item: int) -> None:
             barrier.wait()
             for _ in range(500):
                 state = ready.read_register("window")
-                assert isinstance(state.value, tuple)
+                assert isinstance(state.value, list)
                 result = ready.set(
-                    "window", (*state.value, item), expected_version=state.version
+                    "window", [*state.value, item], expected_version=state.version
                 )
                 if isinstance(result, Written):
                     return
@@ -244,6 +244,6 @@ class BoardConformance:
         for thread in threads:
             thread.join()
         state = ready.read_register("window")
-        assert isinstance(state.value, tuple)
+        assert isinstance(state.value, list)
         assert sorted(state.value) == list(range(4))
         assert state.version == 5
