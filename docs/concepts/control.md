@@ -13,7 +13,7 @@ def rule(proposed, reader):
     return Accept()
 ```
 
-The rule receives a read handle on the board, so it may read contributions. The reading limit applies to the board, not to a rule the application wrote.
+The rule receives a read handle on the board, so it decides from what is already there rather than from the proposed write alone.
 
 Refusals come back as values, because a refusal can race correct agent code. A caller defect raises instead.
 
@@ -66,4 +66,4 @@ A callback may run the whole agent cycle inline, which is what makes single-thre
 
 Every event is recorded in the order it occurred: seed writes, accepted and rejected writes, dispatches, acknowledgments, and the closing state. Events that reached the board carry their sequence number; a rejected write never reached it and carries none.
 
-The audit holds that each event occurred. The contributions stay on the board. The two together reconstruct the run.
+The audit holds that each event occurred. The contributions stay on the board. The two together reconstruct the run, and only the second survives the process, so an audit that has to outlive the run is written out before the run closes. [Running as a service](service.md) covers what is held where.
