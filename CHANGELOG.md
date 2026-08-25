@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.4.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.3.0...v0.4.0) (2026-08-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **board:** `Board` is renamed `InMemoryBoard`, and `board` is required by `create_model` and `Control`.
+
+### Features
+
+* **board:** storage is chosen, never defaulted, and SQLite is the local choice ([#89](https://github.com/MoeinRoghani/blackboardx/issues/89)) ([c6c1656](https://github.com/MoeinRoghani/blackboardx/commit/c6c1656ababb2d7ef0c079ce0e0bf8f125615a3c)), closes [#88](https://github.com/MoeinRoghani/blackboardx/issues/88)
+* **storage:** a MongoDB adapter ([#93](https://github.com/MoeinRoghani/blackboardx/issues/93)) ([f81c230](https://github.com/MoeinRoghani/blackboardx/commit/f81c2307a8a439bbdf015a5b8c17be770fde75ec)), closes [#92](https://github.com/MoeinRoghani/blackboardx/issues/92)
+* **storage:** a Postgres adapter, and one database holds many boards ([#91](https://github.com/MoeinRoghani/blackboardx/issues/91)) ([2de02ab](https://github.com/MoeinRoghani/blackboardx/commit/2de02abef281f3626b0177b885de55146a4696ae)), closes [#90](https://github.com/MoeinRoghani/blackboardx/issues/90)
+
+
+### Bug Fixes
+
+* **docs:** the site claims a storage adapter the package does not contain ([#85](https://github.com/MoeinRoghani/blackboardx/issues/85)) ([5bebb39](https://github.com/MoeinRoghani/blackboardx/commit/5bebb3903cca1f4ad13ab8b5f9aad92a8e0998db)), closes [#84](https://github.com/MoeinRoghani/blackboardx/issues/84)
+
+
+### Documentation
+
+* a documentation site with the structure the field uses ([#81](https://github.com/MoeinRoghani/blackboardx/issues/81)) ([4d78acc](https://github.com/MoeinRoghani/blackboardx/commit/4d78acca73f71a20c29ac4d50f005c22d88a4da2)), closes [#80](https://github.com/MoeinRoghani/blackboardx/issues/80)
+* content is JSON in the record, so a service adds no serialisation ([#95](https://github.com/MoeinRoghani/blackboardx/issues/95)) ([1945a04](https://github.com/MoeinRoghani/blackboardx/commit/1945a047be510f7ea35c06b9bc15efc79a31988d)), closes [#94](https://github.com/MoeinRoghani/blackboardx/issues/94)
+* **control:** the module says what the control component does now ([#101](https://github.com/MoeinRoghani/blackboardx/issues/101)) ([57d331f](https://github.com/MoeinRoghani/blackboardx/commit/57d331f8fac1e073f7f07939bdadd476e53e8b69)), closes [#100](https://github.com/MoeinRoghani/blackboardx/issues/100)
+* the pages stop naming a reading limit the library does not impose ([#103](https://github.com/MoeinRoghani/blackboardx/issues/103)) ([899242e](https://github.com/MoeinRoghani/blackboardx/commit/899242e7c62a0989ee4ad0262c804b593a6e6cd4)), closes [#102](https://github.com/MoeinRoghani/blackboardx/issues/102)
+* the record is durable and the run is not, and the page said otherwise ([#99](https://github.com/MoeinRoghani/blackboardx/issues/99)) ([d2797b6](https://github.com/MoeinRoghani/blackboardx/commit/d2797b6f2c67ca430ea8d32edd0f2300844bfd9e)), closes [#98](https://github.com/MoeinRoghani/blackboardx/issues/98)
+
 ## [0.3.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.2.1...v0.3.0) (2026-08-24)
 
 
