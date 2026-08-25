@@ -26,8 +26,9 @@ The `adapters` job in CI brings up both and fails if any adapter test skips, so 
 5. `make lint typecheck test` passes locally before the pull request opens. Local green is the precondition for opening the pull request, not a substitute for CI.
 6. When `main` has moved, the branch is rebased on it. `main` is never merged into the branch.
 7. The pull request title is a Conventional Commit subject; a check validates it. The body carries `Closes #<issue>`, one keyword per issue, because the squash merge discards commit messages and the body survives.
-8. A pull request merges only when every check has passed, whatever the reason for a failure.
-9. The merge is a squash. GitHub deletes the remote branch on merge; `git switch main && git pull --ff-only && git fetch --prune` then removes the local one.
+8. The body carries no parentheses, and a check enforces that. The squash merge writes the body into the commit message, release-please parses that message, and a parenthesis defeats its parser. It then drops the whole commit from the release notes without failing anything, which is how a breaking rename once reached a release with no entry and no migration.
+9. A pull request merges only when every check has passed, whatever the reason for a failure.
+10. The merge is a squash. GitHub deletes the remote branch on merge; `git switch main && git pull --ff-only && git fetch --prune` then removes the local one.
 
 ## Review
 

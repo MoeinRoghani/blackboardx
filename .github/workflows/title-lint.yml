@@ -26,3 +26,29 @@ jobs:
             build
             perf
             revert
+
+  # The squash merge writes this body into the commit message, and
+  # release-please parses that message. A parenthesis in the body defeats its
+  # parser, and the failure is silent: the commit is dropped from the release
+  # notes while every check stays green.
+  body-parses:
+    runs-on: ubuntu-latest
+    steps:
+      - name: the body carries no parenthesis
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          if printf '%s' "$BODY" | grep -n '[()]'; then
+            echo
+            echo "The lines above carry a parenthesis. The squash merge writes"
+            echo "this body into the commit message, and release-please cannot"
+            echo "parse a message that holds one: it drops the whole commit"
+            echo "from the release notes without failing anything."
+            echo
+            echo "Write the body without parentheses. Commas, semicolons and"
+            echo "separate sentences carry the same meaning, and the writing"
+            echo "standard already prefers them."
+            exit 1
+          fi
+          echo "no parenthesis in the body"
