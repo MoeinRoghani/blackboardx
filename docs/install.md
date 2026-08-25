@@ -12,16 +12,28 @@ from blackboard import create_model
 
 It requires Python 3.11 or later. The base install has no runtime dependencies, because the board it ships is backed by SQLite, which comes with Python. The package ships `py.typed`, so type checkers use its annotations without a stub package.
 
+## Extras
+
+A deployment keeps the record in the database it already runs, and the adapter for one needs its driver:
+
+```
+pip install 'blackboardx[postgres]'
+```
+
+| Extra | Installs | Gives you |
+| --- | --- | --- |
+| `postgres` | `psycopg[binary,pool]` | `PostgresBoard` |
+
+Naming a board whose extra is not installed raises an `ImportError` saying which extra supplies it. [Storage](concepts/storage.md) covers the choice.
+
 ## What the package contains, and what it does not
 
 | Ships | Does not ship |
 | --- | --- |
-| `SqliteBoard`, for one machine | Any transport to remote agents |
-| The `BoardStore` protocol, for anything else | Any agent implementation |
+| `SqliteBoard` and `PostgresBoard` | Any transport to remote agents |
+| The `BoardStore` protocol, for any other database | Any agent implementation |
 | The control component and model creation | Any process supervisor |
-| `SystemClock` and `ManualClock` | |
-
-Keeping the record in your own database means implementing `BoardStore` against it, which is six methods. [Storage](concepts/storage.md) describes what each has to guarantee.
+| `SystemClock` and `ManualClock` | Any database server, credential, or migration tool |
 
 ## Supported versions
 

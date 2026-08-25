@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from conformance import BoardConformance
+from conformance import BoardConformance, SharedStoreConformance
 
 from blackboard import BoardStore, Level, Register, SqliteBoard
 
@@ -44,3 +44,14 @@ def test_the_record_survives_the_process_that_made_it(tmp_path: Path) -> None:
     # take a sequence number an earlier one already holds.
     assert reopened.append("platform", "later") == 3
     reopened.close()
+
+
+class TestSqliteHoldsManyBoards(SharedStoreConformance):
+    @pytest.fixture
+    def two_boards(self, tmp_path: Path) -> Iterator[tuple[BoardStore, BoardStore]]:
+        path = str(tmp_path / "board.sqlite3")
+        first = SqliteBoard(path, board_id="incident-1")
+        second = SqliteBoard(path, board_id="incident-2")
+        yield first, second
+        first.close()
+        second.close()

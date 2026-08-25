@@ -9,6 +9,8 @@ admission rule, termination predicate, and budgets. The public surface is
 the set of names in ``__all__``; every other name is internal.
 """
 
+from typing import TYPE_CHECKING, Any
+
 from blackboard._board import (
     BlackboardError,
     BoardChange,
@@ -63,6 +65,9 @@ from blackboard._control import (
 from blackboard._model import Model, create_model
 from blackboard._sqlite import SqliteBoard
 
+if TYPE_CHECKING:
+    from blackboard._postgres import PostgresBoard
+
 __all__ = [
     "Aborted",
     "Accept",
@@ -88,6 +93,7 @@ __all__ = [
     "NotificationAcknowledged",
     "NotificationDispatched",
     "NotificationId",
+    "PostgresBoard",
     "ProposedContribution",
     "ProposedRegisterWrite",
     "ProposedWrite",
@@ -118,3 +124,27 @@ __all__ = [
     "Written",
     "create_model",
 ]
+
+
+_EXTRAS = {"PostgresBoard": ("blackboard._postgres", "postgres")}
+
+
+def __getattr__(name: str) -> Any:
+    """Imports a board that needs an extra, and says which one when it is absent.
+
+    Naming these here rather than importing them at the top keeps the base
+    install free of database drivers, while leaving one import path.
+    """
+    entry = _EXTRAS.get(name)
+    if entry is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, extra = entry
+    from importlib import import_module
+
+    try:
+        module = import_module(module_name)
+    except ImportError as absent:  # pragma: no cover - exercised by a test
+        raise ImportError(
+            f"{name} needs the {extra!r} extra: pip install 'blackboardx[{extra}]'"
+        ) from absent
+    return getattr(module, name)

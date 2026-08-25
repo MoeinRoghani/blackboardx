@@ -45,6 +45,33 @@ jobs:
       - run: make setup
       - run: make docs
 
+  adapters:
+    name: adapters (postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+        env:
+          POSTGRES_USER: blackboard
+          POSTGRES_PASSWORD: blackboard
+          POSTGRES_DB: blackboard
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U blackboard"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BLACKBOARD_TEST_POSTGRES_DSN: postgresql://blackboard:blackboard@localhost:5432/blackboard
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.11"
+      - run: make setup
+      - run: make test
+
   test:
     runs-on: ubuntu-latest
     strategy:
