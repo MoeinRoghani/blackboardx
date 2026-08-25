@@ -247,3 +247,74 @@ class BoardConformance:
         assert isinstance(state.value, list)
         assert sorted(state.value) == list(range(4))
         assert state.version == 5
+
+
+class SharedStoreConformance:
+    """Subclass this where one store holds many boards under an identifier.
+
+    Supply a ``two_boards`` fixture returning two boards over the same
+    store under different identifiers. What one holds is invisible to the
+    other, sequence numbers included, so a database serving many concurrent
+    runs is the ordinary case rather than a workaround.
+    """
+
+    @pytest.fixture
+    def two_boards(self) -> tuple[BoardStore, BoardStore]:
+        raise NotImplementedError("supply a two_boards fixture")
+
+    def test_a_region_declared_on_one_is_undeclared_on_the_other(
+        self, two_boards: tuple[BoardStore, BoardStore]
+    ) -> None:
+        first, second = two_boards
+        first.declare(Level("application"))
+        with pytest.raises(UndeclaredRegionError):
+            second.read_level("application")
+        second.declare(Level("application"))
+
+    def test_neither_board_reads_the_other_s_contributions(
+        self, two_boards: tuple[BoardStore, BoardStore]
+    ) -> None:
+        first, second = two_boards
+        first.declare(Level("application"))
+        second.declare(Level("application"))
+        first.append("application", "from the first")
+        second.append("application", "from the second")
+        assert [c.content for c in first.read_level("application")] == [
+            "from the first"
+        ]
+        assert [c.content for c in second.read_level("application")] == [
+            "from the second"
+        ]
+
+    def test_each_board_counts_its_own_sequence(
+        self, two_boards: tuple[BoardStore, BoardStore]
+    ) -> None:
+        first, second = two_boards
+        first.declare(Level("application"))
+        second.declare(Level("application"))
+        assert first.append("application", "a") == 1
+        assert first.append("application", "b") == 2
+        assert second.append("application", "a") == 1
+
+    def test_registers_of_the_same_name_hold_separate_values(
+        self, two_boards: tuple[BoardStore, BoardStore]
+    ) -> None:
+        first, second = two_boards
+        first.declare(Register("window"))
+        second.declare(Register("window"))
+        first.set("window", "first", expected_version=0)
+        assert isinstance(second.set("window", "second", expected_version=0), Written)
+        assert first.read_register("window").value == "first"
+        assert second.read_register("window").value == "second"
+
+    def test_the_whole_board_read_names_only_this_board_s_writes(
+        self, two_boards: tuple[BoardStore, BoardStore]
+    ) -> None:
+        first, second = two_boards
+        first.declare(Level("application"))
+        second.declare(Level("application"))
+        first.append("application", "a")
+        second.append("application", "b")
+        assert first.read_board() == [
+            BoardChange(sequence=1, region="application", content="a")
+        ]

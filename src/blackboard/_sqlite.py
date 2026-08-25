@@ -5,6 +5,10 @@ wants the storage semantics a deployment has: one sequence across every
 region, and a register write guarded by the version it expects to replace.
 Pointed at a file, a run's record survives the process that made it.
 
+One file holds many boards, each under its own identifier, as one server
+does. Moving from a file to a server changes the board that is constructed
+and nothing else.
+
 Content is stored as JSON, so a contribution must be serialisable. That is
 the same contract any adapter across a process boundary imposes, and meeting
 it locally means meeting it in deployment.
@@ -33,21 +37,27 @@ from blackboard._board import (
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS regions (
-    name TEXT PRIMARY KEY,
-    kind TEXT NOT NULL CHECK (kind IN ('level', 'register'))
+    board_id TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    kind     TEXT NOT NULL CHECK (kind IN ('level', 'register')),
+    PRIMARY KEY (board_id, name)
 );
 CREATE TABLE IF NOT EXISTS contributions (
-    sequence INTEGER PRIMARY KEY,
-    region   TEXT NOT NULL REFERENCES regions(name),
-    content  TEXT NOT NULL
+    board_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    region   TEXT NOT NULL,
+    content  TEXT NOT NULL,
+    PRIMARY KEY (board_id, sequence)
 );
 CREATE TABLE IF NOT EXISTS registers (
-    name    TEXT PRIMARY KEY REFERENCES regions(name),
-    value   TEXT,
-    version INTEGER NOT NULL DEFAULT 0
+    board_id TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    value    TEXT,
+    version  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (board_id, name)
 );
 CREATE INDEX IF NOT EXISTS contributions_by_region
-    ON contributions (region, sequence);
+    ON contributions (board_id, region, sequence);
 """
 
 _LEVEL = "level"
@@ -61,15 +71,19 @@ class SqliteBoard:
     in the process, which suits a test; a path on disk suits local
     development, where the record outlives the run that made it.
 
+    ``board_id`` names the board within that file. Two boards under
+    different identifiers share the file and see none of each other's
+    writes, including the sequence.
+
     The schema is created on construction, because SQLite has no server to
     migrate separately and the file is the application's own.
     """
 
-    def __init__(self, path: str = ":memory:") -> None:
+    def __init__(self, path: str = ":memory:", *, board_id: str = "default") -> None:
         self._path = path
+        self._board_id = board_id
         self._lock = threading.Lock()
         self._connection = sqlite3.connect(path, check_same_thread=False)
-        self._connection.execute("PRAGMA foreign_keys = ON")
         self._connection.executescript(_SCHEMA)
         self._connection.commit()
 
@@ -86,51 +100,56 @@ class SqliteBoard:
             )
         kind = _LEVEL if isinstance(region, Level) else _REGISTER
         with self._lock, self._connection:
-            existing = self._kind_of(region.name)
-            if existing is not None:
+            if self._kind_of(region.name) is not None:
                 raise DuplicateRegionError(
                     f"a region named {region.name!r} is already declared"
                 )
             self._connection.execute(
-                "INSERT INTO regions (name, kind) VALUES (?, ?)", (region.name, kind)
+                "INSERT INTO regions (board_id, name, kind) VALUES (?, ?, ?)",
+                (self._board_id, region.name, kind),
             )
             if kind == _REGISTER:
                 self._connection.execute(
-                    "INSERT INTO registers (name, value, version) VALUES (?, NULL, 0)",
-                    (region.name,),
+                    "INSERT INTO registers (board_id, name, value, version) "
+                    "VALUES (?, ?, NULL, 0)",
+                    (self._board_id, region.name),
                 )
 
     def append(self, level: str, content: object) -> int:
+        carried = json.dumps(content)
         with self._lock, self._connection:
             self._require(level, _LEVEL)
             sequence = self._next_sequence()
             self._connection.execute(
-                "INSERT INTO contributions (sequence, region, content) "
-                "VALUES (?, ?, ?)",
-                (sequence, level, json.dumps(content)),
+                "INSERT INTO contributions (board_id, sequence, region, content) "
+                "VALUES (?, ?, ?, ?)",
+                (self._board_id, sequence, level, carried),
             )
             return sequence
 
     def set(
         self, register: str, value: object, expected_version: int
     ) -> Written | Conflict:
+        carried = json.dumps(value)
         with self._lock, self._connection:
             self._require(register, _REGISTER)
             row = self._connection.execute(
-                "SELECT version FROM registers WHERE name = ?", (register,)
+                "SELECT version FROM registers WHERE board_id = ? AND name = ?",
+                (self._board_id, register),
             ).fetchone()
             current = int(row[0])
             if expected_version != current:
                 return Conflict(current_version=current)
             sequence = self._next_sequence()
             self._connection.execute(
-                "UPDATE registers SET value = ?, version = ? WHERE name = ?",
-                (json.dumps(value), current + 1, register),
+                "UPDATE registers SET value = ?, version = ? "
+                "WHERE board_id = ? AND name = ?",
+                (carried, current + 1, self._board_id, register),
             )
             self._connection.execute(
-                "INSERT INTO contributions (sequence, region, content) "
-                "VALUES (?, ?, ?)",
-                (sequence, register, json.dumps(value)),
+                "INSERT INTO contributions (board_id, sequence, region, content) "
+                "VALUES (?, ?, ?, ?)",
+                (self._board_id, sequence, register, carried),
             )
             return Written(sequence=sequence, version=current + 1)
 
@@ -139,8 +158,9 @@ class SqliteBoard:
             self._require(level, _LEVEL)
             rows = self._connection.execute(
                 "SELECT sequence, content FROM contributions "
-                "WHERE region = ? AND sequence >= ? ORDER BY sequence",
-                (level, from_sequence),
+                "WHERE board_id = ? AND region = ? AND sequence >= ? "
+                "ORDER BY sequence",
+                (self._board_id, level, from_sequence),
             ).fetchall()
         return [Contribution(sequence=r[0], content=json.loads(r[1])) for r in rows]
 
@@ -148,7 +168,8 @@ class SqliteBoard:
         with self._lock:
             self._require(register, _REGISTER)
             row = self._connection.execute(
-                "SELECT value, version FROM registers WHERE name = ?", (register,)
+                "SELECT value, version FROM registers WHERE board_id = ? AND name = ?",
+                (self._board_id, register),
             ).fetchone()
         if int(row[1]) == 0:
             raise UnsetRegisterError(
@@ -160,8 +181,8 @@ class SqliteBoard:
         with self._lock:
             rows = self._connection.execute(
                 "SELECT sequence, region, content FROM contributions "
-                "WHERE sequence >= ? ORDER BY sequence",
-                (from_sequence,),
+                "WHERE board_id = ? AND sequence >= ? ORDER BY sequence",
+                (self._board_id, from_sequence),
             ).fetchall()
         return [
             BoardChange(sequence=r[0], region=r[1], content=json.loads(r[2]))
@@ -171,7 +192,8 @@ class SqliteBoard:
     def _kind_of(self, name: str) -> str | None:
         # Callers hold self._lock.
         row = self._connection.execute(
-            "SELECT kind FROM regions WHERE name = ?", (name,)
+            "SELECT kind FROM regions WHERE board_id = ? AND name = ?",
+            (self._board_id, name),
         ).fetchone()
         return None if row is None else str(row[0])
 
@@ -190,9 +212,11 @@ class SqliteBoard:
             )
 
     def _next_sequence(self) -> int:
-        # Callers hold self._lock. One counter across every region, taken from
-        # the record itself so that reopening a file continues where it left off.
+        # Callers hold self._lock. One counter across every region of this
+        # board, taken from the record itself so that reopening a file
+        # continues where it left off.
         row: Any = self._connection.execute(
-            "SELECT COALESCE(MAX(sequence), 0) FROM contributions"
+            "SELECT COALESCE(MAX(sequence), 0) FROM contributions WHERE board_id = ?",
+            (self._board_id,),
         ).fetchone()
         return int(row[0]) + 1
