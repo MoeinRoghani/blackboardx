@@ -15,7 +15,7 @@ from blackboard import (
     create_model,
 )
 
-wakes = []
+notifications = []
 
 # 1. Declare the regions and the facts of the case.
 model = create_model(
@@ -26,13 +26,13 @@ model = create_model(
 )
 
 # 2. An agent registers itself. Registering wakes it.
-model.control.register_agent(Agent(name="ocp", notify=wakes.append))
+model.control.register_agent(Agent(name="ocp", notify=notifications.append))
 
 # 3. The agent's cycle: read the premises, contribute, acknowledge.
-(wake,) = wakes
+(notification,) = notifications
 window = model.reader.read_register("window").value
 model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
-model.control.ack("ocp", wake.notification_id)
+model.control.ack("ocp", notification.notification_id)
 
 # 4. The run closes once nothing has happened for the idle limit.
 assert model.control.wait_closed(timeout=timedelta(seconds=10)) == Settled()
@@ -59,6 +59,6 @@ The contribution has sequence 2 because the seed's register write took sequence 
 
 **Registering** is how an agent comes to exist. Nothing names agents at creation, because an agent supplies its own callback and a creator cannot know which agents will join.
 
-**The wake** carries no values. It says the agent is out of date, and the agent reads the board itself.
+**The notification** carries no values. It says the agent is out of date, and the agent reads the board itself.
 
-**Acknowledging** says the agent has stopped working on that wake. It does not mean the agent found anything.
+**Acknowledging** says the agent has stopped working on that notification. It does not mean the agent found anything.

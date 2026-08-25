@@ -46,7 +46,7 @@ An agent is never woken by its own write.
 
 ## Registering wakes it
 
-`register_agent` delivers a notification immediately, covering every subscribed region that already holds something. A newly registered agent is out of date with the whole board, and the wake says so.
+`register_agent` delivers a notification immediately, covering every subscribed region that already holds something. A newly registered agent is out of date with the whole board, and the notification says so.
 
 This means the callback runs **during** `register_agent`. A callback that needs the model must therefore be given it another way, because the call has not returned yet.
 
@@ -77,6 +77,6 @@ The control component learns nothing about an agent except that it acknowledged.
 
 ## What acknowledging means
 
-It means the agent has stopped working on that wake. It does not mean the agent found anything, and it does not mean the agent will not be woken again.
+It means the agent has stopped working on that notification. It does not mean the agent found anything, and it does not mean the agent will not be woken again.
 
-Until every agent has acknowledged, those still holding a wake are what a closing run names as unfinished.
+Until every agent has acknowledged, those still holding a notification are what a closing run names as unfinished.

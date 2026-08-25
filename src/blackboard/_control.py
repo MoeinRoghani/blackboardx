@@ -209,10 +209,10 @@ NotificationId = NewType("NotificationId", int)
 
 @dataclass(frozen=True)
 class Notification:
-    """One wake: the range it covers and the regions that changed.
+    """One notification: the range it covers and the regions that changed.
 
-    It carries no values. The agent reads the registers itself, and reads
-    whatever else on the board it wants.
+    It carries no values. The agent reads the board itself, over any range
+    and any region, not only the regions this names.
     """
 
     notification_id: NotificationId
@@ -226,11 +226,12 @@ class Notification:
 class Agent:
     """An agent declaration: identity, delivery, and what it wants.
 
-    ``subscribes_to`` names the registers whose changes wake this agent.
-    Omitting it subscribes the agent to every register, which is the common
-    case, since a register holds a premise and most agents read all of them.
-    ``writes_to`` names the levels the agent may write to, and omitting it
-    permits every level.
+    ``subscribes_to`` names the regions, of either kind, whose changes wake
+    this agent, and naming any excludes every region not named. Omitting it
+    subscribes the agent to every register and to no level, which is the
+    common case: a register holds a premise that bears on any agent's work,
+    while another agent's conclusion does not. ``writes_to`` names the
+    levels the agent may write to, and omitting it permits every level.
 
     The control component invokes ``notify`` to deliver a notification,
     holding no lock, on the thread that closed the batch window or, when
@@ -818,7 +819,7 @@ class Control:
 
     def _deliver(self, deliveries: list[_Delivery]) -> None:
         # One flat drain loop per thread: a callback that writes a register
-        # enqueues the resulting deliveries and returns, so chained wakes
+        # enqueues the resulting deliveries and returns, so chained notifications
         # cost queue entries, not stack frames.
         self._delivery_queue.extend(deliveries)
         if getattr(self._delivering, "active", False):
@@ -876,7 +877,7 @@ class Control:
         """Records that something happened, which pushes the idle deadline out.
 
         A run does not close because nothing is outstanding at some instant.
-        Agents are idle between wakes and register at different times, so an
+        Agents are idle between notifications and register at different times, so an
         instant of quiet is the gap before the work rather than the end of
         it. Sustained silence is what closes a run, and the idle timer
         measures it.

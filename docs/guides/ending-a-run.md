@@ -1,6 +1,6 @@
 # End a run
 
-Three things end a run, and each produces an outcome that names the agents still holding an unacknowledged wake.
+Three things end a run, and each produces an outcome that names the agents still holding an unacknowledged notification.
 
 ## Silence
 

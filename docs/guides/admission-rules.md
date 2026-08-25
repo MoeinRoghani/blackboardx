@@ -64,4 +64,4 @@ A register write closes that window itself, because it names the version it expe
 
 ## Where it does not apply
 
-The seed bypasses admission, because it is an input rather than a proposed write.
+The seed bypasses admission. It reaches the board and takes a sequence number like any other write, but it is the application's own input rather than a proposal from a writer, so there is nothing for the rule to judge.

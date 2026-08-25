@@ -23,5 +23,6 @@ Four questions arise whenever independent agents work on one problem, and this l
 | Understand what the parts mean | [The board](concepts/board.md) |
 | Do a particular thing | [Write an agent](guides/writing-an-agent.md) |
 | Look a name up | [API reference](reference.md) |
+| Check what a term means | [Glossary](glossary.md) |
 | Choose where the record is kept | [Storage](concepts/storage.md) |
 | Deploy it behind a service | [Running as a service](concepts/service.md) |

@@ -44,7 +44,7 @@ def agent_cycle(notification):
 model.control.register_agent(Agent(name="ocp", notify=agent_cycle))
 ```
 
-Chained wakes are drained from a queue rather than the call stack, so agents that wake each other do not grow it. Nothing in the library bounds such an exchange except the wall clock, so a test that drives one bounds it itself.
+Chained notifications are drained from a queue rather than the call stack, so agents that wake each other do not grow it. Nothing in the library bounds such an exchange except the wall clock, so a test that drives one bounds it itself.
 
 ## Driving a batch window
 
@@ -56,9 +56,9 @@ model.control.set_register("operator", "namespace", ["ns1"], expected_version=1)
 clock.advance(timedelta(seconds=2))
 model.control.set_register("operator", "namespace", ["ns1", "ns2"], expected_version=2)
 
-assert wakes == []                       # still inside the window
+assert notifications == []                       # still inside the window
 clock.advance(timedelta(seconds=3))
-assert len(wakes) == 1                   # one wake covering both
+assert len(notifications) == 1                   # one notification covering both
 ```
 
 ## Assert on the audit, not on timing

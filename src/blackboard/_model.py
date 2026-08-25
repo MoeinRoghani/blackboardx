@@ -1,9 +1,10 @@
 """Creating a model.
 
-A model is created by supplying five things: region declarations, seed
-register values, an admission rule, a termination predicate, and run
-budgets. Nothing else configures it, and the clock is dependency injection
-rather than configuration.
+Five things configure a model: region declarations, seed register values,
+an admission rule, a termination predicate, and run limits. A sixth
+argument, the board, says where the record is kept rather than configuring
+what the model is. The clock is dependency injection rather than
+configuration.
 
 Where the record is kept is stated, never defaulted. An application names
 the board it wants, so none reaches deployment holding its record in
