@@ -9,6 +9,7 @@ admission rule, termination predicate, and budgets. The public surface is
 the set of names in ``__all__``; every other name is internal.
 """
 
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from blackboard._board import (
@@ -30,7 +31,6 @@ from blackboard._clock import Clock, ManualClock, ScheduledCall, SystemClock
 from blackboard._control import (
     Aborted,
     Accept,
-    Accepted,
     AdmissionRule,
     Agent,
     AuditEvent,
@@ -49,9 +49,9 @@ from blackboard._control import (
     Reject,
     Rejected,
     RejectionCause,
-    RunBudgets,
     RunClosed,
     RunClosedError,
+    RunLimits,
     RunOutcome,
     SeedError,
     Settled,
@@ -66,6 +66,8 @@ from blackboard._model import Model, create_model
 from blackboard._sqlite import SqliteBoard
 
 if TYPE_CHECKING:
+    from blackboard._board import Written as Accepted
+    from blackboard._control import RunLimits as RunBudgets
     from blackboard._mongodb import MongoBoard
     from blackboard._postgres import PostgresBoard
 
@@ -109,6 +111,7 @@ __all__ = [
     "RunBudgets",
     "RunClosed",
     "RunClosedError",
+    "RunLimits",
     "RunOutcome",
     "ScheduledCall",
     "SeedError",
@@ -128,6 +131,20 @@ __all__ = [
 ]
 
 
+# A replaced name stays importable for one release. It resolves to its
+# replacement, so equality and isinstance keep working across the change.
+_RENAMED = {
+    "Accepted": (
+        "Written",
+        "a write that landed reports Written, whose version is absent on a level write",
+    ),
+    "RunBudgets": (
+        "RunLimits",
+        "a run has two limits, both durations, and nothing countable is consumed",
+    ),
+}
+_REMOVED_IN = "0.6.0"
+
 _EXTRAS = {
     "MongoBoard": ("blackboard._mongodb", "mongodb"),
     "PostgresBoard": ("blackboard._postgres", "postgres"),
@@ -140,6 +157,16 @@ def __getattr__(name: str) -> Any:
     Naming these here rather than importing them at the top keeps the base
     install free of database drivers, while leaving one import path.
     """
+    replacement = _RENAMED.get(name)
+    if replacement is not None:
+        new, because = replacement
+        warnings.warn(
+            f"{name} is renamed {new}, and {name} is removed in "
+            f"{_REMOVED_IN}: {because}.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return globals()[new]
     entry = _EXTRAS.get(name)
     if entry is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

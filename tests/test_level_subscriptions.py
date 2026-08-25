@@ -10,14 +10,14 @@ from blackboard import (
     ManualClock,
     Notification,
     Register,
-    RunBudgets,
+    RunLimits,
     TerminationDecision,
 )
 from blackboard._control import Control
 
 START = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 DEADLINE = timedelta(minutes=5)
-BUDGETS = RunBudgets(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
+LIMITS = RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
 def keep_open(reader: BoardReader) -> TerminationDecision:
@@ -28,7 +28,7 @@ def make_control(clock: ManualClock) -> Control:
     return Control(
         regions=[Level("platform"), Level("application"), Register("window")],
         termination_predicate=keep_open,
-        budgets=BUDGETS,
+        limits=LIMITS,
         clock=clock,
         board=InMemoryBoard(),
     )

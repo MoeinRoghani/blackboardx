@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from blackboard import (
-    Accepted,
     Agent,
     BoardReader,
     InMemoryBoard,
@@ -15,15 +14,16 @@ from blackboard import (
     Register,
     Rejected,
     RejectionCause,
-    RunBudgets,
+    RunLimits,
     TerminationDecision,
     UndeclaredRegionError,
+    Written,
 )
 from blackboard._control import Control
 
 START = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 DEADLINE = timedelta(minutes=5)
-BUDGETS = RunBudgets(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
+LIMITS = RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
 def keep_open(reader: BoardReader) -> TerminationDecision:
@@ -39,7 +39,7 @@ def make_control(clock: ManualClock) -> Control:
             Register("namespace"),
         ],
         termination_predicate=keep_open,
-        budgets=BUDGETS,
+        limits=LIMITS,
         clock=clock,
         board=InMemoryBoard(),
     )
@@ -98,14 +98,14 @@ class TestWritePermission:
         clock = ManualClock(start=START)
         control = make_control(clock)
         control.register_agent(declaration("ocp", []))
-        assert control.write("ocp", "platform", "a") == Accepted(sequence=1)
-        assert control.write("ocp", "application", "b") == Accepted(sequence=2)
+        assert control.write("ocp", "platform", "a") == Written(sequence=1)
+        assert control.write("ocp", "application", "b") == Written(sequence=2)
 
     def test_a_level_outside_the_declaration_is_refused(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
         control.register_agent(declaration("ocp", [], writes_to=["platform"]))
-        assert control.write("ocp", "platform", "a") == Accepted(sequence=1)
+        assert control.write("ocp", "platform", "a") == Written(sequence=1)
         result = control.write("ocp", "application", "b")
         assert result == Rejected(
             cause=RejectionCause.NOT_PERMITTED,
@@ -116,7 +116,7 @@ class TestWritePermission:
     def test_an_unregistered_writer_is_unrestricted(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
-        assert control.write("operator", "platform", "a") == Accepted(sequence=1)
+        assert control.write("operator", "platform", "a") == Written(sequence=1)
 
 
 class TestValidation:

@@ -7,7 +7,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from blackboard import (
-    Accepted,
     Agent,
     BoardReader,
     DuplicateAgentError,
@@ -17,18 +16,19 @@ from blackboard import (
     Notification,
     Register,
     RegisterSeeded,
-    RunBudgets,
     RunClosedError,
+    RunLimits,
     SeedError,
     Settled,
     SqliteBoard,
     TerminationDecision,
+    Written,
     create_model,
 )
 
 START = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
 DEADLINE = timedelta(minutes=5)
-BUDGETS = RunBudgets(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
+LIMITS = RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
 def keep_open(reader: BoardReader) -> TerminationDecision:
@@ -48,7 +48,7 @@ class TestCreation:
             create_model(  # type: ignore[call-arg]  # the omission is the subject
                 regions=[Level("platform")],
                 seed={},
-                budgets=BUDGETS,
+                limits=LIMITS,
                 clock=ManualClock(start=START),
             )
 
@@ -58,7 +58,7 @@ class TestCreation:
             regions=[Level("platform"), Register("window")],
             seed={"window": "w"},
             termination_predicate=keep_open,
-            budgets=BUDGETS,
+            limits=LIMITS,
             clock=ManualClock(start=START),
             board=board,
         )
@@ -72,7 +72,7 @@ class TestCreation:
             regions=[Level("platform"), Register("window")],
             seed={"window": "w"},
             termination_predicate=keep_open,
-            budgets=BUDGETS,
+            limits=LIMITS,
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
         )
@@ -87,7 +87,7 @@ class TestCreation:
             create_model(
                 regions=[Register("window"), Register("service")],
                 seed={"window": "w"},
-                budgets=BUDGETS,
+                limits=LIMITS,
                 clock=ManualClock(start=START),
                 board=InMemoryBoard(),
             )
@@ -95,7 +95,7 @@ class TestCreation:
             create_model(
                 regions=[Register("window")],
                 seed={"window": "w", "unknown": "x"},
-                budgets=BUDGETS,
+                limits=LIMITS,
                 clock=ManualClock(start=START),
                 board=InMemoryBoard(),
             )
@@ -105,13 +105,11 @@ class TestCreation:
             regions=[Level("platform"), Register("window"), Register("service")],
             seed={"window": "w", "service": "s"},
             termination_predicate=keep_open,
-            budgets=RunBudgets(
-                wall_clock=timedelta(hours=1), idle=timedelta(minutes=30)
-            ),
+            limits=RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30)),
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
         )
-        assert model.control.write("ocp", "platform", "fits") == Accepted(sequence=3)
+        assert model.control.write("ocp", "platform", "fits") == Written(sequence=3)
 
 
 class TestRegistration:
@@ -121,7 +119,7 @@ class TestRegistration:
             regions=[Register("window"), Register("service")],
             seed={"window": "w", "service": "s"},
             termination_predicate=keep_open,
-            budgets=BUDGETS,
+            limits=LIMITS,
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
         )
@@ -137,7 +135,7 @@ class TestRegistration:
             regions=[Register("window")],
             seed={"window": "w"},
             termination_predicate=keep_open,
-            budgets=BUDGETS,
+            limits=LIMITS,
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
         )
@@ -154,7 +152,7 @@ class TestRegistration:
             regions=[Register("window")],
             seed={"window": "w"},
             termination_predicate=keep_open,
-            budgets=BUDGETS,
+            limits=LIMITS,
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
         )
@@ -169,7 +167,7 @@ class TestRegistration:
             regions=[Register("window")],
             seed={"window": "w"},
             termination_predicate=keep_open,
-            budgets=BUDGETS,
+            limits=LIMITS,
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
         )
@@ -181,7 +179,7 @@ class TestRegistration:
         model = create_model(
             regions=[Register("window")],
             seed={"window": "w"},
-            budgets=BUDGETS,
+            limits=LIMITS,
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
         )
@@ -197,7 +195,7 @@ class TestFullCycle:
         model = create_model(
             regions=[Level("platform"), Register("window")],
             seed={"window": ["t1", "t2"]},
-            budgets=BUDGETS,
+            limits=LIMITS,
             clock=clock,
             board=InMemoryBoard(),
         )
@@ -229,7 +227,7 @@ class TestSystemClockIntegration:
         model = create_model(
             regions=[Level("platform"), Register("window")],
             seed={"window": "w"},
-            budgets=RunBudgets(
+            limits=RunLimits(
                 wall_clock=timedelta(minutes=1), idle=timedelta(seconds=1)
             ),
             board=InMemoryBoard(),

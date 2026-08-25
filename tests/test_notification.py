@@ -5,7 +5,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from blackboard import (
-    Accepted,
     Agent,
     BoardReader,
     DuplicateAgentError,
@@ -17,7 +16,7 @@ from blackboard import (
     NotificationDispatched,
     NotificationId,
     Register,
-    RunBudgets,
+    RunLimits,
     ScheduledCall,
     TerminationDecision,
     UnknownNotificationError,
@@ -29,7 +28,7 @@ from blackboard._control import Control
 START = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
 DEADLINE = timedelta(minutes=5)
 
-BUDGETS = RunBudgets(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
+LIMITS = RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
 def keep_open(reader: BoardReader) -> TerminationDecision:
@@ -62,7 +61,7 @@ def make_control(clock: ManualClock, *agents: Agent) -> Control:
         ],
         admission_rule=None,
         termination_predicate=keep_open,
-        budgets=BUDGETS,
+        limits=LIMITS,
         clock=clock,
         board=InMemoryBoard(),
     )
@@ -315,7 +314,7 @@ class TestStaleTimerCalls:
             ],
             admission_rule=None,
             termination_predicate=keep_open,
-            budgets=BUDGETS,
+            limits=LIMITS,
             clock=clock,
             board=InMemoryBoard(),
         )
@@ -362,7 +361,7 @@ class TestDeliveryFailure:
         assert len(delivered.received) == 1
         # The raising agent never acknowledges, so it is still holding its
         # notification when the run is asked who did not finish.
-        assert control.write("ocp", "application", "unaffected") == Accepted(sequence=2)
+        assert control.write("ocp", "application", "unaffected") == Written(sequence=2)
 
 
 class TestChainedWakes:
@@ -394,7 +393,7 @@ class TestChainedWakes:
             regions=[Register("ra"), Register("rb")],
             admission_rule=None,
             termination_predicate=keep_open,
-            budgets=BUDGETS,
+            limits=LIMITS,
             clock=clock,
             board=InMemoryBoard(),
         )
