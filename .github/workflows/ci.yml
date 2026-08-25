@@ -75,7 +75,8 @@ jobs:
       - name: A single-node MongoDB replica set
         run: |
           docker run -d --name mongo -p 27017:27017 \
-            mongo:7.0 --replSet rs0 --bind_ip_all
+            mongo:7.0@sha256:b6421fd6d1c5ded6377b397d8983e2f82e2100dc5123332dcfda2065a472be5b \
+            --replSet rs0 --bind_ip_all
           for _ in $(seq 30); do
             docker exec mongo mongosh --quiet --eval 'db.adminCommand({ping:1})' \
               && break
@@ -88,7 +89,6 @@ jobs:
               | grep -q 1 && break
             sleep 2
           done
-          docker image inspect mongo:7.0 --format '{{index .RepoDigests 0}}'
       - run: make setup
       # Every adapter test runs here and none of them skips. A skip means a
       # server did not come up, and that would otherwise pass quietly.
