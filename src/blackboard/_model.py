@@ -63,13 +63,13 @@ def create_model(
     model. ``SqliteBoard`` serves one machine; an adapter against your own
     database serves a deployment.
 
-    The seed writes every declared register once, bypassing admission and
-    the write budget. No agent is registered yet, so the seed wakes nobody;
-    an agent registering afterwards is woken then. With no admission rule a
-    write is accepted subject to the region existing, the budgets holding,
-    and the run being open; with no termination predicate the run closes
-    as soon as no work is outstanding; with no clock the operating system
-    clock serves.
+    The seed writes every declared register once, bypassing admission. No
+    agent is registered yet, so the seed wakes nobody; an agent registering
+    afterwards is woken then. With no admission rule a write is accepted
+    subject to the region existing, the limits holding, and the run being
+    open; with no termination predicate the run closes when nothing has
+    happened for the idle limit; with no clock the operating system clock
+    serves.
     """
     control = Control(
         regions=regions,
