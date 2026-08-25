@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.4.0...v0.5.0) (2026-08-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **board:** moving from 0.4 to 0.5 ([#119](https://github.com/MoeinRoghani/blackboardx/issues/119))
+* **control:** the public names use the glossary's words ([#108](https://github.com/MoeinRoghani/blackboardx/issues/108))
+
+### Features
+
+* **control:** the public names use the glossary's words ([#108](https://github.com/MoeinRoghani/blackboardx/issues/108)) ([53c3338](https://github.com/MoeinRoghani/blackboardx/commit/53c3338ac57b91caf494d29f2efe5c362d7b3c79)), closes [#106](https://github.com/MoeinRoghani/blackboardx/issues/106)
+
+
+### Documentation
+
+* a glossary, and the terms that contradicted each other ([#105](https://github.com/MoeinRoghani/blackboardx/issues/105)) ([2408c7f](https://github.com/MoeinRoghani/blackboardx/commit/2408c7ffc05a1f6ad82c88f6bb14e3a921e56f73)), closes [#104](https://github.com/MoeinRoghani/blackboardx/issues/104)
+* **board:** moving from 0.4 to 0.5 ([#119](https://github.com/MoeinRoghani/blackboardx/issues/119)) ([8f5c895](https://github.com/MoeinRoghani/blackboardx/commit/8f5c8955b1a79ef900f20545fe6737dbccbff04b)), closes [#118](https://github.com/MoeinRoghani/blackboardx/issues/118)
+* one word for what a register holds, and it is not fact ([#110](https://github.com/MoeinRoghani/blackboardx/issues/110)) ([1525cec](https://github.com/MoeinRoghani/blackboardx/commit/1525cecb784164fa78ed30cc5e2fe04b4de0243a)), closes [#109](https://github.com/MoeinRoghani/blackboardx/issues/109)
+
 ## [0.4.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.3.0...v0.4.0) (2026-08-25)
 
 
