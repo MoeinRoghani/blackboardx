@@ -1,4 +1,4 @@
-"""A level write wakes the agents that subscribed to that level."""
+"""A level write notifications the agents that subscribed to that level."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -16,7 +16,6 @@ from blackboard import (
 from blackboard._control import Control
 
 START = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
-DEADLINE = timedelta(minutes=5)
 LIMITS = RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
@@ -52,8 +51,8 @@ def test_a_subscriber_is_woken_by_a_write_to_that_level() -> None:
     received: list[Notification] = []
     control.register_agent(declaration("git", received, subscribes_to=["platform"]))
     control.write("ocp", "platform", "a finding")
-    (wake,) = received
-    assert wake.regions == frozenset({"platform"})
+    (notification,) = received
+    assert notification.regions == frozenset({"platform"})
 
 
 def test_the_writer_is_not_woken_by_its_own_contribution() -> None:
@@ -83,17 +82,17 @@ def test_omitting_the_declaration_subscribes_to_no_level() -> None:
     assert received == []
 
 
-def test_registering_wakes_for_a_level_that_already_holds_contributions() -> None:
+def test_registering_notifies_for_a_level_that_already_holds_contributions() -> None:
     clock = ManualClock(start=START)
     control = make_control(clock)
     control.write("ocp", "platform", "written before anyone registered")
     received: list[Notification] = []
     control.register_agent(declaration("late", received, subscribes_to=["platform"]))
-    (wake,) = received
-    assert wake.regions == frozenset({"platform"})
+    (notification,) = received
+    assert notification.regions == frozenset({"platform"})
 
 
-def test_an_empty_level_is_not_named_in_the_opening_wake() -> None:
+def test_an_empty_level_is_not_named_in_the_opening_notification() -> None:
     clock = ManualClock(start=START)
     control = make_control(clock)
     received: list[Notification] = []

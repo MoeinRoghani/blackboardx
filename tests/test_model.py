@@ -27,7 +27,6 @@ from blackboard import (
 )
 
 START = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
-DEADLINE = timedelta(minutes=5)
 LIMITS = RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
@@ -114,7 +113,7 @@ class TestCreation:
 
 class TestRegistration:
     def test_registering_wakes_the_agent_once(self) -> None:
-        wakes: list[Notification] = []
+        notifications: list[Notification] = []
         model = create_model(
             regions=[Register("window"), Register("service")],
             seed={"window": "w", "service": "s"},
@@ -123,10 +122,10 @@ class TestRegistration:
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
         )
-        model.control.register_agent(declaration("ocp", wakes.append))
-        (wake,) = wakes
-        assert wake.agent == "ocp"
-        assert wake.regions == frozenset({"window", "service"})
+        model.control.register_agent(declaration("ocp", notifications.append))
+        (notification,) = notifications
+        assert notification.agent == "ocp"
+        assert notification.regions == frozenset({"window", "service"})
 
     def test_each_agent_is_woken_when_it_registers(self) -> None:
         first: list[Notification] = []
@@ -146,8 +145,10 @@ class TestRegistration:
         assert len(first) == 1
         assert len(second) == 1
 
-    def test_a_register_with_no_value_is_not_named_in_the_opening_wake(self) -> None:
-        wakes: list[Notification] = []
+    def test_a_register_with_no_value_is_not_named_in_the_opening_notification(
+        self,
+    ) -> None:
+        notifications: list[Notification] = []
         model = create_model(
             regions=[Register("window")],
             seed={"window": "w"},
@@ -157,12 +158,12 @@ class TestRegistration:
             board=InMemoryBoard(),
         )
         model.control.declare(Register("trigger"))
-        model.control.register_agent(declaration("ocp", wakes.append))
-        (wake,) = wakes
-        assert wake.regions == frozenset({"window"})
+        model.control.register_agent(declaration("ocp", notifications.append))
+        (notification,) = notifications
+        assert notification.regions == frozenset({"window"})
 
     def test_a_duplicate_name_is_refused(self) -> None:
-        wakes: list[Notification] = []
+        notifications: list[Notification] = []
         model = create_model(
             regions=[Register("window")],
             seed={"window": "w"},
@@ -171,9 +172,9 @@ class TestRegistration:
             clock=ManualClock(start=START),
             board=InMemoryBoard(),
         )
-        model.control.register_agent(declaration("ocp", wakes.append))
+        model.control.register_agent(declaration("ocp", notifications.append))
         with pytest.raises(DuplicateAgentError):
-            model.control.register_agent(declaration("ocp", wakes.append))
+            model.control.register_agent(declaration("ocp", notifications.append))
 
     def test_registering_into_a_closed_run_is_refused(self) -> None:
         model = create_model(
@@ -190,7 +191,7 @@ class TestRegistration:
 
 class TestFullCycle:
     def test_a_run_from_creation_to_settled(self) -> None:
-        wakes: list[Notification] = []
+        notifications: list[Notification] = []
         clock = ManualClock(start=START)
         model = create_model(
             regions=[Level("platform"), Register("window")],
@@ -199,12 +200,12 @@ class TestFullCycle:
             clock=clock,
             board=InMemoryBoard(),
         )
-        model.control.register_agent(declaration("ocp", wakes.append))
+        model.control.register_agent(declaration("ocp", notifications.append))
 
-        (wake,) = wakes
+        (notification,) = notifications
         window = model.reader.read_register("window").value
         model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
-        model.control.ack("ocp", wake.notification_id)
+        model.control.ack("ocp", notification.notification_id)
 
         clock.advance(timedelta(minutes=30))
         assert model.control.outcome() == Settled()
