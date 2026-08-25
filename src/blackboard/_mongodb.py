@@ -28,9 +28,9 @@ than the record needs.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.errors import OperationFailure
@@ -60,9 +60,7 @@ _REGISTERS = "blackboard_registers"
 _LEVEL = "level"
 _REGISTER = "register"
 
-
-class _RollBack(Exception):
-    """Leaves a transaction by the only door that undoes it."""
+_Result = TypeVar("_Result")
 
 
 class MongoBoard:
@@ -137,7 +135,8 @@ class MongoBoard:
                 f"not {type(region).__name__}"
             )
         kind = _LEVEL if isinstance(region, Level) else _REGISTER
-        with self._transaction() as session:
+
+        def work(session: Any) -> None:
             if self._kind_of(region.name, session) is not None:
                 raise DuplicateRegionError(
                     f"a region named {region.name!r} is already declared"
@@ -170,9 +169,12 @@ class MongoBoard:
                     session=session,
                 )
 
+        self._in_a_transaction(work)
+
     def append(self, level: str, content: object) -> int:
         carried = _as_json(content)
-        with self._transaction() as session:
+
+        def work(session: Any) -> int:
             self._require(level, _LEVEL, session)
             sequence = self._take_sequence(session)
             self._database[_CONTRIBUTIONS].insert_one(
@@ -184,49 +186,52 @@ class MongoBoard:
                 },
                 session=session,
             )
-        return sequence
+            return sequence
+
+        return self._in_a_transaction(work)
 
     def set(
         self, register: str, value: object, expected_version: int
     ) -> Written | Conflict:
         carried = _as_json(value)
-        outcome: Written | Conflict
-        try:
-            with self._transaction() as session:
-                self._require(register, _REGISTER, session)
-                # Taking the sequence first keeps every write to this board
-                # under one transaction that either lands whole or not at all.
-                sequence = self._take_sequence(session)
-                updated = self._database[_REGISTERS].find_one_and_update(
-                    {
-                        "board_id": self._board_id,
-                        "name": register,
-                        "version": expected_version,
-                    },
-                    {"$set": {"value": carried}, "$inc": {"version": 1}},
-                    return_document=ReturnDocument.AFTER,
-                    session=session,
+        losses: list[Conflict] = []
+
+        def work(session: Any) -> Written | None:
+            losses.clear()
+            self._require(register, _REGISTER, session)
+            # The version guard comes first, so a write that loses it never
+            # touches the counter. That is what keeps a conflict from taking
+            # a sequence number, and it keeps three of every four writers in
+            # a race off the one document they would all abort against.
+            updated = self._database[_REGISTERS].find_one_and_update(
+                {
+                    "board_id": self._board_id,
+                    "name": register,
+                    "version": expected_version,
+                },
+                {"$set": {"value": carried}, "$inc": {"version": 1}},
+                return_document=ReturnDocument.AFTER,
+                session=session,
+            )
+            if updated is None:
+                losses.append(
+                    Conflict(current_version=self._current_version(register, session))
                 )
-                if updated is None:
-                    outcome = Conflict(
-                        current_version=self._current_version(register, session)
-                    )
-                    # Leaving by an exception is what undoes the sequence
-                    # this write took, so a conflict skips no number.
-                    raise _RollBack
-                self._database[_CONTRIBUTIONS].insert_one(
-                    {
-                        "board_id": self._board_id,
-                        "sequence": sequence,
-                        "region": register,
-                        "content": carried,
-                    },
-                    session=session,
-                )
-                outcome = Written(sequence=sequence, version=int(updated["version"]))
-        except _RollBack:
-            pass
-        return outcome
+                return None
+            sequence = self._take_sequence(session)
+            self._database[_CONTRIBUTIONS].insert_one(
+                {
+                    "board_id": self._board_id,
+                    "sequence": sequence,
+                    "region": register,
+                    "content": carried,
+                },
+                session=session,
+            )
+            return Written(sequence=sequence, version=int(updated["version"]))
+
+        written = self._in_a_transaction(work)
+        return losses[0] if written is None else written
 
     def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
         self._require(level, _LEVEL, None)
@@ -274,12 +279,22 @@ class MongoBoard:
             for document in documents
         ]
 
-    @contextmanager
-    def _transaction(self) -> Iterator[Any]:
+    def _in_a_transaction(self, work: Callable[[Any], _Result]) -> _Result:
+        """Runs the work in one transaction, retrying where the server aborts it.
+
+        Two transactions touching one document do not queue on MongoDB: the
+        server aborts one and labels the failure transient, and the caller
+        is expected to run it again. ``with_transaction`` is the driver's
+        loop for that, and it also covers a commit whose outcome is unknown.
+
+        The work is therefore run more than once under contention, so it
+        reads everything it decides on inside the transaction rather than
+        carrying a value in from outside.
+        """
         client = self._database.client
         try:
-            with client.start_session() as session, session.start_transaction():
-                yield session
+            with client.start_session() as session:
+                return session.with_transaction(work)
         except OperationFailure as failure:
             if _needs_a_replica_set(failure):
                 raise NotImplementedError(

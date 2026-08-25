@@ -2,6 +2,16 @@
 
 Every timed behaviour is observable without waiting, because the clock is injected.
 
+## Which board a test uses
+
+| Test | Board |
+| --- | --- |
+| A unit test of your agents, rules, or timing | `InMemoryBoard()` |
+| A test that has to see the storage semantics a deployment has | `SqliteBoard()` |
+| A test of your own `BoardStore` implementation | Your adapter, through the conformance suite |
+
+Both are honest about content: it crosses every board as JSON, so a test cannot pass against content a deployment would refuse.
+
 ## The manual clock
 
 ```python
@@ -9,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 from blackboard import ManualClock
 
 clock = ManualClock(start=datetime(2026, 8, 21, 12, 0, tzinfo=UTC))
-model = create_model(..., clock=clock)
+model = create_model(..., clock=clock, board=InMemoryBoard())
 ```
 
 `advance` moves time and fires every due call synchronously, on the calling thread, in due order. A call armed during an advance fires inside it when its instant falls at or before the target.

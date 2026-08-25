@@ -4,6 +4,19 @@
 
 `make setup` takes a clean checkout to a working state: it creates the environment from the lockfile and installs the pre-commit hooks. `make lint`, `make typecheck`, and `make test` run the same checks CI runs.
 
+### Running the adapter tests
+
+`PostgresBoard` and `MongoBoard` are held to the conformance suite against real servers. Those tests skip unless a server is named, so `make test` on a plain checkout runs green without one:
+
+```
+export BLACKBOARD_TEST_POSTGRES_DSN=postgresql://blackboard:blackboard@localhost:5432/blackboard
+export BLACKBOARD_TEST_MONGODB_URI='mongodb://localhost:27017/?replicaSet=rs0'
+```
+
+MongoDB has to be a replica set, single node or otherwise, because every write is a transaction.
+
+The `adapters` job in CI brings up both and fails if any adapter test skips, so a change to an adapter is checked against a server whether or not one was running locally.
+
 ## Change flow
 
 1. Every change starts as a GitHub issue stating the observable outcome. Work without an issue does not start.
