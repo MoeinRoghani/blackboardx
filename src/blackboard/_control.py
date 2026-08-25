@@ -9,18 +9,20 @@ unaudited. A rejected write returns its reason to the writer, never reaches
 the board, and is audited without a sequence number.
 
 An admitted register write also notifies the registered agents, each
-through its batch window, except the agent that wrote the change.
-Acknowledgment, extension, presumed failure, and wake caps are tracked
-here.
+through its batch window, except the agent that wrote the change. Which
+agents hold an unacknowledged notification is tracked here.
 
-The run closes in exactly one of four states: complete, finished with
-failures, budget exhausted, or aborted. On each transition of its three
-counters to zero together, outstanding notifications, in-flight writes,
-and open batch windows, the control component consults the application's
-termination predicate, and with none supplied it closes on that
-transition. Sequencing rechecks closure and the write budget under the
-lock, so no write lands after the closing event, and reads and the audit
-stay open on a closed run.
+The run closes in exactly one of three states: settled, wall clock
+expired, or aborted. It closes on silence: every write, register write,
+registration and acknowledgment pushes the idle deadline out, and when
+that deadline passes the control component consults the application's
+termination predicate, which with none supplied lets the run close.
+Sequencing rechecks closure under the lock, so no write lands after the
+closing event, and reads and the audit stay open on a closed run.
+
+The agent registry, the outstanding notifications, the audit, and both
+deadlines are held in this process. The board is given, not owned, and it
+is the only part of a run that a second process can read.
 
 The rule runs without the control component's lock, so two writes judged
 at the same moment are both judged against the board as it was before
@@ -202,7 +204,7 @@ class WriteRejected:
 
 
 NotificationId = NewType("NotificationId", int)
-"""The identifier an acknowledgment or an extension names."""
+"""The identifier an acknowledgment names."""
 
 
 @dataclass(frozen=True)
@@ -336,9 +338,9 @@ RunOutcome: TypeAlias = Settled | WallClockExpired | Aborted
 """The three states a run closes in.
 
 Each names the agents that did not finish, meaning those holding an
-unacknowledged notification and those that reached their wake cap. Why a run
-ended and which agents failed to finish are separate facts, and a run
-settles normally while one agent never returns.
+unacknowledged notification. Why a run ended and which agents failed to
+finish are separate facts, and a run settles normally while one agent
+never returns.
 """
 
 
@@ -411,7 +413,13 @@ class _RegionKind(Enum):
 
 
 class Control:
-    """The control component's write path, over a board it owns."""
+    """The control component's write path, over the board it is given.
+
+    The board holds the record and outlives this object where the board is
+    a database. Everything else a run knows, which agents registered, what
+    each is owed, the audit, and the two deadlines, is held here and ends
+    with the process.
+    """
 
     def __init__(
         self,
@@ -706,8 +714,8 @@ class Control:
         return None
 
     def _seed(self, seed: dict[str, object]) -> None:
-        # Called by create_model while the run opens; not a proposed write,
-        # so admission and the write budget do not apply.
+        # Called by create_model while the run opens; not a proposed
+        # write, so admission does not apply.
         deliveries: list[_Delivery] = []
         with self._lock:
             if self._outcome is not None:
