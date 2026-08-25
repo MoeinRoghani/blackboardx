@@ -2,6 +2,8 @@
 
 The library is in-process. An application whose agents are separately deployed services puts one service in front of it, and that service is the only thing that imports the library and the only thing that reaches the database.
 
+Read [what is durable and what is not](#what-is-durable-and-what-is-not) before deciding how many replicas that service runs.
+
 ## The parts
 
 | Part | What it is | Ours |
@@ -15,7 +17,20 @@ The library is in-process. An application whose agents are separately deployed s
 
 The package ships `PostgresBoard` and `MongoBoard` for a deployment and `SqliteBoard` for one machine, all satisfying the `BoardStore` protocol. Against any other database the six methods are yours to write: three read, three write, and both reconciliation rules map onto ordinary primitives. [Storage](storage.md) covers what each has to guarantee.
 
-A pod keeps nothing between requests. It reads what a request needs and writes back before answering, so any pod serves any blackboard and losing a pod loses no work. That is what a `BoardStore` against a shared database buys, and it is why `Control` names no concrete board type.
+## What is durable and what is not
+
+A board adapter makes the **record** durable. It does not make the **run** durable, and the difference decides how the service is deployed.
+
+| Held where | What |
+| --- | --- |
+| The database, through the board | Regions, contributions, register values and versions, the sequence |
+| The process, in `Control` | The agent registry, outstanding notifications, the audit, the idle and wall-clock timers |
+
+A `Control` lives in one process. A second replica holding its own `Control` for the same board knows no agent the first registered, owes no notification the first dispatched, and measures silence from its own start. Losing the replica that holds one ends that run: the record survives and the run does not resume.
+
+So one board is served by one `Control` in one process at a time. The service is scaled by putting different boards on different replicas, and routed to by board identifier; it is not scaled by putting more replicas behind one board. A replica that dies is replaced, and the run it held is started again against the record it left.
+
+Making the run itself durable, so that a replacement resumes rather than restarts, means putting the registry, the outstanding notifications, and the deadlines in the database alongside the record. That is not in the library today.
 
 ## The path a call takes
 
