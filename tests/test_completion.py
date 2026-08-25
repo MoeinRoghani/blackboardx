@@ -25,7 +25,6 @@ from blackboard import (
 from blackboard._control import Control
 
 START = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
-DEADLINE = timedelta(minutes=5)
 IDLE = timedelta(minutes=10)
 
 
@@ -97,15 +96,15 @@ class TestSilence:
         clock.advance(timedelta(minutes=1))
         assert control.outcome() == Settled()
 
-    def test_an_agent_holding_a_wake_is_named_unfinished(self) -> None:
+    def test_an_agent_holding_a_notification_is_named_unfinished(self) -> None:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock)
         control.set_register("operator", "window", "w", expected_version=0)
         control.register_agent(declaration("ocp", recorder))
-        # The acknowledgment deadline fires first and pushes the idle
-        # deadline out, so silence is measured from that.
-        clock.advance(DEADLINE + IDLE)
+        # The agent never acknowledges. Nothing but the idle limit is
+        # measuring anything, so that alone closes the run.
+        clock.advance(IDLE)
         assert control.outcome() == Settled(unfinished=frozenset({"ocp"}))
 
     def test_an_agent_that_acknowledged_is_not_named(self) -> None:

@@ -26,7 +26,6 @@ from blackboard import (
 from blackboard._control import Control
 
 START = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
-DEADLINE = timedelta(minutes=5)
 
 LIMITS = RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
@@ -365,7 +364,7 @@ class TestDeliveryFailure:
 
 
 class TestChainedWakes:
-    def test_chained_inline_wakes_do_not_grow_the_stack(self) -> None:
+    def test_chained_inline_notifications_do_not_grow_the_stack(self) -> None:
         clock = ManualClock(start=START)
         control_holder: list[Control] = []
         counts = {"a": 0, "b": 0}
@@ -374,9 +373,9 @@ class TestChainedWakes:
             def notify(notification: Notification) -> None:
                 control = control_holder[0]
                 counts[me] += 1
-                # The agents bound the exchange themselves. Nothing in the
-                # library stops a chain now that the wake cap is gone; only
-                # the wall clock does, and that is not what this measures.
+                # The agents bound the exchange themselves. Nothing in
+                # the library stops a chain except the wall clock, and the
+                # wall clock is not what this measures.
                 if counts[me] < 300:
                     try:
                         version = control.reader.read_register(target).version

@@ -1,4 +1,4 @@
-"""An agent declares which regions wake it and which levels it may write."""
+"""An agent declares which regions notification it and which levels it may write."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -22,7 +22,6 @@ from blackboard import (
 from blackboard._control import Control
 
 START = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
-DEADLINE = timedelta(minutes=5)
 LIMITS = RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30))
 
 
@@ -82,15 +81,15 @@ class TestSubscription:
         control.set_register("operator", "window", "w", expected_version=0)
         assert [n.regions for n in received] == [frozenset({"window"})]
 
-    def test_the_opening_wake_names_only_subscribed_registers(self) -> None:
+    def test_the_opening_notification_names_only_subscribed_registers(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
         control.set_register("operator", "window", "w", expected_version=0)
         control.set_register("operator", "namespace", ("ns",), expected_version=0)
         received: list[Notification] = []
         control.register_agent(declaration("late", received, subscribes_to=["window"]))
-        (wake,) = received
-        assert wake.regions == frozenset({"window"})
+        (notification,) = received
+        assert notification.regions == frozenset({"window"})
 
 
 class TestWritePermission:
