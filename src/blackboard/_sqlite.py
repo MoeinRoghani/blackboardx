@@ -104,10 +104,17 @@ class SqliteBoard:
                 raise DuplicateRegionError(
                     f"a region named {region.name!r} is already declared"
                 )
-            self._connection.execute(
-                "INSERT INTO regions (board_id, name, kind) VALUES (?, ?, ?)",
-                (self._board_id, region.name, kind),
-            )
+            try:
+                self._connection.execute(
+                    "INSERT INTO regions (board_id, name, kind) VALUES (?, ?, ?)",
+                    (self._board_id, region.name, kind),
+                )
+            except sqlite3.IntegrityError as clash:
+                # Another connection declared the name between the read above
+                # and this insert. The refusal is the same either way.
+                raise DuplicateRegionError(
+                    f"a region named {region.name!r} is already declared"
+                ) from clash
             if kind == _REGISTER:
                 self._connection.execute(
                     "INSERT INTO registers (board_id, name, value, version) "

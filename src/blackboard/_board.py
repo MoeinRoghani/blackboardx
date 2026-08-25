@@ -13,12 +13,18 @@ import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Any
 
 _ZERO_WINDOW = timedelta(0)
 
 
-def _as_json(content: object) -> object:
-    """Returns the content as JSON carries it, raising when it cannot."""
+def _as_json(content: object) -> Any:
+    """Returns the content as JSON carries it, raising when it cannot.
+
+    Every board in the package carries content this way, because a deployed
+    board crosses a process boundary. The boards that encode on the way to
+    a database get the same result from their own ``json.dumps``.
+    """
     return json.loads(json.dumps(content))
 
 

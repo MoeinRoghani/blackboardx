@@ -51,6 +51,14 @@ class TestMongoHoldsManyBoards(SharedStoreConformance):
             MongoBoard(database, board_id=str(uuid4())),
         )
 
+    @pytest.fixture
+    def same_board_twice(self, database: Any) -> tuple[BoardStore, BoardStore]:
+        board_id = str(uuid4())
+        return (
+            MongoBoard(database, board_id=board_id),
+            MongoBoard(database, board_id=board_id),
+        )
+
 
 def test_create_indexes_runs_against_a_database_that_already_has_them(
     database: Any,

@@ -29,6 +29,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol
 
+from psycopg.errors import UniqueViolation
 from psycopg_pool import ConnectionPool as _PsycopgPool
 
 from blackboard._board import (
@@ -155,11 +156,18 @@ class PostgresBoard:
                 raise DuplicateRegionError(
                     f"a region named {region.name!r} is already declared"
                 )
-            connection.execute(
-                "INSERT INTO blackboard_regions (board_id, name, kind) "
-                "VALUES (%s, %s, %s)",
-                (self._board_id, region.name, kind),
-            )
+            try:
+                connection.execute(
+                    "INSERT INTO blackboard_regions (board_id, name, kind) "
+                    "VALUES (%s, %s, %s)",
+                    (self._board_id, region.name, kind),
+                )
+            except UniqueViolation as clash:
+                # Another process declared the name between the read above and
+                # this insert. The refusal is the same either way.
+                raise DuplicateRegionError(
+                    f"a region named {region.name!r} is already declared"
+                ) from clash
             if kind == _REGISTER:
                 connection.execute(
                     "INSERT INTO blackboard_registers (board_id, name, value, version) "

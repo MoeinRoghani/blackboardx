@@ -46,6 +46,14 @@ class TestPostgresHoldsManyBoards(SharedStoreConformance):
             PostgresBoard(pool, board_id=str(uuid4())),  # type: ignore[arg-type]
         )
 
+    @pytest.fixture
+    def same_board_twice(self, pool: object) -> tuple[BoardStore, BoardStore]:
+        board_id = str(uuid4())
+        return (
+            PostgresBoard(pool, board_id=board_id),  # type: ignore[arg-type]
+            PostgresBoard(pool, board_id=board_id),  # type: ignore[arg-type]
+        )
+
 
 def test_create_schema_runs_against_a_database_that_already_has_it(
     pool: object,

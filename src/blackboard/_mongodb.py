@@ -27,7 +27,6 @@ than the record needs.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -47,6 +46,7 @@ from blackboard._board import (
     UndeclaredRegionError,
     UnsetRegisterError,
     Written,
+    _as_json,
 )
 
 if TYPE_CHECKING:
@@ -343,11 +343,6 @@ class MongoBoard:
             raise RegionKindError(
                 f"{name!r} names a level, and this operation takes a register"
             )
-
-
-def _as_json(content: object) -> Any:
-    """Returns the content as JSON carries it, raising when it cannot."""
-    return json.loads(json.dumps(content))
 
 
 def _is_duplicate_key(error: Exception) -> bool:
