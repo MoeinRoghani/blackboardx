@@ -18,12 +18,12 @@ Every term this project uses, and what it means here. A term is defined once, in
 | --- | --- |
 | **Region** | A named part of the board holding one kind of information. Every region is a level or a register. |
 | **Level** | A region that accumulates. Each write adds one contribution at the end, and nothing already there changes. Levels hold what the agents produce. |
-| **Register** | A region holding one current value under a version. Registers hold what the agents are given. |
+| **Register** | A region holding one current value under a version. A register holds a premise. |
 | **Contribution** | One unit written into a level. |
 | **Content** | What any write carries. A contribution's content, and the content a `BoardChange` records for a write of either kind. |
 | **Value** | A register's current content. `RegisterState.value`, and the `value` argument of a register write. |
-| **Premise** | What a register holds: a fact the work is built on, with one correct value at a time. |
-| **Conclusion** | What a level holds: something an agent drew from evidence, which stays beside the evidence it rests on. |
+| **Premise** | What a register holds. Something the work is given rather than something it concluded, so it has one correct value at a time and a later value replaces the earlier one. |
+| **Conclusion** | What a level holds. Something an agent drew from evidence, which stays beside the evidence it rests on rather than replacing it. |
 | **Sequence number** | A write's position in the board's total order, and its address. One counter serves every region of one board. There is no separate identifier. |
 | **Version** | A register's revision count. A register write names the version it expects to replace and fails if the register has moved past it. |
 | **Board identifier** | Which board a row or document belongs to, where one database holds many. `board_id`. |
@@ -69,6 +69,21 @@ Every term this project uses, and what it means here. A term is defined once, in
 **A wake**, as a noun. What an agent receives is a notification, in the code and in the prose. The verb stays, because it names the effect rather than the thing: a register change wakes an agent, and what the agent then holds is a notification.
 
 **A budget.** A run has two limits, both durations, and nothing countable is consumed. `RunLimits` carries them.
+
+## One register, four words
+
+A register and what it holds are four different things. Each has one name, and the four are not interchangeable.
+
+| The thing | Its name | Where you meet it |
+| --- | --- | --- |
+| The region | a **register** | `Register("window")` |
+| What it holds, considered as a role: given to the work rather than concluded by it. This is why the region is a register and not a level | a **premise** | prose only, because it is the reason for the kind rather than a thing in the API |
+| Its content at this moment | the **value** | `read_register("window").value` |
+| Its first value, written when the run opens | the **seed** | `create_model(seed={"window": ...})` |
+
+Reading it as one sentence: a register holds a premise; its value is what that premise is right now; the seed is the value it started with.
+
+What a register holds is never called a fact. Premise and conclusion are a pair on one axis, given against concluded, and "fact" names neither end of it: a conclusion an agent reaches is a fact too, so the word does not separate the two kinds of region.
 
 ## Two distinctions this project keeps
 
