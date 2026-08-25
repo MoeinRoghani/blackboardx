@@ -4,7 +4,7 @@ A model is one run. It opens when it is created, and it ends in one of three sta
 
 ## Creating one
 
-Five things, and nothing else configures a model.
+Five things configure a model, and a sixth says where the record is kept.
 
 ```python
 model = create_model(
@@ -13,10 +13,11 @@ model = create_model(
     admission_rule=rule,  # 3. optional; none accepts every write
     termination_predicate=done,  # 4. optional; none lets silence close the run
     budgets=RunBudgets(...),  # 5. the two limits
+    board=SqliteBoard(...),  # where the record is kept
 )
 ```
 
-The board and the clock are injected rather than configured, so substituting either changes nothing about what the model is.
+The board has no default, because a run that keeps its record nowhere a second process can read is not a shared solution model. [Storage](storage.md) covers what to pass. The clock is injected the same way and defaults to the system clock, so a test substitutes one without changing what the model is.
 
 The seed must name each declared register exactly once. It bypasses admission, and it wakes nobody, because no agent has registered yet.
 

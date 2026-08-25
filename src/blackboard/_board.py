@@ -8,12 +8,18 @@ orders every write across all regions, and reads are open to any caller.
 
 from __future__ import annotations
 
+import json
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
 
 _ZERO_WINDOW = timedelta(0)
+
+
+def _as_json(content: object) -> object:
+    """Returns the content as JSON carries it, raising when it cannot."""
+    return json.loads(json.dumps(content))
 
 
 class BlackboardError(Exception):
@@ -99,15 +105,22 @@ class BoardChange:
     content: object
 
 
-class Board:
-    """Stores contributions in declared regions under one total order.
+class InMemoryBoard:
+    """A board held in process memory. A test double, not a way to run anything.
 
-    The board stores content without reading it and never combines two
-    writes. Content comes back by identity: the board does not copy what it
-    stores, so a caller that mutates a stored object changes what every
-    later reader sees. Sequence assignment is the only point where two
-    writes wait on each other, so writes from concurrent threads all
-    succeed with distinct sequence numbers.
+    Nothing it holds outlives the process, and two processes running the same
+    code share nothing. An application keeps its record in a database through
+    an adapter; a test that wants no file uses this.
+
+    Content is carried as JSON, as it is in every implementation that
+    crosses a process boundary. Holding a Python object as it stands would
+    make this board accept what a deployment then refuses, and preserve
+    types, such as a tuple, that no other implementation returns. Content
+    that JSON cannot carry raises ``TypeError`` before anything is stored.
+
+    Sequence assignment is the only point where two writes wait on each
+    other, so writes from concurrent threads all succeed with distinct
+    sequence numbers.
     """
 
     def __init__(self, regions: Iterable[Level | Register] = ()) -> None:
@@ -140,10 +153,11 @@ class Board:
         """Adds one contribution to a level and returns its sequence number."""
         with self._lock:
             contributions = self._level_contributions(level)
+            carried = _as_json(content)
             self._sequence += 1
-            contributions.append(Contribution(sequence=self._sequence, content=content))
+            contributions.append(Contribution(sequence=self._sequence, content=carried))
             self._changes.append(
-                BoardChange(sequence=self._sequence, region=level, content=content)
+                BoardChange(sequence=self._sequence, region=level, content=carried)
             )
             return self._sequence
 
@@ -160,14 +174,15 @@ class Board:
         with self._lock:
             state = self._register_state(register)
             current_version = 0 if state is None else state.version
+            carried = _as_json(value)
             if expected_version != current_version:
                 return Conflict(current_version=current_version)
             self._sequence += 1
             self._registers[register] = RegisterState(
-                value=value, version=current_version + 1
+                value=carried, version=current_version + 1
             )
             self._changes.append(
-                BoardChange(sequence=self._sequence, region=register, content=value)
+                BoardChange(sequence=self._sequence, region=register, content=carried)
             )
             return Written(sequence=self._sequence, version=current_version + 1)
 

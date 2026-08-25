@@ -31,6 +31,7 @@ nav:
       - Quickstart: quickstart.md
   - Concepts:
       - The board: concepts/board.md
+      - Storage: concepts/storage.md
       - The control component: concepts/control.md
       - The run: concepts/run.md
       - Running as a service: concepts/service.md

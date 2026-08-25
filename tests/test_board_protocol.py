@@ -4,12 +4,12 @@ from datetime import UTC, datetime, timedelta
 
 from blackboard import (
     Accepted,
-    Board,
     BoardChange,
     BoardReader,
     BoardStore,
     Conflict,
     Contribution,
+    InMemoryBoard,
     Level,
     ManualClock,
     Register,
@@ -32,7 +32,7 @@ class RecordingBoard:
     """A board that satisfies the protocol and records what it was asked to do."""
 
     def __init__(self) -> None:
-        self._inner = Board()
+        self._inner = InMemoryBoard()
         self.calls: list[str] = []
 
     def declare(self, region: Level | Register) -> None:
@@ -90,6 +90,7 @@ def test_without_one_the_in_memory_board_is_used() -> None:
         budgets=BUDGETS,
         termination_predicate=keep_open,
         clock=ManualClock(start=START),
+        board=InMemoryBoard(),
     )
     assert model.control.write("ocp", "platform", "finding") == Accepted(sequence=1)
     assert [c.content for c in model.reader.read_level("platform")] == ["finding"]

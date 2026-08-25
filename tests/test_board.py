@@ -7,11 +7,11 @@ from collections.abc import Iterator
 import pytest
 
 from blackboard import (
-    Board,
     BoardChange,
     Conflict,
     Contribution,
     DuplicateRegionError,
+    InMemoryBoard,
     Level,
     RegionKindError,
     Register,
@@ -22,8 +22,8 @@ from blackboard import (
 )
 
 
-def make_board() -> Board:
-    return Board([Level("application"), Level("platform"), Register("window")])
+def make_board() -> InMemoryBoard:
+    return InMemoryBoard([Level("application"), Level("platform"), Register("window")])
 
 
 @pytest.fixture
@@ -141,17 +141,17 @@ class TestSet:
     def test_concurrent_register_writers_lose_no_update(
         self, frequent_thread_switches: None
     ) -> None:
-        board = Board([Register("namespace")])
-        board.set("namespace", (), expected_version=0)
+        board = InMemoryBoard([Register("namespace")])
+        board.set("namespace", [], expected_version=0)
         barrier = threading.Barrier(8)
 
         def add(item: int) -> None:
             barrier.wait()
             for _ in range(1000):
                 state = board.read_register("namespace")
-                assert isinstance(state.value, tuple)
+                assert isinstance(state.value, list)
                 result = board.set(
-                    "namespace", (*state.value, item), expected_version=state.version
+                    "namespace", [*state.value, item], expected_version=state.version
                 )
                 if isinstance(result, Written):
                     return
@@ -163,7 +163,7 @@ class TestSet:
         for thread in threads:
             thread.join()
         state = board.read_register("namespace")
-        assert isinstance(state.value, tuple)
+        assert isinstance(state.value, list)
         assert sorted(state.value) == list(range(8))
         assert state.version == 9
 
@@ -187,12 +187,13 @@ class TestReads:
             Contribution(sequence=2, content="b")
         ]
 
-    def test_content_is_returned_unaltered(self) -> None:
+    def test_content_comes_back_equal_and_detached_from_the_caller(self) -> None:
         board = make_board()
         content = {"finding": ["f1"]}
         board.append("application", content)
+        content["finding"].append("f2")
         (contribution,) = board.read_level("application")
-        assert contribution.content is content
+        assert contribution.content == {"finding": ["f1"]}
 
     def test_read_register_before_any_write_raises_unset_register_error(self) -> None:
         board = make_board()

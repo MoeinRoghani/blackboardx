@@ -24,14 +24,23 @@ pip install blackboardx
 ```python
 from datetime import timedelta
 
-from blackboard import Agent, Level, Register, RunBudgets, Settled, create_model
+from blackboard import (
+    Agent,
+    Level,
+    Register,
+    RunBudgets,
+    Settled,
+    SqliteBoard,
+    create_model,
+)
 
 wakes = []
 
 model = create_model(
     regions=[Level("platform"), Register("window")],
-    seed={"window": ("2026-08-16T20:00", "2026-08-16T22:00")},
+    seed={"window": ["2026-08-16T20:00", "2026-08-16T22:00"]},
     budgets=RunBudgets(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
+    board=SqliteBoard("incident.sqlite3"),
 )
 
 model.control.register_agent(Agent(name="ocp", notify=wakes.append))

@@ -42,9 +42,9 @@ Chained wakes are drained from a queue rather than the call stack, so agents tha
 model = create_model(
     regions=[Register("namespace", batch_window=timedelta(seconds=5))], ...
 )
-model.control.set_register("operator", "namespace", ("ns1",), expected_version=1)
+model.control.set_register("operator", "namespace", ["ns1"], expected_version=1)
 clock.advance(timedelta(seconds=2))
-model.control.set_register("operator", "namespace", ("ns1", "ns2"), expected_version=2)
+model.control.set_register("operator", "namespace", ["ns1", "ns2"], expected_version=2)
 
 assert wakes == []                       # still inside the window
 clock.advance(timedelta(seconds=3))

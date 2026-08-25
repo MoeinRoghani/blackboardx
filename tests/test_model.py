@@ -10,6 +10,7 @@ from blackboard import (
     Agent,
     BoardReader,
     DuplicateAgentError,
+    InMemoryBoard,
     Level,
     ManualClock,
     Notification,
@@ -19,6 +20,7 @@ from blackboard import (
     RunClosedError,
     SeedError,
     Settled,
+    SqliteBoard,
     TerminationDecision,
     create_model,
 )
@@ -40,6 +42,30 @@ def declaration(name: str, notify: object) -> Agent:
 
 
 class TestCreation:
+    def test_a_model_without_a_board_is_refused(self) -> None:
+        with pytest.raises(TypeError, match="board"):
+            create_model(  # type: ignore[call-arg]  # the omission is the subject
+                regions=[Level("platform")],
+                seed={},
+                budgets=BUDGETS,
+                clock=ManualClock(start=START),
+            )
+
+    def test_the_board_passed_is_the_board_written_to(self) -> None:
+        board = SqliteBoard()
+        model = create_model(
+            regions=[Level("platform"), Register("window")],
+            seed={"window": "w"},
+            termination_predicate=keep_open,
+            budgets=BUDGETS,
+            clock=ManualClock(start=START),
+            board=board,
+        )
+        model.control.write("ocp", "platform", "a finding")
+        assert [c.content for c in board.read_level("platform")] == ["a finding"]
+        assert board.read_register("window").value == "w"
+        board.close()
+
     def test_creation_takes_no_agents_and_wakes_nobody(self) -> None:
         model = create_model(
             regions=[Level("platform"), Register("window")],
@@ -47,6 +73,7 @@ class TestCreation:
             termination_predicate=keep_open,
             budgets=BUDGETS,
             clock=ManualClock(start=START),
+            board=InMemoryBoard(),
         )
         seeded = [
             e for e in model.control.read_audit() if isinstance(e, RegisterSeeded)
@@ -61,6 +88,7 @@ class TestCreation:
                 seed={"window": "w"},
                 budgets=BUDGETS,
                 clock=ManualClock(start=START),
+                board=InMemoryBoard(),
             )
         with pytest.raises(SeedError, match="undeclared"):
             create_model(
@@ -68,6 +96,7 @@ class TestCreation:
                 seed={"window": "w", "unknown": "x"},
                 budgets=BUDGETS,
                 clock=ManualClock(start=START),
+                board=InMemoryBoard(),
             )
 
     def test_seed_writes_bypass_the_write_budget(self) -> None:
@@ -79,6 +108,7 @@ class TestCreation:
                 wall_clock=timedelta(hours=1), idle=timedelta(minutes=30)
             ),
             clock=ManualClock(start=START),
+            board=InMemoryBoard(),
         )
         assert model.control.write("ocp", "platform", "fits") == Accepted(sequence=3)
 
@@ -92,6 +122,7 @@ class TestRegistration:
             termination_predicate=keep_open,
             budgets=BUDGETS,
             clock=ManualClock(start=START),
+            board=InMemoryBoard(),
         )
         model.control.register_agent(declaration("ocp", wakes.append))
         (wake,) = wakes
@@ -107,6 +138,7 @@ class TestRegistration:
             termination_predicate=keep_open,
             budgets=BUDGETS,
             clock=ManualClock(start=START),
+            board=InMemoryBoard(),
         )
         model.control.register_agent(declaration("ocp", first.append))
         assert len(first) == 1
@@ -123,6 +155,7 @@ class TestRegistration:
             termination_predicate=keep_open,
             budgets=BUDGETS,
             clock=ManualClock(start=START),
+            board=InMemoryBoard(),
         )
         model.control.declare(Register("trigger"))
         model.control.register_agent(declaration("ocp", wakes.append))
@@ -137,6 +170,7 @@ class TestRegistration:
             termination_predicate=keep_open,
             budgets=BUDGETS,
             clock=ManualClock(start=START),
+            board=InMemoryBoard(),
         )
         model.control.register_agent(declaration("ocp", wakes.append))
         with pytest.raises(DuplicateAgentError):
@@ -148,6 +182,7 @@ class TestRegistration:
             seed={"window": "w"},
             budgets=BUDGETS,
             clock=ManualClock(start=START),
+            board=InMemoryBoard(),
         )
         model.control.abort("stopped")
         with pytest.raises(RunClosedError):
@@ -160,9 +195,10 @@ class TestFullCycle:
         clock = ManualClock(start=START)
         model = create_model(
             regions=[Level("platform"), Register("window")],
-            seed={"window": ("t1", "t2")},
+            seed={"window": ["t1", "t2"]},
             budgets=BUDGETS,
             clock=clock,
+            board=InMemoryBoard(),
         )
         model.control.register_agent(declaration("ocp", wakes.append))
 
@@ -174,7 +210,7 @@ class TestFullCycle:
         clock.advance(timedelta(minutes=30))
         assert model.control.outcome() == Settled()
         (contribution,) = model.reader.read_level("platform")
-        assert contribution.content == {"window": ("t1", "t2"), "findings": ["oom"]}
+        assert contribution.content == {"window": ["t1", "t2"], "findings": ["oom"]}
 
 
 class TestSystemClockIntegration:
@@ -195,6 +231,7 @@ class TestSystemClockIntegration:
             budgets=RunBudgets(
                 wall_clock=timedelta(minutes=1), idle=timedelta(seconds=1)
             ),
+            board=InMemoryBoard(),
         )
         holder.append(model)
         model.control.register_agent(

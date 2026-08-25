@@ -11,11 +11,11 @@ the set of names in ``__all__``; every other name is internal.
 
 from blackboard._board import (
     BlackboardError,
-    Board,
     BoardChange,
     Conflict,
     Contribution,
     DuplicateRegionError,
+    InMemoryBoard,
     Level,
     RegionKindError,
     Register,
@@ -61,6 +61,7 @@ from blackboard._control import (
     WriteRejected,
 )
 from blackboard._model import Model, create_model
+from blackboard._sqlite import SqliteBoard
 
 __all__ = [
     "Aborted",
@@ -70,7 +71,6 @@ __all__ = [
     "Agent",
     "AuditEvent",
     "BlackboardError",
-    "Board",
     "BoardChange",
     "BoardReader",
     "BoardStore",
@@ -80,6 +80,7 @@ __all__ = [
     "Control",
     "DuplicateAgentError",
     "DuplicateRegionError",
+    "InMemoryBoard",
     "Level",
     "ManualClock",
     "Model",
@@ -104,6 +105,7 @@ __all__ = [
     "ScheduledCall",
     "SeedError",
     "Settled",
+    "SqliteBoard",
     "SystemClock",
     "TerminationDecision",
     "TerminationPredicate",

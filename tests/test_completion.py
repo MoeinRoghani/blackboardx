@@ -8,6 +8,7 @@ from blackboard import (
     Aborted,
     Agent,
     BoardReader,
+    InMemoryBoard,
     Level,
     ManualClock,
     Notification,
@@ -58,6 +59,7 @@ def make_control(clock: ManualClock, **kwargs: object) -> Control:
         regions=[Level("application"), Register("window")],
         budgets=budgets(),
         clock=clock,
+        board=InMemoryBoard(),
         **kwargs,  # type: ignore[arg-type]  # forwarded keyword arguments
     )
 

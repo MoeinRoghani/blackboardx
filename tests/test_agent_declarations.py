@@ -8,6 +8,7 @@ from blackboard import (
     Accepted,
     Agent,
     BoardReader,
+    InMemoryBoard,
     Level,
     ManualClock,
     Notification,
@@ -40,6 +41,7 @@ def make_control(clock: ManualClock) -> Control:
         termination_predicate=keep_open,
         budgets=BUDGETS,
         clock=clock,
+        board=InMemoryBoard(),
     )
 
 
