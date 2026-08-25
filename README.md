@@ -8,7 +8,11 @@ The distribution name is `blackboardx`; the import name is `blackboard`. The doc
 
 ```
 pip install blackboardx
+pip install 'blackboardx[postgres]'    # PostgresBoard
+pip install 'blackboardx[mongodb]'     # MongoBoard
 ```
+
+The base install has no runtime dependency: the board it ships, `SqliteBoard`, is backed by SQLite, which comes with Python. A deployment keeps the record in the database it already runs, and the adapter for one needs its driver.
 
 ## Documentation
 
@@ -16,6 +20,7 @@ pip install blackboardx
 | --- | --- |
 | [Quickstart](https://moeinroghani.github.io/blackboardx/quickstart/) | A run in full, in twenty lines |
 | [Concepts](https://moeinroghani.github.io/blackboardx/concepts/board/) | What the board, the control component and a run are |
+| [Storage](https://moeinroghani.github.io/blackboardx/concepts/storage/) | Where the record is kept, and what an adapter owes |
 | [Guides](https://moeinroghani.github.io/blackboardx/guides/writing-an-agent/) | Writing an agent, admission rules, ending a run, testing |
 | [API reference](https://moeinroghani.github.io/blackboardx/reference/) | Every exported name |
 

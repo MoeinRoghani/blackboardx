@@ -2,6 +2,16 @@
 
 Every timed behaviour is observable without waiting, because the clock is injected.
 
+## Which board a test uses
+
+| Test | Board |
+| --- | --- |
+| A unit test of your agents, rules, or timing | `InMemoryBoard()` |
+| A test that has to see the storage semantics a deployment has | `SqliteBoard()` |
+| A test of your own `BoardStore` implementation | Your adapter, through the conformance suite |
+
+Content crosses every board as JSON, the in-memory one included, so a test cannot pass against content a deployment would refuse.
+
 ## The manual clock
 
 ```python
@@ -9,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 from blackboard import ManualClock
 
 clock = ManualClock(start=datetime(2026, 8, 21, 12, 0, tzinfo=UTC))
-model = create_model(..., clock=clock)
+model = create_model(..., clock=clock, board=InMemoryBoard())
 ```
 
 `advance` moves time and fires every due call synchronously, on the calling thread, in due order. A call armed during an advance fires inside it when its instant falls at or before the target.
@@ -64,6 +74,8 @@ assert [e.reason for e in rejected] == [
 
 The audit records every event in the order it occurred, which is a fact about what happened rather than about how fast it happened.
 
-## Substituting the board
+## Testing your own adapter
 
-`create_model` takes a `board`, so a test can drive any implementation of `BoardStore` and assert the control component used it.
+`tests/conformance.py` in the repository is the suite every board implementation owes. Subclass `BoardConformance`, give it a `board` fixture returning a fresh board, and the whole suite runs against your adapter. Where one store holds many boards, subclass `SharedStoreConformance` as well and give it a `two_boards` fixture.
+
+That is how `SqliteBoard`, `PostgresBoard`, and `MongoBoard` are held to the same behaviour, the last two against real servers.

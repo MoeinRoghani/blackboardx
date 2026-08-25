@@ -66,6 +66,7 @@ from blackboard._model import Model, create_model
 from blackboard._sqlite import SqliteBoard
 
 if TYPE_CHECKING:
+    from blackboard._mongodb import MongoBoard
     from blackboard._postgres import PostgresBoard
 
 __all__ = [
@@ -89,6 +90,7 @@ __all__ = [
     "Level",
     "ManualClock",
     "Model",
+    "MongoBoard",
     "Notification",
     "NotificationAcknowledged",
     "NotificationDispatched",
@@ -126,7 +128,10 @@ __all__ = [
 ]
 
 
-_EXTRAS = {"PostgresBoard": ("blackboard._postgres", "postgres")}
+_EXTRAS = {
+    "MongoBoard": ("blackboard._mongodb", "mongodb"),
+    "PostgresBoard": ("blackboard._postgres", "postgres"),
+}
 
 
 def __getattr__(name: str) -> Any:

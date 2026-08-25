@@ -1,6 +1,6 @@
 # Storage
 
-The board is a record, and a record has to be somewhere a reader can find it. Which database holds it is the application's decision, so `create_model` takes the board as a required argument and the library defaults to nothing.
+The board is a record, and a record has to be somewhere a reader can find it. Which database holds it is the application's decision, so `create_model` takes the board as a required argument and supplies no default.
 
 ## What to pass
 
@@ -8,15 +8,17 @@ The board is a record, and a record has to be somewhere a reader can find it. Wh
 | --- | --- | --- |
 | `SqliteBoard` | A file, or the process when the path is `":memory:"` | One machine: local development, a demonstration, an integration test |
 | `PostgresBoard` | A Postgres server the application already runs | Deployment |
+| `MongoBoard` | A MongoDB replica set the application already runs | Deployment |
 | `InMemoryBoard` | Process memory | A unit test, and nothing else |
 
-`SqliteBoard` is in the base distribution, because SQLite ships with Python. `PostgresBoard` needs its driver, so it is an extra:
+`SqliteBoard` is in the base distribution, because SQLite ships with Python. The deployment adapters need their drivers, so each is an extra:
 
 ```console
 pip install 'blackboardx[postgres]'
+pip install 'blackboardx[mongodb]'
 ```
 
-Naming it without the extra installed raises an `ImportError` saying which extra supplies it.
+Naming a board whose extra is not installed raises an `ImportError` saying which extra supplies it.
 
 ## Local
 
@@ -28,7 +30,7 @@ model = create_model(..., board=SqliteBoard("incident.sqlite3"))
 
 The file is the record. The schema is created on construction, and reopening the same path reads the run back, sequence counter included. SQLite ships with Python, so this needs no extra dependency and no server.
 
-## Deployed
+## Deployed on Postgres
 
 ```python
 from psycopg_pool import ConnectionPool
@@ -45,7 +47,7 @@ board.create_schema()
 model = create_model(..., board=board)
 ```
 
-The adapter is handed the pool and neither opens nor closes it, so pooling, credentials, failover, and migrations stay where an operator configures them. A script with no pool to pass can open one for the duration of a block:
+Pooling, credentials, failover, and migrations stay where an operator configures them. A script with no pool to pass can open one for the duration of a block:
 
 ```python
 with PostgresBoard.from_dsn("postgresql://...", board_id="incident-4471") as board:
@@ -56,13 +58,48 @@ with PostgresBoard.from_dsn("postgresql://...", board_id="incident-4471") as boa
 
 Agents deployed as separate services each hold their own connection to the same database. The board is what they share, and the process that created the model holds nothing another process needs, so any pod serves any board and losing a pod loses no work.
 
-### What holds across processes
+## Deployed on MongoDB
+
+```python
+from pymongo import MongoClient
+
+from blackboard import MongoBoard, create_model
+
+# The client is the application's own, and the adapter neither opens nor
+# closes it.
+client = MongoClient("mongodb://...")
+board = MongoBoard(client["incidents"], board_id="incident-4471")
+
+# Once, against a database that has no indexes yet.
+board.create_indexes()
+
+model = create_model(..., board=board)
+```
+
+Content is stored as a document rather than as encoded text, so the record is queryable in the database that was chosen for querying it:
+
+```javascript
+db.blackboard_contributions.find({board_id: "incident-4471", "content.finding": "oom"})
+```
+
+A script with no client to pass can open one for the duration of a block, as on Postgres:
+
+```python
+with MongoBoard.from_uri("mongodb://...", "incidents") as board:
+    ...
+```
+
+`MongoBoard` requires a replica set or a sharded cluster. Every write spans two documents, which on MongoDB is a session transaction, and only a replica set runs one. Production MongoDB is a replica set and Atlas is always one. Against a standalone server the first write raises and says why, rather than running the record under weaker rules than it needs.
+
+## What holds across processes
 
 Two guarantees are what make a board a board, and in a deployment they have to hold between processes rather than merely between the threads of one.
 
-**The sequence is gapless.** Every write increments one row and holds the lock that update takes until the transaction commits, so writes to one board are serialised and a number a rolled-back write took is returned rather than skipped. A Postgres sequence would be faster and would leave gaps, and a gap is a hole in a record whose numbers are addresses.
+**The sequence is gapless.** Every write takes its number by incrementing one counter inside the transaction that carries the write, so a number a rolled-back write took is returned rather than skipped. A Postgres sequence would be faster and would leave gaps, and a gap is a hole in a record whose numbers are addresses.
 
-**A register write is a conditional update on the version.** Two writers naming the same version produce one winner and one `Conflict`, whichever process reaches the row first, and the conflict takes no sequence number.
+The two servers reach that differently. Postgres blocks a second writer on the row lock the increment acquires and holds to commit, so writes to one board serialise. MongoDB does not block: it aborts one of two contending transactions and labels the failure transient, so the adapter runs the write again through the driver's retrying transaction, and a register write puts its version guard before the counter so a losing write never contends for it at all.
+
+**A register write is a conditional update on the version.** Two writers naming the same version produce one winner and one `Conflict`, whichever process reaches the record first, and the conflict takes no sequence number.
 
 ## Many boards, one database
 
@@ -76,7 +113,7 @@ Every persistent board carries a `board_id`, and every row is scoped by it. Two 
 
 `BoardStore` is the protocol, and it has six methods: `declare`, `append`, and `set` write; `read_level`, `read_register`, and `read_board` read. An implementation of those six is a board, and the control component names no concrete type.
 
-Two rules hold every implementation together, and the conformance suite in `tests/conformance.py` checks both against each one, `PostgresBoard` against a real server:
+Two rules hold every implementation together, and the conformance suite in `tests/conformance.py` checks both against each one, the deployment adapters against real servers:
 
 - **One counter.** Every write to any region takes the next number from a single sequence. The number is the position in the total order and the address of the write.
 - **Version-guarded register writes.** A register write names the version it expects to replace. If that is not the current version, the write returns `Conflict` carrying the current version, takes no sequence number, and changes nothing.

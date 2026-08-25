@@ -24,6 +24,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
+mongodb = ["pymongo>=4.9"]
 postgres = ["psycopg[binary,pool]>=3.2"]
 
 [project.urls]
@@ -31,7 +32,7 @@ Repository = "https://github.com/MoeinRoghani/blackboardx"
 
 [dependency-groups]
 dev = [
-    "blackboardx[postgres]",
+    "blackboardx[mongodb,postgres]",
     "mkdocs<2",
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.27",

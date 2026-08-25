@@ -18,11 +18,13 @@ A deployment keeps the record in the database it already runs, and the adapter f
 
 ```
 pip install 'blackboardx[postgres]'
+pip install 'blackboardx[mongodb]'
 ```
 
 | Extra | Installs | Gives you |
 | --- | --- | --- |
 | `postgres` | `psycopg[binary,pool]` | `PostgresBoard` |
+| `mongodb` | `pymongo` | `MongoBoard` |
 
 Naming a board whose extra is not installed raises an `ImportError` saying which extra supplies it. [Storage](concepts/storage.md) covers the choice.
 
@@ -30,7 +32,7 @@ Naming a board whose extra is not installed raises an `ImportError` saying which
 
 | Ships | Does not ship |
 | --- | --- |
-| `SqliteBoard` and `PostgresBoard` | Any transport to remote agents |
+| `SqliteBoard`, `PostgresBoard`, `MongoBoard` | Any transport to remote agents |
 | The `BoardStore` protocol, for any other database | Any agent implementation |
 | The control component and model creation | Any process supervisor |
 | `SystemClock` and `ManualClock` | Any database server, credential, or migration tool |

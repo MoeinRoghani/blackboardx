@@ -46,7 +46,7 @@ jobs:
       - run: make docs
 
   adapters:
-    name: adapters (postgres)
+    name: adapters (postgres, mongodb)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -64,13 +64,39 @@ jobs:
           --health-retries 10
     env:
       BLACKBOARD_TEST_POSTGRES_DSN: postgresql://blackboard:blackboard@localhost:5432/blackboard
+      BLACKBOARD_TEST_MONGODB_URI: mongodb://localhost:27017/?replicaSet=rs0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: "3.11"
+      # A service container cannot initiate a replica set, and a MongoDB
+      # transaction needs one, so this starts and initiates it by hand.
+      - name: A single-node MongoDB replica set
+        run: |
+          docker run -d --name mongo -p 27017:27017 \
+            mongo:7.0@sha256:b6421fd6d1c5ded6377b397d8983e2f82e2100dc5123332dcfda2065a472be5b \
+            --replSet rs0 --bind_ip_all
+          for _ in $(seq 30); do
+            docker exec mongo mongosh --quiet --eval 'db.adminCommand({ping:1})' \
+              && break
+            sleep 2
+          done
+          docker exec mongo mongosh --quiet --eval \
+            'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for _ in $(seq 30); do
+            docker exec mongo mongosh --quiet --eval 'rs.status().ok' \
+              | grep -q 1 && break
+            sleep 2
+          done
       - run: make setup
-      - run: make test
+      # Every adapter test runs here and none of them skips. A skip means a
+      # server did not come up, and that would otherwise pass quietly.
+      - name: The suite, with no adapter skipped
+        shell: bash
+        run: |
+          uv run pytest -q -rs | tee report.txt
+          ! grep -q SKIPPED report.txt
 
   test:
     runs-on: ubuntu-latest
