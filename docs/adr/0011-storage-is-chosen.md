@@ -44,6 +44,7 @@ The deployment drivers are extras, `blackboardx[postgres]` and `blackboardx[mong
 - A tuple written to any board reads back as a list, and content JSON cannot carry raises `TypeError` at the write rather than at the first process boundary.
 - A conformance suite defines what an implementation owes, and the deployment adapters are held to it against real servers in CI. A skip in that job fails it, because a skip means a server did not come up.
 - `MongoBoard` requires a replica set, because both guarantees span documents and that is a session transaction. A standalone server raises and says so.
+- The record is durable and the run is not. The control component still holds the agent registry, the outstanding notifications, and the deadlines in the process, so one board is served by one `Control` at a time and a replacement restarts rather than resumes. Making the run durable is a further decision.
 
 ## Alternatives rejected
 

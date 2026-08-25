@@ -1,5 +1,7 @@
 # The blackboard service
 
+**Status: a design, not a thing that exists.** The library ships the board and its adapters; the service, the agent client, and the durable run this document describes are not built. What the library holds in the process today, and what that means for replicas, is in [Running as a service](../concepts/service.md).
+
 A deployment that holds blackboards for agents which run as separate services. It owns the only connection to the database, imports `blackboardx`, and exposes the blackboard over HTTP. Agents never reach the database and never import the library.
 
 ## The parts
@@ -13,7 +15,7 @@ A deployment that holds blackboards for agents which run as separate services. I
 | Database | One PostgreSQL primary | The platform | Already running |
 | Agents | Independent services | Their own teams | Kubernetes |
 
-A pod keeps nothing between requests. It reads what a request needs from the database and writes back before answering, so any pod serves any blackboard and losing a pod loses no work.
+A pod would keep nothing between requests: it would read what a request needs from the database and write back before answering, so any pod serves any blackboard and losing a pod loses no work. That is the point of the `agents`, `notifications`, and `audit` tables below, and it is the part that does not exist. Today the control component holds all three in the process, so one blackboard is served by one process at a time.
 
 ## What the database holds
 
@@ -27,7 +29,7 @@ A pod keeps nothing between requests. It reads what a request needs from the dat
 | `notifications` | Every notification issued, delivered or not, acknowledged or not |
 | `audit` | Every event, in the order each occurred |
 
-Two columns carry the model's reconciliation rules. `contributions.sequence` comes from a database sequence, which is what gives one total order across pods. `registers.version` makes a register write a compare and set, where an update matching no row is the conflict the model returns.
+Two columns carry the model's reconciliation rules. `contributions.sequence` is taken by incrementing a counter row inside the writing transaction, not from a database sequence: a sequence does not roll back, and a gap is a hole in a record whose numbers are addresses. `registers.version` makes a register write a compare and set, where an update matching no row is the conflict the model returns. The shipped adapters already work this way; see [Storage](../concepts/storage.md).
 
 ## The HTTP surface
 
