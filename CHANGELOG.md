@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.6.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.5.0...v0.6.0) (2026-08-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **model:** a creator names the agents, and one may still join later ([#132](https://github.com/MoeinRoghani/blackboardx/issues/132))
+
+### Features
+
+* **model:** a creator names the agents, and one may still join later ([#132](https://github.com/MoeinRoghani/blackboardx/issues/132)) ([8c1eb0b](https://github.com/MoeinRoghani/blackboardx/commit/8c1eb0b16af00e57d42122cc63a24c8db5a8ed0c)), closes [#131](https://github.com/MoeinRoghani/blackboardx/issues/131)
+
+
+### Bug Fixes
+
+* **control:** dispatch declares a return it cannot make ([#136](https://github.com/MoeinRoghani/blackboardx/issues/136)) ([f29be74](https://github.com/MoeinRoghani/blackboardx/commit/f29be74763948de09d1c0fa0d0e1774e80ded7ef)), closes [#135](https://github.com/MoeinRoghani/blackboardx/issues/135)
+
+
+### Documentation
+
+* an audit of the same failures across every page ([#128](https://github.com/MoeinRoghani/blackboardx/issues/128)) ([d4e034b](https://github.com/MoeinRoghani/blackboardx/commit/d4e034bc48c6f74ecf1594ec9441d41d2d0dec0c)), closes [#127](https://github.com/MoeinRoghani/blackboardx/issues/127)
+* clauses appended to complete sentences that assert nothing ([#130](https://github.com/MoeinRoghani/blackboardx/issues/130)) ([2b715cd](https://github.com/MoeinRoghani/blackboardx/commit/2b715cd4ca88ab2efb3602c4696b349dd52c5ebf)), closes [#129](https://github.com/MoeinRoghani/blackboardx/issues/129)
+* sentences that carried no claim are gone, and the rename left wreckage ([#124](https://github.com/MoeinRoghani/blackboardx/issues/124)) ([5660dc1](https://github.com/MoeinRoghani/blackboardx/commit/5660dc1a73c805fe177b53d601806de955ff6465)), closes [#123](https://github.com/MoeinRoghani/blackboardx/issues/123)
+* the opening establishes the problem before naming any component ([#121](https://github.com/MoeinRoghani/blackboardx/issues/121)) ([c8b5b3b](https://github.com/MoeinRoghani/blackboardx/commit/c8b5b3ba1cbb68f4de0d422f497cea6f12729bcd)), closes [#120](https://github.com/MoeinRoghani/blackboardx/issues/120)
+* the two kinds of region follow from the information, not from writing ([#126](https://github.com/MoeinRoghani/blackboardx/issues/126)) ([600a8c2](https://github.com/MoeinRoghani/blackboardx/commit/600a8c29b7938317f0080d0c3c5b3010db710ba1)), closes [#125](https://github.com/MoeinRoghani/blackboardx/issues/125)
+* what a run costs when it names no agents ([#134](https://github.com/MoeinRoghani/blackboardx/issues/134)) ([ae4319e](https://github.com/MoeinRoghani/blackboardx/commit/ae4319e272566f536cb0ab384ad4a3bdd7c97e5d)), closes [#133](https://github.com/MoeinRoghani/blackboardx/issues/133)
+
 ## [0.5.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.4.0...v0.5.0) (2026-08-25)
 
 
