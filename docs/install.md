@@ -10,11 +10,11 @@ The distribution is named `blackboardx` and the import name is `blackboard`.
 from blackboard import create_model
 ```
 
-It requires Python 3.11 or later. The base install has no runtime dependencies, because the board it ships is backed by SQLite, which comes with Python. The package ships `py.typed`, so type checkers use its annotations without a stub package.
+It requires Python 3.11 or later, and the base install has no runtime dependencies. Neither board it ships needs one: `InMemoryBoard` holds the record in the process, and `SqliteBoard` uses `sqlite3` from the standard library. The package ships `py.typed`, so type checkers use its annotations without a stub package.
 
 ## Extras
 
-A deployment keeps the record in the database it already runs, and the adapter for one needs its driver:
+A deployment keeps the record in a database it already runs, and each adapter needs that database's driver:
 
 ```
 pip install 'blackboardx[postgres]'

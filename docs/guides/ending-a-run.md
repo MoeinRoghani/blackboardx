@@ -4,7 +4,7 @@ Three things end a run, and each produces an outcome that names the agents still
 
 ## Silence
 
-The usual case. Nothing has happened for the idle limit.
+Most runs end this way, when nothing has happened for the idle limit.
 
 ```python
 RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=10))
@@ -61,8 +61,8 @@ match outcome:
         ...  # still open when the timeout passed
 ```
 
-`unfinished` is why the outcome is worth matching on rather than merely checking. A region that is empty because nobody examined it and a region that is empty because an agent looked and found nothing are different results, and only `unfinished` tells them apart.
+Match the outcome rather than checking that it is not `None`, because `unfinished` carries a result the outcome alone does not. A region left empty because nobody examined it and a region left empty because an agent looked and found nothing are different findings, and `unfinished` is what separates them.
 
 ## After it closes
 
-Reads and the audit keep working, so the result stays available. Writes and registrations are refused.
+Reads and the audit keep working, so the result stays available. A write to either kind of region comes back `Rejected` with the cause `RUN_CLOSED`. Registering an agent or declaring a region raises `RunClosedError`. [The run](../concepts/run.md#after-closing) explains why one returns and the other raises.

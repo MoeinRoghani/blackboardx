@@ -37,7 +37,7 @@ A run does not close because nothing is outstanding at some instant. Agents are 
 | `WallClockExpired` | The wall clock limit passed |
 | `Aborted` | A caller closed the run |
 
-Each carries `unfinished`, naming the agents still holding an unacknowledged notification. Why a run ended and which agents failed to finish are separate facts, so a run settles normally while one agent never returns. That distinction matters to a consumer, because a region nobody examined and a region examined with nothing in it are different states.
+Each carries `unfinished`, naming the agents still holding an unacknowledged notification. Why a run ended and which agents failed to finish are separate facts, so a run settles normally while one agent never returns. [End a run](../guides/ending-a-run.md) covers what to do with the outcome.
 
 ## Time is the only bound
 
@@ -45,10 +45,10 @@ Each carries `unfinished`, naming the agents still holding an unacknowledged not
 RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=10))
 ```
 
-Nothing counts writes or notifications. A write is the cause of a notification and a notification is its effect, and limiting the effect would mean that past some count a change lands and nobody is told, while the run stays open and still accepts writes. A record whose changes reach nobody has stopped being shared, and it would stop silently.
-
-So the rule is absolute: **a change that lands is always told to every agent that should hear it.**
+Nothing counts writes or notifications. A count of notifications would limit the effect of a write rather than the write itself, so past that count a change would land and no agent would be told, while the run stayed open and kept accepting writes. A record whose changes reach nobody has stopped being shared, and it would stop without saying so.
 
 ## After closing
 
-Reads and the audit keep working. Writes, premise writes, and registrations are refused.
+Reads and the audit keep working, so the result stays available.
+
+A write to either kind of region comes back `Rejected` with the cause `RUN_CLOSED`, because a write racing the close is ordinary and a caller has to handle it. Registering an agent or declaring a region raises `RunClosedError` instead, because neither races anything: a caller that does either after the run has closed has made a mistake.
