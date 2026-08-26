@@ -4,47 +4,35 @@ The board holds what the agents write, gives every write a position in a single 
 
 It never opens what it holds. A contribution's content belongs to the application that wrote it, and reading that content takes the expertise of the agent that produced it, which the board does not have.
 
-## Why there are two kinds of region
+## The two kinds of region
 
-Suppose two agents write to the same region at the same moment. The board has to decide what that region holds afterwards, and it has only three options: keep both writes, keep one of them, or combine them into a single value.
+A board is divided into named regions, which the application declares. Every region is one of two kinds, because the information on a board is of two kinds: what the work was given, and what the agents worked out from it.
 
-It cannot combine them. To combine two values the board would have to read both and work out what their combination is, and reading is the one thing it does not do. Letting the application supply a merge function does not help, because the board would still have to open the two values before it could pass them to that function.
+A **level** holds what the agents worked out. Each thing an agent writes to a level is a contribution: a finding, a hypothesis, a bundle of evidence it gathered. One agent's finding does not make another's untrue, so contributions do not supersede one another, and a write to a level adds to what is already there without altering any of it.
 
-If the board keeps both writes, it has to put them in an order, so that a reader sees them the way they arrived.
+A **premise** holds something the work was given: which service is affected, which window of time is under examination, which namespaces are in scope. There is one correct answer at a time, so a premise holds one current value, and a write to it replaces that value. The writer names the version it expects to replace, because the value it read may have moved in the meantime, and the board refuses the write when it has.
 
-If it keeps one, it has to tell each writer which value that write replaced. Otherwise a writer that read a value, built a longer one from it, and wrote the result would silently throw away whatever a second writer had put there in between.
-
-Those two options, each with the rule it needs, are the two kinds of region.
-
-| Kind | What it does with two writes | What it holds |
+| Kind | Holds | In an incident investigation |
 | --- | --- | --- |
-| `Level` | Keeps both, in arrival order | What the agents concluded |
-| `Premise` | Keeps one, and the writer names the version it expects to replace | What the work was given |
+| `Level` | What the agents worked out | The findings each agent contributed |
+| `Premise` | What the work was given | The affected service, the incident window |
 
-The kind carries the rule, so no second setting exists through which kind and rule could disagree.
+A region's kind carries its reconciliation rule, so no separate setting exists through which the two could disagree.
 
-## Levels accumulate
+## Changing part of what a premise holds
 
-Appending to a level never conflicts and never needs retrying. Two agents appending at the same moment both succeed and receive different sequence numbers.
+A premise write replaces the whole value, which is worth knowing before deciding what a premise should hold. Writing `{"window": ...}` to a premise that holds `{"service": ..., "window": None}` leaves it holding the window alone, and the service key is gone.
 
-```python
-board.append("platform", {"findings": ["oom"]})  # -> 4
-```
+The board cannot fill in one field and leave the others, because working out which fields are already set means reading the value, and reading is the one thing it does not do. The same constraint rules out combining two writes into one value.
 
-Nothing already stored is altered, so a contribution an agent read is still there and still says what it said.
-
-## Registers replace under a version
-
-A premise write names the version it expects to replace, and fails if the premise moved past it.
+An application does that reading itself.
 
 ```python
-state = board.read_premise("namespace")
-result = board.set("namespace", [*state.value, "prod-payments"], state.version)
+state = board.read_premise("case")
+board.set("case", {**state.value, "window": "20:00-22:00"}, state.version)
 ```
 
-`result` is `Written` with the new version, or `Conflict` carrying the version now current. The board neither retries nor merges; the writer re-reads and decides again.
-
-That is how a value that grows is grown. Two writers adding at once lose nothing: the second is told the value moved, reads the newer one, and adds to that.
+The writer reads the current value, builds the whole new value from it, and writes that under the version it read. Two writers filling in different fields at the same moment lose nothing: the second is told the value moved, reads the newer one, and builds again from that.
 
 ## One order across everything
 
