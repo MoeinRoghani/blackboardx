@@ -2,6 +2,31 @@
 
 Every name that moved, what replaced it, and the release its old form stops working in.
 
+## 0.5 to 0.6
+
+A creator names the agents a run starts with. Nothing else changes, and nothing that worked before stops working, because the argument is optional.
+
+```python
+# 0.5
+model = create_model(regions=[...], premises={...}, limits=..., board=...)
+model.control.register_agent(Agent(name="ocp", notify=investigate))
+```
+
+```python
+# 0.6
+model = create_model(
+    regions=[...],
+    premises={...},
+    agents=[Agent(name="ocp", notify=investigate)],
+    limits=...,
+    board=...,
+)
+```
+
+`register_agent` is unchanged and is now the path for an agent joining a run already under way.
+
+The reason to move is the wall clock. It is armed while the run is constructed, so a run that waits to be discovered spends its own time on discovery. Naming the agents at creation leaves nothing to discover. A run created with no agents named still starts its clock, so registering afterwards spends it. [The run](concepts/run.md#how-agents-join) covers what that costs.
+
 ## 0.4 to 0.5
 
 The region that holds what the work is given was a `Register`. It is a `Premise`. `register` belongs to computer architecture, and the specification that coined it cited nothing for it while citing Nii for *solution space*, *partial solution* and *skeletal*. The word now appears in the package in one place, `register_agent`, where it is a verb.
