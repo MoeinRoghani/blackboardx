@@ -1,6 +1,6 @@
 # Write an agent
 
-An agent's cycle has five steps and no others.
+An agent's work starts when the library notifies it and finishes when the agent reports that it has stopped.
 
 1. It receives a notification.
 2. It reads whatever it wants from the board.
@@ -8,7 +8,7 @@ An agent's cycle has five steps and no others.
 4. It writes each thing it wants to add.
 5. It acknowledges.
 
-Deciding to add nothing is an ordinary outcome and skips step 4.
+The library asks nothing of an agent outside these steps. Steps 2 and 3 are invisible to it: reads go straight to the board, and nothing reports what the agent concluded. It learns what the agent wrote, because it sequenced those writes itself. Deciding to add nothing is an ordinary outcome and skips step 4.
 
 ## The smallest one
 

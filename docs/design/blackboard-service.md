@@ -198,10 +198,10 @@ Every pod runs the same loop on `SWEEP_INTERVAL`, taking rows with `FOR UPDATE S
 
 ## Rules that hold throughout
 
-A change that lands is always notified to every agent that should hear it. No counter and no limit suppresses a notification, because a blackboard whose changes reach nobody has stopped being a shared record.
+No counter and no limit suppresses a notification, so every agent that should hear about a change is told about it. A blackboard whose changes reach nobody has stopped being a shared record.
 
-Time is the only bound on a blackboard. The wall clock ends it and the idle limit ends it, and nothing else counts against it.
+Time is the only bound on a blackboard. The wall clock and the idle limit both end one, and nothing else counts against it.
 
-The board is the truth and a notification is a doorbell. An agent that receives one learns only that it is out of date.
+A notification carries no values. An agent that receives one learns only that it is out of date, and reads the board to find out what changed.
 
 Contributions are JSON, because they cross HTTP and land in a column. The application's admission rule is where that is enforced.
