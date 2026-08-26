@@ -40,7 +40,9 @@ Agent(
 
 Omit `subscribes_to` and the agent is woken by every premise and by no level. Name a level and a contribution to it wakes the agent, which is how one agent's finding starts another's work.
 
-Omit `writes_to` and every level is permitted. Name one and a write anywhere else is refused with `NOT_PERMITTED`, at registration time if the level does not exist.
+Omit `writes_to` and every level is permitted. Name one and a write to any other level comes back `Rejected` with the cause `NOT_PERMITTED`.
+
+Naming a level that was never declared is a different failure, and it is caught earlier: `register_agent` raises `UndeclaredRegionError` rather than letting the agent register with a permission it can never use.
 
 An agent is never woken by its own write.
 
@@ -73,7 +75,7 @@ def hand_off(notification):
     executor.submit(do_the_work, notification)  # return at once
 ```
 
-The control component learns nothing about an agent except that it acknowledged. It never kills an agent, and an agent takes as long as it takes.
+Acknowledgment is everything the control component learns about how an agent ran. It records what the agent wrote, because it sequenced those writes itself, and it learns nothing about how long the work took, whether it succeeded, or where it happened. It never kills an agent, and an agent takes as long as it takes.
 
 ## What acknowledging means
 

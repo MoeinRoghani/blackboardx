@@ -60,7 +60,7 @@ def refuse_duplicates(proposed, reader):
 
 The rule runs without the control component's lock, so two writes judged at the same moment both see the board as it was before either landed. A duplicate-refusing rule therefore bounds concurrent duplicates rather than preventing them.
 
-A premise write closes that window itself, because it names the version it expects to replace. A level write has no equivalent, so a rule that must be exact needs the uniqueness enforced where the contributions are stored.
+A premise write closes that window itself, because it names the version it expects to replace. A level write has no equivalent, so a rule that has to be exact rather than approximate needs a unique constraint in the database the board writes to.
 
 ## Where it does not apply
 

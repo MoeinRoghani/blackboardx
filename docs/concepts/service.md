@@ -44,7 +44,7 @@ agent  ──HTTP──▶  blackboard service  ──▶  blackboardx  ──�
 
 ## What the service adds
 
-Two things the library deliberately does not have, because they are transport, not model. Serialisation is not among them, because content already crosses every board as JSON. A contribution has the same form on the wire that it has in the record.
+The service adds two things the library leaves out, both of which belong to moving a message rather than to the model. Serialisation is not among them, because content already crosses every board as JSON, so a contribution has the same form on the wire that it has in the record.
 
 **Delivery.** The library hands the service a notification and a callback. Reaching a remote agent over HTTP, retrying, and deciding when an agent is unreachable belong to the service.
 
@@ -52,4 +52,4 @@ Two things the library deliberately does not have, because they are transport, n
 
 ## What does not change
 
-The model. Regions, admission, subscription, notification, and the three outcomes behave identically whether the caller is in the same process or across a network, because the control component only ever learns that an agent stopped.
+Regions, admission, subscription, notification, and the three outcomes behave identically whether the caller is in the same process or across a network, because the control component only ever learns that an agent stopped.
