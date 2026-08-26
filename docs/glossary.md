@@ -17,7 +17,7 @@ Every term this project uses, and what it means here. A term is defined once, in
 | Term | Meaning |
 | --- | --- |
 | **Region** | A named part of the board holding one kind of information. Every region is a level or a premise. |
-| **Level** | A region that accumulates. Each write adds one contribution at the end, and nothing already there changes. Levels hold what the agents produce. |
+| **Level** | A region holding what the agents worked out. One agent's contribution does not supersede another's, so each write adds to what is there and nothing already stored changes. |
 | **Premise** | A region holding one current value under a version. It holds something the work is given rather than something it concluded, which is why it is not a level: there is one correct value at a time and a later one replaces the earlier. |
 | **Contribution** | One unit written into a level. |
 | **Content** | What any write carries. A contribution's content, and the content a `BoardChange` records for a write of either kind. |

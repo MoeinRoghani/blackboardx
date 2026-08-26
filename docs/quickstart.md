@@ -51,7 +51,7 @@ The contribution has sequence 2 because the opening premise write took sequence 
 
 ## What each step means
 
-**Regions** are the named parts of the board. A `Level` accumulates contributions; a `Premise` holds one current value. [The board](concepts/board.md) explains why there are exactly two kinds.
+**Regions** are the named parts of the board. A `Level` holds what the agents worked out; a `Premise` holds something the work was given. [The board](concepts/board.md) describes what each holds and what a write to each one does.
 
 **The board** is where the record is kept. It is a required argument, because a run has to write somewhere a reader can find it. `SqliteBoard` suits one machine; a deployment passes an adapter for its own database. [Storage](concepts/storage.md) covers the choice.
 
