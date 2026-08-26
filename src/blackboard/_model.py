@@ -1,18 +1,19 @@
 """Creating a model.
 
-Five things configure a model: region declarations, opening premise values,
-an admission rule, a termination predicate, and run limits. A sixth
-argument, the board, says where the record is kept rather than configuring
-what the model is. The clock is dependency injection rather than
-configuration.
+Six things configure a model: region declarations, opening premise values,
+the agents it starts with, an admission rule, a termination predicate, and
+run limits. A seventh argument, the board, says where the record is kept
+rather than configuring what the model is. The clock is dependency
+injection rather than configuration.
 
 Where the record is kept is stated, never defaulted. An application names
 the board it wants, so none reaches deployment holding its record in
 process memory because an argument was omitted.
 
-No agent is named at creation. An agent comes to exist by registering,
-which is the only path carrying its callback, and a creator cannot know
-in advance which agents will join.
+The creator names the agents the run starts with, and each is registered
+once the premises hold their opening values. The run is therefore ready to
+work the moment it exists. An agent that joins a run already under way
+registers itself instead.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from blackboard._board import Level, Premise
 from blackboard._clock import Clock, SystemClock
 from blackboard._control import (
     AdmissionRule,
+    Agent,
     BoardReader,
     BoardStore,
     Control,
@@ -53,6 +55,7 @@ def create_model(
     *,
     regions: Iterable[Level | Premise],
     premises: Mapping[str, object] | None = None,
+    agents: Iterable[Agent] | None = None,
     admission_rule: AdmissionRule | None = None,
     termination_predicate: TerminationPredicate | None = None,
     limits: RunLimits | None = None,
@@ -70,6 +73,12 @@ def create_model(
     run whose record no second process can read is not a shared solution
     model. ``SqliteBoard`` serves one machine; an adapter against your own
     database serves a deployment.
+
+    ``agents`` names the agents the run starts with. Each is registered
+    once the premises hold their opening values, so each receives one
+    notification covering everything already on the board. An agent that
+    joins a run already under way registers itself through
+    ``Control.register_agent`` instead.
 
     ``premises`` gives every declared premise its opening value, naming
     each one exactly once. Those writes bypass admission, because they are
@@ -93,7 +102,12 @@ def create_model(
         clock=clock if clock is not None else SystemClock(),
     )
     # The wall clock can expire while the run is opening, in which case the
-    # model returns already closed and no premise receives its value.
+    # model returns already closed, no premise receives its value, and no
+    # agent is registered.
     with suppress(RunClosedError):
         control._open_premises(dict(opening))
+        # After the premises, so that each agent's one notification covers
+        # the values they opened with.
+        for agent in agents or ():
+            control.register_agent(agent)
     return Model(reader=control.reader, control=control)

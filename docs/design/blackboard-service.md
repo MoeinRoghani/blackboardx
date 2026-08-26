@@ -82,7 +82,7 @@ The caller declares the regions it wants. There are no preset kinds of blackboar
 
 The opening values write every declared premise once. A body naming a premise that was not declared, or omitting one that was, is refused.
 
-No agent is named, because an agent registers itself and cannot be known at this moment.
+Agents may be named here, and one that joins later registers itself.
 
 | Written | Rows |
 | --- | --- |

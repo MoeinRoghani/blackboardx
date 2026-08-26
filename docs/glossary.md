@@ -9,7 +9,7 @@ Every term this project uses, and what it means here. A term is defined once, in
 | **Board** | The shared record. It stores contributions, orders them, and reads none of them. Any implementation of `BoardStore` is a board. |
 | **Control component** | Everything that decides: which agents are notified, whether a write is admitted, and when the run closes. `Control` in the code. |
 | **Application** | The system built on this library. It supplies the agents, the content, the region declarations, and the rules. |
-| **Agent** | A participant that reads the board, decides whether it has anything to add, writes, and acknowledges. It registers itself; the library never creates one. |
+| **Agent** | A participant that reads the board, decides whether it has anything to add, writes, and acknowledges. The creator names the agents a run starts with, and one that joins a run already under way registers itself. The library never creates one. |
 | **Skeletal** | Nii's term for a blackboard system that carries no domain knowledge, so an application is built on it by adding knowledge and control. |
 
 ## The record
