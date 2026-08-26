@@ -38,7 +38,7 @@ The writer reads the current value, builds the whole new value from it, and writ
 
 Every write to any region takes the next number from one counter. Per-region counters would not serve, because an agent reading two regions must place a contribution in one against a write in the other, and two independent counters cannot express that relation.
 
-The sequence number is both a position and an address. Nothing else identifies a write, because that number already names one and no other.
+The sequence number is both a position and an address. Nothing else identifies a write, because that number already picks out exactly one.
 
 Sequence assignment is the only point at which two writes wait on each other.
 
