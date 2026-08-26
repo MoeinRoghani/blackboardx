@@ -6,17 +6,15 @@ It never opens what it holds. A contribution's content belongs to the applicatio
 
 ## Why there are two kinds of region
 
-Suppose two agents write to the same region at the same moment. The board has to decide what the region holds afterwards, and in principle three answers are available: keep both writes, keep one of them, or combine them into a single value.
+Suppose two agents write to the same region at the same moment. The board has to decide what that region holds afterwards, and it has only three options: keep both writes, keep one of them, or combine them into a single value.
 
-Combining is not available to the board. Working out the combination of two values means reading both of them first, and reading is the thing the board does not do. A merge function the application supplies does not rescue it, because the board would still have to open what it holds in order to pass it to that function.
+It cannot combine them. To combine two values the board would have to read both and work out what their combination is, and reading is the one thing it does not do. Letting the application supply a merge function does not help, because the board would still have to open the two values before it could pass them to that function.
 
-Keeping both and keeping one remain, and each needs one further rule before it works.
+If the board keeps both writes, it has to put them in an order, so that a reader sees them the way they arrived.
 
-Keeping both needs an order, so that a reader sees the two writes in the sequence they arrived rather than in an arbitrary one.
+If it keeps one, it has to tell each writer which value that write replaced. Otherwise a writer that read a value, built a longer one from it, and wrote the result would silently throw away whatever a second writer had put there in between.
 
-Keeping one needs a way for a writer to learn which value it replaced. Without that, a writer that read a value, computed a longer one from it, and wrote the result would silently discard whatever another writer had put there in the meantime.
-
-The two remaining answers, with those rules attached, are the two kinds of region. There is no third, because the third answer was combining.
+Those two options, each with the rule it needs, are the two kinds of region.
 
 | Kind | What it does with two writes | What it holds |
 | --- | --- | --- |

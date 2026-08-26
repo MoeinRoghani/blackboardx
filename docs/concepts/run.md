@@ -29,7 +29,7 @@ Registering wakes the agent immediately, covering every subscribed region that a
 
 ## Ending
 
-A run does not close because nothing is outstanding at some instant. Agents are idle between notifications and premise at different times, so a quiet instant is the gap before the work rather than the end of it. Sustained silence is what ends it.
+A run does not close because nothing is outstanding at some instant. Agents are idle between notifications and they register at different times, so a quiet instant is the gap before the work rather than the end of it. A run ends when the quiet lasts long enough.
 
 | Outcome | Cause |
 | --- | --- |

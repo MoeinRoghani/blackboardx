@@ -79,4 +79,4 @@ The control component learns nothing about an agent except that it acknowledged.
 
 It means the agent has stopped working on that notification. It does not mean the agent found anything, and it does not mean the agent will not be woken again.
 
-Until every agent has acknowledged, those still holding a notification are what a closing run names as unfinished.
+When a run closes, it names every agent still holding a notification as unfinished.

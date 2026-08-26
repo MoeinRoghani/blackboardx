@@ -36,13 +36,13 @@ An agent never receives a notification for a change it wrote.
 
 ## What wakes an agent
 
-An agent declares this when it premises.
+An agent declares this when it registers.
 
 ```python
 Agent(name="ocp", notify=deliver, subscribes_to=["window", "platform"])
 ```
 
-Omitting `subscribes_to` subscribes the agent to **every premise and to no level**. A premise holds a premise, and a changed premise means work already done may have been aimed at the wrong thing, so the default includes all of them. Another agent's conclusion does not change what you compute from, so the default includes none.
+Omitting `subscribes_to` subscribes the agent to **every premise and to no level**. A premise holds something the work was given, and when a premise changes, work already done may have been aimed at the wrong thing, so the default includes all of them. Another agent's conclusion does not change what you compute from, so the default includes none.
 
 Naming levels is how a finding puts another agent to work, without being misdescribed as a premise.
 
@@ -60,7 +60,7 @@ The default is zero, so a premise change reaches every agent at once. Delaying i
 
 The control component invokes the agent's callback holding no lock, on the thread that closed the batch window, or on a thread already draining deliveries when they chain.
 
-A callback may run the whole agent cycle inline, which is what makes single-threaded tests of multi-agent scenarios possible. A callback that raises is contained: the rest of the batch is delivered and the writer keeps its result.
+A callback may run the whole agent cycle inline, so a test can drive several agents on one thread. A callback that raises is contained: the rest of the batch is delivered and the writer keeps its result.
 
 ## The audit
 

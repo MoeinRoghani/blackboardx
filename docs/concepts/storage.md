@@ -93,7 +93,7 @@ with MongoBoard.from_uri("mongodb://...", "incidents") as board:
 
 ## What holds across processes
 
-Two guarantees are what make a board a board, and in a deployment they have to hold between processes rather than merely between the threads of one.
+Every board owes two guarantees, and a deployment has to hold them between processes rather than only between the threads of one.
 
 **The sequence is gapless.** Every write takes its number by incrementing one counter inside the transaction that carries the write, so a number a rolled-back write took is returned rather than skipped. A Postgres sequence would be faster and would leave gaps, and a gap is a hole in a record whose numbers are addresses.
 

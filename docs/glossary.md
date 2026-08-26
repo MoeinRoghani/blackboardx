@@ -75,7 +75,7 @@ Every term this project uses, and what it means here. A term is defined once, in
 
 ## One premise, three words
 
-Naming the region for what it holds leaves three words, not four, and none of them is a name for another.
+A premise, its content, and the content it began with are three different things. None of the three is another name for either of the others.
 
 | The thing | Its name | Where you meet it |
 | --- | --- | --- |
@@ -83,7 +83,7 @@ Naming the region for what it holds leaves three words, not four, and none of th
 | Its content at this moment | the **value** | `read_premise("window").value` |
 | The value it starts the run with | its **opening value** | `create_model(premises={"window": ...})` |
 
-Reading it as one sentence: a premise's value is what that premise is right now, and its opening value is what it was when the run began.
+A premise's value is what that premise says right now. Its opening value is what it said when the run began.
 
 What a premise holds is never called a fact. Premise and conclusion are a pair on one axis, given against concluded, and "fact" names neither end of it: a conclusion an agent reaches is a fact too, so the word does not separate the two kinds of region.
 
