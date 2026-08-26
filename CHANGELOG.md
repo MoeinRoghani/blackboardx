@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.6.0...v0.7.0) (2026-08-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** remove the names 0.6.0 said it removed ([#138](https://github.com/MoeinRoghani/blackboardx/issues/138))
+
+### Features
+
+* **api:** remove the names 0.6.0 said it removed ([#138](https://github.com/MoeinRoghani/blackboardx/issues/138)) ([914fe04](https://github.com/MoeinRoghani/blackboardx/commit/914fe0463847e951dbf47ed99950f622ec7ad7f5)), closes [#137](https://github.com/MoeinRoghani/blackboardx/issues/137)
+
 ## [0.6.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.5.0...v0.6.0) (2026-08-26)
 
 
