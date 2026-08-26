@@ -827,9 +827,9 @@ class Control:
         self._deliver(deliveries)
         self._check_completion()
 
-    def _dispatch(self, state: _AgentState, now: datetime) -> _Delivery | None:
-        # Callers hold self._lock. Returns nothing when the notification
-        # budget trips: the dispatch is withheld and the run closes.
+    def _dispatch(self, state: _AgentState, now: datetime) -> _Delivery:
+        # Callers hold self._lock. Every call issues a notification: nothing
+        # counts them, so nothing can withhold one.
         if state.window_call is not None:
             state.window_call.cancel()
             state.window_call = None
@@ -869,9 +869,7 @@ class Control:
             state.window_due = None
             state.window_generation += 1
             if state.pending:
-                delivery = self._dispatch(state, self._clock.now())
-                if delivery is not None:
-                    deliveries.append(delivery)
+                deliveries.append(self._dispatch(state, self._clock.now()))
         self._deliver(deliveries)
         self._check_completion()
 
@@ -891,8 +889,8 @@ class Control:
                     return
                 # The callback is application code at the library's
                 # boundary. An agent whose delivery raised never
-                # acknowledges, so the deadline machinery records its
-                # failure; raising would abort the rest of the batch and
+                # acknowledges, so it is named unfinished when the run
+                # closes; raising here would abort the rest of the batch and
                 # reach an unrelated writer.
                 with suppress(Exception):
                     notify(notification)

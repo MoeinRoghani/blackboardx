@@ -28,7 +28,7 @@ The creator names the agents the run starts with, and they are registered once t
 
 Naming them at creation is what makes the run ready the moment it exists. Nothing has to find the run and announce itself before work can start, so the wall clock does not run down while agents are still being discovered.
 
-A run created with no agents named arms its wall clock all the same, and starts with nobody in it. Every second spent registering agents afterwards comes out of that run's own budget: an agent registered twenty-nine minutes into a thirty minute run has one minute to work in.
+A run created with no agents named arms its wall clock all the same, and starts with nobody in it. Every second spent registering agents afterwards is a second of that run's wall clock: an agent registered twenty-nine minutes into a thirty minute run has one minute to work in.
 
 An agent that joins a run already under way registers itself instead.
 
