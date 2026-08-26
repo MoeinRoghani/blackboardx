@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import threading
-import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -212,16 +211,6 @@ class InMemoryBoard:
                     f"the premise {premise!r} has no value until one is written"
                 )
             return state
-
-    def read_register(self, register: str) -> PremiseState:
-        """Deprecated since 0.5.0. Use ``read_premise``; removed in 0.6.0."""
-        warnings.warn(
-            "read_register is renamed read_premise, and the old name is "
-            "removed in 0.6.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.read_premise(register)
 
     def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
         """Returns every write to every region, in sequence order, from the bound."""

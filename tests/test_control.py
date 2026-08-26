@@ -280,3 +280,17 @@ class TestWhoWrites:
         control.write("ocp", "application", "one")
         control.set_premise("ocp", "window", "w", expected_version=0)
         assert seen == ["ocp", "ocp"]
+
+
+class TestWhatAWriteThatLandedReports:
+    def test_a_level_write_reports_written_with_no_version(self) -> None:
+        control = make_control()
+        result = control.write("ocp", "application", "a finding")
+        assert result == Written(sequence=1)
+        assert isinstance(result, Written)
+        assert result.version is None
+
+    def test_a_premise_write_reports_written_with_one(self) -> None:
+        control = make_control()
+        result = control.set_premise("ocp", "window", "w", expected_version=0)
+        assert result == Written(sequence=1, version=1)

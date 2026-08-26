@@ -27,7 +27,6 @@ than the record needs.
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -264,16 +263,6 @@ class MongoBoard:
                 f"the premise {premise!r} has no value until one is written"
             )
         return PremiseState(value=document["value"], version=int(document["version"]))
-
-    def read_register(self, register: str) -> PremiseState:
-        """Deprecated since 0.5.0. Use ``read_premise``; removed in 0.6.0."""
-        warnings.warn(
-            "read_register is renamed read_premise, and the old name is "
-            "removed in 0.6.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.read_premise(register)
 
     def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
         documents = (

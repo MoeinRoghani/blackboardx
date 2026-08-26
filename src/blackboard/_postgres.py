@@ -25,7 +25,6 @@ processes reach the row.
 from __future__ import annotations
 
 import json
-import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Protocol
@@ -251,16 +250,6 @@ class PostgresBoard:
                 f"the premise {premise!r} has no value until one is written"
             )
         return PremiseState(value=row[0], version=int(row[1]))
-
-    def read_register(self, register: str) -> PremiseState:
-        """Deprecated since 0.5.0. Use ``read_premise``; removed in 0.6.0."""
-        warnings.warn(
-            "read_register is renamed read_premise, and the old name is "
-            "removed in 0.6.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.read_premise(register)
 
     def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
         with self._pool.connection() as connection:

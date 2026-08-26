@@ -10,7 +10,6 @@ rule, a termination predicate, and limits. The public surface is the set of
 names in ``__all__``; every other name is internal.
 """
 
-import warnings
 from typing import TYPE_CHECKING, Any
 
 from blackboard._board import (
@@ -67,15 +66,12 @@ from blackboard._model import Model, create_model
 from blackboard._sqlite import SqliteBoard
 
 if TYPE_CHECKING:
-    from blackboard._board import Written as Accepted
-    from blackboard._control import RunLimits as RunBudgets
     from blackboard._mongodb import MongoBoard
     from blackboard._postgres import PostgresBoard
 
 __all__ = [
     "Aborted",
     "Accept",
-    "Accepted",
     "AdmissionRule",
     "Agent",
     "AuditEvent",
@@ -105,22 +101,16 @@ __all__ = [
     "PremiseState",
     "ProposedContribution",
     "ProposedPremiseWrite",
-    "ProposedRegisterWrite",
     "ProposedWrite",
     "RegionKindError",
-    "Register",
-    "RegisterSeeded",
-    "RegisterState",
     "Reject",
     "Rejected",
     "RejectionCause",
-    "RunBudgets",
     "RunClosed",
     "RunClosedError",
     "RunLimits",
     "RunOutcome",
     "ScheduledCall",
-    "SeedError",
     "Settled",
     "SqliteBoard",
     "SystemClock",
@@ -129,7 +119,6 @@ __all__ = [
     "UndeclaredRegionError",
     "UnknownNotificationError",
     "UnsetPremiseError",
-    "UnsetRegisterError",
     "WallClockExpired",
     "WriteAccepted",
     "WriteRejected",
@@ -137,33 +126,6 @@ __all__ = [
     "create_model",
 ]
 
-
-# A replaced name stays importable for one release. It resolves to its
-# replacement, so equality and isinstance keep working across the change.
-_RENAMED = {
-    "Accepted": (
-        "Written",
-        "a write that landed reports Written, whose version is absent on a level write",
-    ),
-    "RunBudgets": (
-        "RunLimits",
-        "a run has two limits, both durations, and nothing countable is consumed",
-    ),
-    "Register": (
-        "Premise",
-        "register belongs to computer architecture, and the region holds what "
-        "the work is given",
-    ),
-    "RegisterState": ("PremiseState", "the region is a Premise"),
-    "UnsetRegisterError": ("UnsetPremiseError", "the region is a Premise"),
-    "ProposedRegisterWrite": ("ProposedPremiseWrite", "the region is a Premise"),
-    "RegisterSeeded": (
-        "PremiseOpened",
-        "a premise receives an opening value rather than being seeded",
-    ),
-    "SeedError": ("PremiseError", "the opening values are premises"),
-}
-_REMOVED_IN = "0.6.0"
 
 _EXTRAS = {
     "MongoBoard": ("blackboard._mongodb", "mongodb"),
@@ -177,16 +139,6 @@ def __getattr__(name: str) -> Any:
     Naming these here rather than importing them at the top keeps the base
     install free of database drivers, while leaving one import path.
     """
-    replacement = _RENAMED.get(name)
-    if replacement is not None:
-        new, because = replacement
-        warnings.warn(
-            f"{name} is renamed {new}, and {name} is removed in "
-            f"{_REMOVED_IN}: {because}.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return globals()[new]
     entry = _EXTRAS.get(name)
     if entry is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -2,6 +2,24 @@
 
 Every name that moved, what replaced it, and the release its old form stops working in.
 
+## 0.6 to 0.7
+
+Every name 0.5 deprecated is gone. 0.6 said it removed them and did not, so 0.7 does.
+
+If you are moving from 0.4 or 0.5 and still use any old name, the table under [0.4 to 0.5](#04-to-05) gives its replacement. Nothing else about them changed: each replacement has behaved identically since 0.5.
+
+| Removed | Use |
+| --- | --- |
+| `Register`, `RegisterState`, `UnsetRegisterError`, `ProposedRegisterWrite` | `Premise`, `PremiseState`, `UnsetPremiseError`, `ProposedPremiseWrite` |
+| `RegisterSeeded`, `SeedError` | `PremiseOpened`, `PremiseError` |
+| `RunBudgets`, and the `budgets` keyword | `RunLimits`, and the `limits` keyword |
+| `Accepted` | `Written` |
+| `read_register`, `set_register` | `read_premise`, `set_premise` |
+| the `seed` keyword | the `premises` keyword |
+| `ProposedContribution.agent` | `ProposedContribution.writer` |
+
+`premises` and `limits` are now required arguments to `create_model` rather than optional ones, because the keywords they replaced are gone and one of each pair had to be given anyway.
+
 ## 0.5 to 0.6
 
 A creator names the agents a run starts with. Nothing else changes, and nothing that worked before stops working, because the argument is optional.
@@ -35,8 +53,7 @@ Renaming the region for what it holds also removed `seed`: a premise has a value
 
 ### Names
 
-| Was | Is | Old form works until |
-| --- | --- | --- |
+| Was | Is | Removed in |
 | `Register` | `Premise` | 0.6.0 |
 | `RegisterState` | `PremiseState` | 0.6.0 |
 | `UnsetRegisterError` | `UnsetPremiseError` | 0.6.0 |
@@ -52,7 +69,7 @@ Renaming the region for what it holds also removed `seed`: a premise has a value
 | `Control.write(agent=...)` | `Control.write(writer=...)` | already gone |
 | `ProposedContribution.agent` | `ProposedContribution.writer` | 0.6.0 |
 
-Each old name still imports and resolves to its replacement, so `isinstance` and equality keep working while you move. Using one warns and names both the replacement and the release that removes it.
+Each of these worked, with a warning, in 0.5 and 0.6. All of them were removed in 0.7.
 
 ### What has no alias
 

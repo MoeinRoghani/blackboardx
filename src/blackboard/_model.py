@@ -33,8 +33,6 @@ from blackboard._control import (
     RunClosedError,
     RunLimits,
     TerminationPredicate,
-    _resolve_limits,
-    _resolve_premises,
 )
 
 
@@ -54,20 +52,17 @@ class Model:
 def create_model(
     *,
     regions: Iterable[Level | Premise],
-    premises: Mapping[str, object] | None = None,
+    premises: Mapping[str, object],
     agents: Iterable[Agent] | None = None,
     admission_rule: AdmissionRule | None = None,
     termination_predicate: TerminationPredicate | None = None,
-    limits: RunLimits | None = None,
+    limits: RunLimits,
     board: BoardStore,
     clock: Clock | None = None,
-    budgets: RunLimits | None = None,
-    seed: Mapping[str, object] | None = None,
 ) -> Model:
     """Opens a run and returns the model.
 
-    ``limits`` carries the run's wall clock and idle durations. The
-    ``budgets`` keyword is the former name for it, accepted for one release.
+    ``limits`` carries the run's wall clock and idle durations.
 
     ``board`` says where the record is kept and has no default, because a
     run whose record no second process can read is not a shared solution
@@ -82,8 +77,7 @@ def create_model(
 
     ``premises`` gives every declared premise its opening value, naming
     each one exactly once. Those writes bypass admission, because they are
-    the application's own input rather than a proposal from a writer. The
-    ``seed`` keyword is the former name for it, accepted for one release.
+    the application's own input rather than a proposal from a writer.
 
     No agent is registered yet, so opening the premises wakes nobody; an
     agent registering afterwards is woken then. With no admission rule a
@@ -92,12 +86,11 @@ def create_model(
     when nothing has happened for the idle limit; with no clock the
     operating system clock serves.
     """
-    opening = _resolve_premises(premises, seed)
     control = Control(
         regions=regions,
         admission_rule=admission_rule,
         termination_predicate=termination_predicate,
-        limits=_resolve_limits(limits, budgets),
+        limits=limits,
         board=board,
         clock=clock if clock is not None else SystemClock(),
     )
@@ -105,7 +98,7 @@ def create_model(
     # model returns already closed, no premise receives its value, and no
     # agent is registered.
     with suppress(RunClosedError):
-        control._open_premises(dict(opening))
+        control._open_premises(dict(premises))
         # After the premises, so that each agent's one notification covers
         # the values they opened with.
         for agent in agents or ():
