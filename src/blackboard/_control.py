@@ -34,9 +34,8 @@ concurrent duplicates rather than preventing them.
 from __future__ import annotations
 
 import threading
-import warnings
 from collections import deque
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -122,17 +121,6 @@ class ProposedContribution:
     writer: str
     level: str
     content: object
-
-    @property
-    def agent(self) -> str:
-        """Deprecated since 0.5.0. Use ``writer``; removed in 0.6.0."""
-        warnings.warn(
-            "ProposedContribution.agent is renamed writer, and the old name "
-            "is removed in 0.6.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.writer
 
 
 @dataclass(frozen=True)
@@ -408,42 +396,6 @@ def _subscribed(state: _AgentState, region: str, kind: _RegionKind) -> bool:
     return kind is _RegionKind.PREMISE
 
 
-def _resolve_premises(
-    premises: Mapping[str, object] | None, seed: Mapping[str, object] | None
-) -> Mapping[str, object]:
-    """Takes the opening premise values from either keyword, warning on the old one."""
-    if seed is not None:
-        warnings.warn(
-            "The seed keyword is renamed premises, and the old name is "
-            "removed in 0.6.0.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
-        if premises is not None:
-            raise TypeError("pass premises, not both premises and seed")
-        return seed
-    if premises is None:
-        raise TypeError("create_model() requires premises")
-    return premises
-
-
-def _resolve_limits(limits: RunLimits | None, budgets: RunLimits | None) -> RunLimits:
-    """Takes the run's limits from either keyword, warning on the old one."""
-    if budgets is not None:
-        warnings.warn(
-            "The budgets keyword is renamed limits, and RunBudgets is renamed "
-            "RunLimits. The old names are removed in 0.6.0.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
-        if limits is not None:
-            raise TypeError("pass limits, not both limits and budgets")
-        return budgets
-    if limits is None:
-        raise TypeError("create_model() and Control() require limits")
-    return limits
-
-
 def _accept_every_write(
     proposed: ProposedWrite, reader: BoardReader
 ) -> Accept | Reject:
@@ -470,12 +422,11 @@ class Control:
         regions: Iterable[Level | Premise] = (),
         admission_rule: AdmissionRule | None = None,
         termination_predicate: TerminationPredicate | None = None,
-        limits: RunLimits | None = None,
+        limits: RunLimits,
         board: BoardStore,
         clock: Clock,
-        budgets: RunLimits | None = None,
     ) -> None:
-        resolved = _resolve_limits(limits, budgets)
+        resolved = limits
         self._board: BoardStore = board
         self._clock = clock
         self._admission_rule = (
@@ -663,18 +614,6 @@ class Control:
         self._deliver(deliveries)
         self._check_completion()
         return result
-
-    def set_register(
-        self, writer: str, register: str, value: object, expected_version: int
-    ) -> Written | Conflict | Rejected:
-        """Deprecated since 0.5.0. Use ``set_premise``; removed in 0.6.0."""
-        warnings.warn(
-            "set_register is renamed set_premise, and the old name is "
-            "removed in 0.6.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.set_premise(writer, register, value, expected_version)
 
     def read_audit(self) -> list[AuditEvent]:
         """Returns every audit event in the order each occurred."""
