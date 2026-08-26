@@ -107,7 +107,7 @@ POST /blackboards/incident-4471/agents
 }
 ```
 
-`subscribes_to` names the regions this agent wants to hear about, of either kind. Omitting it subscribes the agent to every premise, which is the common case, since a premise holds a premise of the case and most agents compute from all of them. An agent that reads only some of the premises names those, and is not woken for the others.
+`subscribes_to` names the regions this agent wants to hear about, of either kind. Omitting it subscribes the agent to every premise, which is the common case, since a premise holds something the work was given and most agents compute from all of them. An agent that reads only some of the premises names those, and is not woken for the others.
 
 `writes_to` names the levels the agent may write to. It is a permission rather than a subscription, so subscribing to three regions and writing to one is ordinary.
 
@@ -179,7 +179,7 @@ A premise is replaced through its own call, naming the version it expects to rep
 
 The idle limit measures silence, meaning the time since the last write, premise write, registration, or acknowledgment. A read does not disturb it, so an agent polling the board cannot hold a blackboard open indefinitely.
 
-A blackboard is not closed because nothing is outstanding at some instant. Agents are idle between notifications and premise at different times, so an instant of quiet is not the end of the work. Sustained silence is.
+A blackboard is not closed because nothing is outstanding at some instant. Agents are idle between notifications and they register at different times, so an instant of quiet is not the end of the work. Sustained silence is.
 
 Every outcome carries the agents that did not finish, meaning those with an unacknowledged notification and those recorded unreachable. Why a blackboard ended and who failed to finish are separate facts, and a blackboard can settle normally while one agent never returned. A reader needs both, because a region nobody examined and a region examined with nothing in it are different states.
 

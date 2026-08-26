@@ -1,6 +1,6 @@
 # Quickstart
 
-A run in full: create a model, premise an agent, let it contribute, and read the result.
+A run in full: create a model, register an agent, let it contribute, and read the result.
 
 ```python
 from datetime import timedelta

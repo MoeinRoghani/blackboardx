@@ -234,9 +234,10 @@ class Agent:
     ``subscribes_to`` names the regions, of either kind, whose changes wake
     this agent, and naming any excludes every region not named. Omitting it
     subscribes the agent to every premise and to no level, which is the
-    common case: a premise holds a premise that bears on any agent's work,
-    while another agent's conclusion does not. ``writes_to`` names the
-    levels the agent may write to, and omitting it permits every level.
+    common case: a premise holds something the work was given, which bears
+    on any agent's work, while another agent's conclusion does not.
+    ``writes_to`` names the levels the agent may write to, and omitting it
+    permits every level.
 
     The control component invokes ``notify`` to deliver a notification,
     holding no lock, on the thread that closed the batch window or, when
@@ -934,10 +935,10 @@ class Control:
         """Records that something happened, which pushes the idle deadline out.
 
         A run does not close because nothing is outstanding at some instant.
-        Agents are idle between notifications and premise at different times, so an
-        instant of quiet is the gap before the work rather than the end of
-        it. Sustained silence is what closes a run, and the idle timer
-        measures it.
+        Agents are idle between notifications and they register at
+        different times, so an instant of quiet is the gap before the work
+        rather than the end of it. A run closes when the quiet lasts long
+        enough, and the idle timer measures it.
         """
         with self._lock:
             self._touch_idle_locked()
