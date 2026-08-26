@@ -46,11 +46,23 @@ Naming a level that was never declared is a different failure, and it is caught 
 
 An agent is never woken by its own write.
 
-## Registering wakes it
+## Joining a run
 
-`register_agent` delivers a notification immediately, covering every subscribed region that already holds something. A newly registered agent is out of date with the whole board, and the notification says so.
+Name the agent when the run is created, which is how agents normally arrive.
 
-This means the callback runs **during** `register_agent`. A callback that needs the model must therefore be given it another way, because the call has not returned yet.
+```python
+model = create_model(..., agents=[Agent(name="ocp", notify=investigate)])
+```
+
+An agent that joins a run already under way registers itself instead, and is woken the same way.
+
+```python
+model.control.register_agent(Agent(name="netops", notify=investigate))
+```
+
+Either way the agent is woken immediately, covering every subscribed region that already holds something, because an agent that has just joined is out of date with the whole board.
+
+The callback therefore runs **before** `create_model` or `register_agent` returns. A callback that needs the model must be given it another way, because the call has not returned yet.
 
 ```python
 holder = []

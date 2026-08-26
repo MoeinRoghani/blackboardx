@@ -6,7 +6,7 @@ The blackboard architecture came out of HEARSAY-II, a speech understanding syste
 
 Later systems kept that arrangement and replaced the knowledge, HASP interpreting sonar where HEARSAY-II interpreted speech. H. Penny Nii, surveying blackboard systems in AI Magazine in 1986, named a system *skeletal* when it supplies the components alone and leaves the knowledge and the control to whoever builds on it.
 
-`blackboardx` is skeletal in that sense. It supplies the board, which stores what agents write and puts every write in one order, and the control component, which determines who is notified of a change, whether a write is admitted, and when the run ends. An application supplies its regions, their opening premise values, an admission rule, a termination predicate, and limits, and its agents register themselves into it.
+`blackboardx` is skeletal in that sense. It supplies the board, which stores what agents write and puts every write in one order, and the control component, which determines who is notified of a change, whether a write is admitted, and when the run ends. An application supplies its regions, their opening premise values, the agents the run starts with, an admission rule, a termination predicate, and limits.
 
 The distribution name is `blackboardx`; the import name is `blackboard`. The documentation, including the API reference, is at <https://moeinroghani.github.io/blackboardx/>.
 
@@ -50,11 +50,10 @@ notifications = []
 model = create_model(
     regions=[Level("platform"), Premise("window")],
     premises={"window": ["2026-08-16T20:00", "2026-08-16T22:00"]},
+    agents=[Agent(name="ocp", notify=notifications.append)],
     limits=RunLimits(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
     board=SqliteBoard("incident.sqlite3"),
 )
-
-model.control.register_agent(Agent(name="ocp", notify=notifications.append))
 
 (notification,) = notifications
 window = model.reader.read_premise("window").value

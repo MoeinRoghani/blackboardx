@@ -1,5 +1,4 @@
-"""Five things configure a model, a sixth says where it is kept, and agents register
-themselves into it."""
+"""Six things configure a model, and a seventh says where its record is kept."""
 
 import threading
 from datetime import UTC, datetime, timedelta

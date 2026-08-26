@@ -1,6 +1,6 @@
 # Quickstart
 
-A run in full: create a model, register an agent, let it contribute, and read the result.
+A run in full: create a model naming its agent, let the agent contribute, and read the result.
 
 ```python
 from datetime import timedelta
@@ -17,17 +17,16 @@ from blackboard import (
 
 notifications = []
 
-# 1. Declare the regions and give every premise its opening value.
+# 1. Declare the regions, open the premises, and name the agents.
 model = create_model(
     regions=[Level("platform"), Premise("window")],
     premises={"window": ["2026-08-16T20:00", "2026-08-16T22:00"]},
+    agents=[Agent(name="ocp", notify=notifications.append)],
     limits=RunLimits(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
     board=SqliteBoard("incident.sqlite3"),
 )
 
-# 2. An agent registers itself. Registering wakes it.
-model.control.register_agent(Agent(name="ocp", notify=notifications.append))
-
+# 2. Each agent was woken as the run opened.
 # 3. The agent's cycle: read the premises, contribute, acknowledge.
 (notification,) = notifications
 window = model.reader.read_premise("window").value
@@ -57,7 +56,7 @@ The contribution has sequence 2 because the opening premise write took sequence 
 
 **The opening premises** give every declared premise its first value. They must name each one exactly once.
 
-**Registering** is how an agent comes to exist. Nothing names agents at creation, because an agent supplies its own callback and a creator cannot know which agents will join.
+**The agents** are named when the run is created, so the run is ready to work the moment it exists. An agent that joins a run already under way calls `register_agent` instead.
 
 **The notification** carries no values. It says the agent is out of date, and the agent reads the board itself.
 

@@ -4,15 +4,16 @@ A model is one run. It opens when it is created, and it ends in one of three sta
 
 ## Creating one
 
-Five things configure a model, and a sixth says where the record is kept.
+Six things configure a model, and a seventh says where the record is kept.
 
 ```python
 model = create_model(
     regions=[...],  # 1. the named parts of the board
     premises={...},  # 2. the opening value of every premise
-    admission_rule=rule,  # 3. optional; none accepts every write
-    termination_predicate=done,  # 4. optional; none lets silence close the run
-    limits=RunLimits(...),  # 5. the two limits
+    agents=[...],  # 3. the agents the run starts with
+    admission_rule=rule,  # 4. optional; none accepts every write
+    termination_predicate=done,  # 5. optional; none lets silence close the run
+    limits=RunLimits(...),  # 6. the two limits
     board=SqliteBoard(...),  # where the record is kept
 )
 ```
@@ -21,11 +22,19 @@ The board has no default, because a run that keeps its record nowhere a second p
 
 `premises` must name each declared premise exactly once. Those writes bypass admission, and they wake nobody, because no agent has registered yet.
 
-## Agents arrive by registering
+## How agents join
 
-No agent is named at creation. An agent comes to exist by registering, which is the only call that carries its callback, and a creator cannot know in advance which agents will join.
+The creator names the agents the run starts with, and they are registered once the premises hold their opening values. Each one is woken immediately, covering every subscribed region that already holds something, because an agent that has just joined is out of date with the whole board.
 
-Registering wakes the agent immediately, covering every subscribed region that already holds something, because a newly registered agent is out of date with the whole board.
+Naming them at creation is what makes the run ready the moment it exists. Nothing has to find the run and announce itself before work can start, so the wall clock does not run down while agents are still being discovered.
+
+An agent that joins a run already under way registers itself instead.
+
+```python
+model.control.register_agent(Agent(name="netops", notify=deliver))
+```
+
+It is woken the same way, so it hears about everything written before it arrived.
 
 ## Ending
 
