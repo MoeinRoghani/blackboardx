@@ -16,7 +16,10 @@ The board is a record, and a record has to be somewhere a reader can find it. Wh
 ```console
 pip install 'blackboardx[postgres]'
 pip install 'blackboardx[mongodb]'
+pip install 'blackboardx[postgres,mongodb]'
 ```
+
+The third line is the first two together, which pip does with a comma. A deployment wants one database and therefore one extra; both is for testing a board of your own against the conformance suite.
 
 Naming a board whose extra is not installed raises an `ImportError` saying which extra supplies it.
 
