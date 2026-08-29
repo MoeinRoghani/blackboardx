@@ -10,7 +10,7 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-authors = [{ name = "Moein Roghani", email = "rmmoein@gmail.com" }]
+authors = [{ name = "Moein Roghani", email = "moein.roghani@proton.me" }]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
