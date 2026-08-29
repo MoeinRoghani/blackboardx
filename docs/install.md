@@ -28,6 +28,16 @@ pip install 'blackboardx[mongodb]'
 
 Naming a board whose extra is not installed raises an `ImportError` saying which extra supplies it. [Storage](concepts/storage.md) covers the choice.
 
+Both at once is a comma, and needs no extra of its own:
+
+```
+pip install 'blackboardx[postgres,mongodb]'
+```
+
+A deployment keeps its record in one database, so it wants one of them. Ask for both when you are testing a board of your own against the conformance suite, which runs against both servers, or when one service creates runs on either.
+
+There is no `all` extra. These two are alternative drivers for one slot rather than features that stack, so a name meaning every driver would invite a deployment to carry one it never uses.
+
 ## What the package contains, and what it does not
 
 | Ships | Does not ship |
