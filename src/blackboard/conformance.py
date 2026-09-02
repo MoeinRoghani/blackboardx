@@ -485,7 +485,9 @@ class BoardConformance:
     def test_deleting_says_what_it_removed(self, ready: Bound) -> None:
         ready.append("platform", {"n": 1})
         ready.set("window", "w", 0)
-        assert ready.delete() == Deleted(board_id=ready.board_id, regions=3, writes=2)
+        assert ready.delete() == Deleted(
+            board_id=ready.board_id, regions_removed=3, writes_removed=2
+        )
 
     def test_deleting_removes_the_regions(self, ready: Bound) -> None:
         ready.delete()
@@ -527,12 +529,16 @@ class BoardConformance:
         self, store: BoardStore
     ) -> None:
         board_id = str(uuid4())
-        assert store.delete(board_id) == Deleted(board_id=board_id, regions=0, writes=0)
+        assert store.delete(board_id) == Deleted(
+            board_id=board_id, regions_removed=0, writes_removed=0
+        )
 
     def test_deleting_twice_is_safe(self, ready: Bound) -> None:
         ready.append("platform", {"n": 1})
         ready.delete()
-        assert ready.delete() == Deleted(board_id=ready.board_id, regions=0, writes=0)
+        assert ready.delete() == Deleted(
+            board_id=ready.board_id, regions_removed=0, writes_removed=0
+        )
 
 
 class SharedStoreConformance:

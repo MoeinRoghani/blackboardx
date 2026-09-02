@@ -48,13 +48,18 @@ Naming levels is how a finding puts another agent to work, without being misdesc
 
 ## Batch windows
 
-A premise may carry a batch window. The window opens when the first change enters an agent's pending set and closes after the interval, dispatching one notification covering everything pending.
+A region of either kind may carry a batch window. The window opens when the first change enters an agent's pending set and closes after the interval, dispatching one notification covering everything pending.
+
+It is the only damping this library has. A notification carries no values, so ten writes to a level a subscriber watches say the same thing ten times, and each one costs that agent a wake. Where the agent is a language model, that is ten inferences to learn what one notification would have said.
 
 ```python
+Level("findings", batch_window=timedelta(seconds=5))
 Premise("namespace", batch_window=timedelta(seconds=5))
 ```
 
-The default is zero, so a premise change reaches every agent at once. Delaying it would leave agents working from a value already known to be wrong.
+Registering an agent wakes it at once whatever the window, because registration is a catch-up on what is already on the board rather than a burst to damp.
+
+The default is zero for both kinds, so a change reaches every agent at once unless the application asks otherwise. That is the right default for a premise, where delaying would leave agents working from a value already known to be wrong.
 
 ## Delivery
 

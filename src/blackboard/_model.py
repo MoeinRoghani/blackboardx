@@ -53,8 +53,14 @@ class Model:
     Board reads go to ``reader`` directly, consume no control capacity, and
     cannot be refused. Writes, acknowledgments, and lifecycle calls go
     through ``control``.
+
+    ``reader`` is ``control.reader``, and is a field of its own so a component
+    that only reads takes the reader alone. ``board_id`` names the board this
+    run opened, so a registry keyed by it does not have to repeat the string
+    the caller passed.
     """
 
+    board_id: str
     reader: BoardReader
     control: Control
 
@@ -125,7 +131,7 @@ def create_model(
         clock=clock if clock is not None else SystemClock(),
         on_closed=on_closed,
     )
-    model = Model(reader=control.reader, control=control)
+    model = Model(board_id=board_id, reader=control.reader, control=control)
     # The wall clock can expire while the run is opening, in which case the
     # model returns already closed, no premise receives its value, and no
     # agent is registered.
@@ -200,7 +206,7 @@ def attach_model(
         adopt=True,
         on_closed=on_closed,
     )
-    model = Model(reader=control.reader, control=control)
+    model = Model(board_id=board_id, reader=control.reader, control=control)
     try:
         with suppress(RunClosedError):
             _opened(on_open, model)

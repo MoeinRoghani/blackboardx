@@ -737,11 +737,9 @@ class Control:
             self._record_kind(region)
 
     def _record_kind(self, region: Level | Premise) -> None:
-        if isinstance(region, Level):
-            self._kinds[region.name] = _RegionKind.LEVEL
-        else:
-            self._kinds[region.name] = _RegionKind.PREMISE
-            self._batch_windows[region.name] = region.batch_window
+        kind = _RegionKind.LEVEL if isinstance(region, Level) else _RegionKind.PREMISE
+        self._kinds[region.name] = kind
+        self._batch_windows[region.name] = region.batch_window
 
     def register_agent(self, agent: Agent) -> None:
         """Registers an agent and wakes it.
@@ -1013,9 +1011,10 @@ class Control:
 
     def _note_region_change(self, region: str, writer: str) -> list[_Delivery]:
         # Callers hold self._lock. Returns the deliveries the caller makes
-        # after releasing it. A level carries no batch window.
+        # after releasing it. Both region kinds carry a window; the default
+        # is zero, which dispatches inline.
         now = self._clock.now()
-        window = self._batch_windows.get(region, timedelta(0))
+        window = self._batch_windows[region]
         deliveries: list[_Delivery] = []
         for state in self._agents.values():
             if self._outcome is not None:

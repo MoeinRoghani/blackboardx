@@ -44,7 +44,7 @@ Every term this project uses, and what it means here. A term is defined once, in
 | Term | Meaning |
 | --- | --- |
 | **Notification** | The message telling one agent it is out of date. It carries a sequence range and the regions that changed, and no values. |
-| **Batch window** | The interval a premise waits after its first pending change, so several changes in quick succession become one notification. |
+| **Batch window** | The interval a region waits after its first pending change, so several changes in quick succession become one notification. Either kind carries one, and the default of zero dispatches inline. |
 | **Acknowledgment** | An agent reporting that it has stopped working on one notification. It says nothing about what the agent found. |
 | **Cursor** | An agent's last acknowledged sequence number. |
 | **Subscription** | Which regions wake an agent. Omitting `subscribes_to` subscribes it to every premise and to no level; naming regions subscribes it to exactly those, of either kind. |
