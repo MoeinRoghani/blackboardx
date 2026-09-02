@@ -20,8 +20,8 @@ def investigate(notification):
     window = model.reader.read_premise("window").value
     findings = look_for_trouble(window)  # your own work
     if findings:
-        model.control.write("ocp", "platform", {"findings": findings})
-    model.control.ack("ocp", notification.notification_id)
+        model.control.write("platform", {"findings": findings}, writer="ocp")
+    model.control.ack(notification.notification_id, agent="ocp")
 
 
 model.control.register_agent(Agent(name="ocp", notify=investigate))
@@ -135,11 +135,42 @@ def notify(body: dict):
 ```
 
 A client is bound to one board and one agent name, so no method takes either
-and none can be given the wrong one. The methods are the ones `BoardReader`
-and `Control` already have, spelled the same and returning the same types, so
-the body of an agent moves out of the blackboard's process unchanged.
-`BoardClient` satisfies the `BoardReader` protocol, so an admission rule or a
-termination predicate written against it reads a remote board too.
+and none can be given the wrong one.
+
+## Writing the body once
+
+`BoardClient` and `Control.as_agent` both satisfy `AgentBoard`, the protocol
+one board looks like to one agent. Write the body against that and it runs
+either way with no edit:
+
+```python
+from blackboard import AgentBoard
+
+
+def investigate(board: AgentBoard, from_sequence: int) -> None:
+    severity = board.read_premise("severity")
+    for signal in board.read_level("signals", from_sequence):
+        board.write("findings", conclude(signal, severity.value))
+```
+
+In process, ask the control component for the board as that agent sees it:
+
+```python
+investigate(model.control.as_agent("triage"), notification.from_sequence)
+```
+
+Deployed on its own, hand it the client:
+
+```python
+with BoardClient(base_url=..., board_id=..., agent="triage") as board:
+    investigate(board, notification.from_sequence)
+```
+
+`AgentBoard` carries the four reads `BoardReader` has and the three writes
+`Control` has, each without the agent's own name, because the object already
+holds it. `BoardClient` also satisfies `BoardReader` on its own, so an
+admission rule or a termination predicate written against that protocol reads
+a remote board too.
 
 Answer the notification before you acknowledge. Acknowledging is what tells
 the run this agent has stopped, and [what acknowledging

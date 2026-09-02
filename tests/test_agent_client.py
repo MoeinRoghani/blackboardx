@@ -165,14 +165,14 @@ class TestReading:
     def test_a_level_comes_back_as_contributions(
         self, board: Any, control: Control
     ) -> None:
-        control.write("triage", "signals", {"n": 1})
+        control.write("signals", {"n": 1}, writer="triage")
         assert board.read_level("signals") == control.reader.read_level("signals")
 
     def test_a_level_is_read_to_its_end_across_pages(
         self, kind: Any, control: Control
     ) -> None:
         for n in range(7):
-            control.write("triage", "signals", {"n": n})
+            control.write("signals", {"n": n}, writer="triage")
 
         capped = _capping(serving(control), at=2)
         client = kind(capped)
@@ -187,7 +187,7 @@ class TestReading:
         self, board: Any, control: Control
     ) -> None:
         for n in range(5):
-            control.write("triage", "signals", {"n": n})
+            control.write("signals", {"n": n}, writer="triage")
         assert [c.content for c in board.read_level("signals", limit=2)] == [
             {"n": 0},
             {"n": 1},
@@ -196,8 +196,8 @@ class TestReading:
     def test_a_level_is_read_from_a_sequence(
         self, board: Any, control: Control
     ) -> None:
-        control.write("triage", "signals", {"n": 0})
-        second = control.write("triage", "signals", {"n": 1})
+        control.write("signals", {"n": 0}, writer="triage")
+        second = control.write("signals", {"n": 1}, writer="triage")
         assert isinstance(second, Written)
         assert [c.content for c in board.read_level("signals", second.sequence)] == [
             {"n": 1}
@@ -214,15 +214,15 @@ class TestReading:
     def test_the_board_comes_back_as_changes_in_order(
         self, board: Any, control: Control
     ) -> None:
-        control.write("triage", "signals", {"n": 1})
-        control.write("triage", "findings", {"n": 2})
+        control.write("signals", {"n": 1}, writer="triage")
+        control.write("findings", {"n": 2}, writer="triage")
         assert board.read_board() == control.reader.read_board()
 
     def test_the_board_is_read_to_its_end_across_pages(
         self, kind: Any, control: Control
     ) -> None:
         for n in range(6):
-            control.write("triage", "signals", {"n": n})
+            control.write("signals", {"n": n}, writer="triage")
         client = kind(_capping(serving(control), at=2))
         try:
             assert client.read_board() == control.reader.read_board()
@@ -338,7 +338,7 @@ class TestAcknowledging:
                 Agent(name="source", notify=lambda n: None),
             ]
         )
-        control.write("source", "signals", {"n": 1})
+        control.write("signals", {"n": 1}, writer="source")
         client = kind(serving(control))
         try:
             client.ack(seen[-1].notification_id)
@@ -514,7 +514,7 @@ class TestTheSurface:
         )
         # mypy checks this line; the assertions check that it works.
         reader: BoardReader = client
-        control.write("triage", "signals", {"n": 1})
+        control.write("signals", {"n": 1}, writer="triage")
         assert [r.name for r in reader.read_regions()] != []
         assert reader.read_level("signals") == control.reader.read_level("signals")
         assert reader.read_premise("severity") == control.reader.read_premise(

@@ -85,7 +85,7 @@ class TestJoiningMidRun:
         early: list[Notification] = []
         late: list[Notification] = []
         model = a_model([Agent(name="ocp", notify=early.append)])
-        model.control.write("ocp", "platform", "a finding")
+        model.control.write("platform", "a finding", writer="ocp")
         model.control.register_agent(Agent(name="netops", notify=late.append))
         (joined,) = late
         assert joined.agent == "netops"
@@ -97,7 +97,7 @@ class TestJoiningMidRun:
     def test_a_late_agent_subscribed_to_a_level_hears_what_it_missed(self) -> None:
         late: list[Notification] = []
         model = a_model([Agent(name="ocp", notify=lambda n: None)])
-        model.control.write("ocp", "platform", "a finding")
+        model.control.write("platform", "a finding", writer="ocp")
         model.control.register_agent(
             Agent(name="netops", notify=late.append, subscribes_to=["platform"])
         )
@@ -107,7 +107,7 @@ class TestJoiningMidRun:
     def test_a_late_agent_with_the_default_subscription_hears_no_level(self) -> None:
         late: list[Notification] = []
         model = a_model([Agent(name="ocp", notify=lambda n: None)])
-        model.control.write("ocp", "platform", "a finding")
+        model.control.write("platform", "a finding", writer="ocp")
         model.control.register_agent(Agent(name="netops", notify=late.append))
         (joined,) = late
         assert joined.regions == frozenset({"window"})

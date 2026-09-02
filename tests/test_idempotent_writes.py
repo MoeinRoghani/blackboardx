@@ -50,16 +50,16 @@ def build(**overrides: Any) -> Control:
 class TestTheControlComponent:
     def test_a_key_writes_once(self) -> None:
         control = build()
-        first = control.write("triage", "signals", {"n": 1}, "k1")
-        again = control.write("triage", "signals", {"n": 1}, "k1")
+        first = control.write("signals", {"n": 1}, "k1", writer="triage")
+        again = control.write("signals", {"n": 1}, "k1", writer="triage")
         assert isinstance(first, Written)
         assert again == Written(sequence=first.sequence, repeated=True)
         assert len(control.reader.read_level("signals")) == 1
 
     def test_a_repeat_is_absent_from_the_audit(self) -> None:
         control = build()
-        control.write("triage", "signals", {"n": 1}, "k1")
-        control.write("triage", "signals", {"n": 1}, "k1")
+        control.write("signals", {"n": 1}, "k1", writer="triage")
+        control.write("signals", {"n": 1}, "k1", writer="triage")
         accepted = [e for e in control.read_audit() if isinstance(e, WriteAccepted)]
         assert len(accepted) == 1
 
@@ -72,24 +72,24 @@ class TestTheControlComponent:
             ]
         )
         before = len(woken)
-        control.write("source", "signals", {"n": 1}, "k1")
+        control.write("signals", {"n": 1}, "k1", writer="source")
         after_first = len(woken)
-        control.write("source", "signals", {"n": 1}, "k1")
+        control.write("signals", {"n": 1}, "k1", writer="source")
         assert after_first > before
         assert len(woken) == after_first
 
     def test_a_key_reused_for_another_region_is_a_rejection(self) -> None:
         control = build()
-        control.write("triage", "signals", {"n": 1}, "k1")
-        outcome = control.write("triage", "findings", {"n": 1}, "k1")
+        control.write("signals", {"n": 1}, "k1", writer="triage")
+        outcome = control.write("findings", {"n": 1}, "k1", writer="triage")
         assert isinstance(outcome, Rejected)
         assert outcome.cause is RejectionCause.IDEMPOTENCY_KEY_REUSED
 
     def test_a_premise_is_set_once_under_one_key(self) -> None:
         control = build()
-        first = control.set_premise("triage", "severity", "high", 1, "k1")
+        first = control.set_premise("severity", "high", 1, "k1", writer="triage")
         assert isinstance(first, Written)
-        again = control.set_premise("triage", "severity", "low", 1, "k1")
+        again = control.set_premise("severity", "low", 1, "k1", writer="triage")
         assert again == Written(
             sequence=first.sequence, version=first.version, repeated=True
         )
@@ -103,9 +103,9 @@ class TestTheControlComponent:
                 wall_clock=timedelta(minutes=5), idle=timedelta(seconds=10)
             ),
         )
-        control.write("triage", "signals", {"n": 1}, "k1")
+        control.write("signals", {"n": 1}, "k1", writer="triage")
         clock.advance(timedelta(seconds=9))
-        control.write("triage", "signals", {"n": 1}, "k1")
+        control.write("signals", {"n": 1}, "k1", writer="triage")
         clock.advance(timedelta(seconds=2))
         assert control.outcome() is not None
 

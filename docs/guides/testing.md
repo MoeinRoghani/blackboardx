@@ -37,8 +37,8 @@ Acknowledge inside the callback and the entire cycle runs inline, so no test nee
 
 ```python
 def agent_cycle(notification):
-    model.control.write("ocp", "platform", "a finding")
-    model.control.ack("ocp", notification.notification_id)
+    model.control.write("platform", "a finding", writer="ocp")
+    model.control.ack(notification.notification_id, agent="ocp")
 
 
 model.control.register_agent(Agent(name="ocp", notify=agent_cycle))
@@ -52,9 +52,11 @@ Chained notifications are drained from a queue rather than the call stack, so ag
 model = create_model(
     regions=[Premise("namespace", batch_window=timedelta(seconds=5))], ...
 )
-model.control.set_premise("operator", "namespace", ["ns1"], expected_version=1)
+model.control.set_premise("namespace", ["ns1"], expected_version=1, writer="operator")
 clock.advance(timedelta(seconds=2))
-model.control.set_premise("operator", "namespace", ["ns1", "ns2"], expected_version=2)
+model.control.set_premise(
+    "namespace", ["ns1", "ns2"], expected_version=2, writer="operator"
+)
 
 assert notifications == []                       # still inside the window
 clock.advance(timedelta(seconds=3))

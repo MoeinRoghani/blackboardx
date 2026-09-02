@@ -60,7 +60,7 @@ class TestCreation:
             limits=LIMITS,
             clock=ManualClock(start=START),
         )
-        model.control.write("ocp", "platform", "a finding")
+        model.control.write("platform", "a finding", writer="ocp")
         assert [c.content for c in store.read_level("test-board", "platform")] == [
             "a finding"
         ]
@@ -111,7 +111,9 @@ class TestCreation:
             board_id="test-board",
             store=InMemoryStore(),
         )
-        assert model.control.write("ocp", "platform", "fits") == Written(sequence=3)
+        assert model.control.write("platform", "fits", writer="ocp") == Written(
+            sequence=3
+        )
 
 
 class TestRegistration:
@@ -181,7 +183,7 @@ class TestRegistration:
         )
         model.control.register_agent(declaration("ocp", lambda n: None))
         model.control.register_agent(declaration("ocp", returning.append))
-        model.control.set_premise("operator", "window", "w2", expected_version=1)
+        model.control.set_premise("window", "w2", expected_version=1, writer="operator")
         assert returning, "the replacement is the callback now reached"
 
     def test_premiseing_into_a_closed_run_is_refused(self) -> None:
@@ -214,8 +216,10 @@ class TestFullCycle:
 
         (notification,) = notifications
         window = model.reader.read_premise("window").value
-        model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
-        model.control.ack("ocp", notification.notification_id)
+        model.control.write(
+            "platform", {"window": window, "findings": ["oom"]}, writer="ocp"
+        )
+        model.control.ack(notification.notification_id, agent="ocp")
 
         clock.advance(timedelta(minutes=30))
         assert model.control.outcome() == Settled()
@@ -230,8 +234,8 @@ class TestSystemClockIntegration:
         def hand_off(notification: Notification) -> None:
             def work() -> None:
                 model = holder[0]
-                model.control.write("ocp", "platform", "bundle")  # type: ignore[attr-defined]
-                model.control.ack("ocp", notification.notification_id)  # type: ignore[attr-defined]
+                model.control.write("platform", "bundle", writer="ocp")  # type: ignore[attr-defined]
+                model.control.ack(notification.notification_id, agent="ocp")  # type: ignore[attr-defined]
 
             threading.Timer(0.03, work).start()
 

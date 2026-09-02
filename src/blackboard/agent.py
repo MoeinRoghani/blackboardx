@@ -5,13 +5,15 @@ is the agent's side of the protocol :mod:`blackboard.wire` states, so an agent
 names no URL, no status code, and no header.
 
 A client is bound to one board and one agent name, the way
-:class:`~blackboard.BoardReader` is bound to one board. Its methods are the
-ones :class:`~blackboard.Control` and :class:`~blackboard.BoardReader` already
-have, spelled the same and returning the same types, so an agent that ran in
-the same process as the blackboard moves out of it without relearning
-anything. :class:`BoardClient` satisfies ``BoardReader``, so an admission rule
-or a termination predicate written against that protocol reads a remote board
-as well as a local one.
+:class:`~blackboard.BoardReader` is bound to one board.
+
+:class:`BoardClient` satisfies :class:`~blackboard.AgentBoard`, the protocol
+one board looks like to one agent, and so does what
+:meth:`~blackboard.Control.as_agent` returns. An agent body written against
+``AgentBoard`` therefore runs in the blackboard's own process or against one
+over HTTP, with nothing changed between them. It also satisfies
+``BoardReader`` on its own, so an admission rule or a termination predicate
+written against that protocol reads a remote board as well as a local one.
 
     from blackboard.agent import BoardClient
     from blackboard.wire import NotificationBody

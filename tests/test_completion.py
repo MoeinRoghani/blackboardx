@@ -76,22 +76,22 @@ class TestSilence:
     def test_a_quiet_instant_does_not_close_the_run(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
-        control.write("ocp", "application", "a finding")
+        control.write("application", "a finding", writer="ocp")
         assert control.outcome() is None
 
     def test_sustained_silence_closes_the_run(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
-        control.write("ocp", "application", "a finding")
+        control.write("application", "a finding", writer="ocp")
         clock.advance(IDLE)
         assert control.outcome() == Settled()
 
     def test_every_event_pushes_the_deadline_out(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
-        control.write("ocp", "application", "one")
+        control.write("application", "one", writer="ocp")
         clock.advance(IDLE - timedelta(minutes=1))
-        control.write("ocp", "application", "two")
+        control.write("application", "two", writer="ocp")
         clock.advance(IDLE - timedelta(minutes=1))
         assert control.outcome() is None
         clock.advance(timedelta(minutes=1))
@@ -101,7 +101,7 @@ class TestSilence:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock)
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         control.register_agent(declaration("ocp", recorder))
         # The agent never acknowledges. Nothing but the idle limit is
         # measuring anything, so that alone closes the run.
@@ -113,11 +113,11 @@ class TestSilence:
         holder: list[Control] = []
 
         def ack_at_once(notification: Notification) -> None:
-            holder[0].ack("ocp", notification.notification_id)
+            holder[0].ack(notification.notification_id, agent="ocp")
 
         control = make_control(clock)
         holder.append(control)
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         control.register_agent(declaration("ocp", ack_at_once))
         clock.advance(IDLE)
         assert control.outcome() == Settled()
@@ -127,7 +127,7 @@ class TestTerminationPredicate:
     def test_continue_holds_the_run_open_past_the_idle_limit(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock, termination_predicate=keep_open)
-        control.write("ocp", "application", "one")
+        control.write("application", "one", writer="ocp")
         clock.advance(IDLE * 3)
         assert control.outcome() is None
 
@@ -142,7 +142,7 @@ class TestTerminationPredicate:
         control = make_control(clock, termination_predicate=close_when_nonempty)
         clock.advance(IDLE)
         assert control.outcome() is None
-        control.write("ocp", "application", "one")
+        control.write("application", "one", writer="ocp")
         clock.advance(IDLE)
         assert control.outcome() == Settled()
 
@@ -151,7 +151,7 @@ class TestWallClock:
     def test_the_wall_clock_closes_a_run_held_open(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock, termination_predicate=keep_open)
-        control.write("ocp", "application", "one")
+        control.write("application", "one", writer="ocp")
         clock.advance(timedelta(hours=1))
         assert control.outcome() == WallClockExpired()
 
@@ -159,7 +159,7 @@ class TestWallClock:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, termination_predicate=keep_open)
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         control.register_agent(declaration("ocp", recorder))
         clock.advance(timedelta(hours=1))
         assert control.outcome() == WallClockExpired(unfinished=frozenset({"ocp"}))
@@ -179,9 +179,9 @@ class TestAbortAndAfterClose:
     ) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         control.abort("stopped")
-        assert control.write("ocp", "application", "late") == Rejected(
+        assert control.write("application", "late", writer="ocp") == Rejected(
             cause=RejectionCause.RUN_CLOSED, reason="the run has closed"
         )
         with pytest.raises(RunClosedError):
@@ -194,7 +194,7 @@ class TestAbortAndAfterClose:
     def test_the_idle_timer_does_not_fire_after_close(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
-        control.write("ocp", "application", "one")
+        control.write("application", "one", writer="ocp")
         control.abort("stopped")
         clock.advance(IDLE * 2)
         assert control.outcome() == Aborted(reason="stopped")

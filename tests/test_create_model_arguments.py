@@ -55,7 +55,9 @@ class TestAnIterableIsReadOnce:
         )
         assert first != []
         assert second != []
-        assert isinstance(model.control.write("one", "signals", {"n": 1}), Written)
+        assert isinstance(
+            model.control.write("signals", {"n": 1}, writer="one"), Written
+        )
 
     def test_regions_given_as_a_generator_are_all_declared(self) -> None:
         model = create_model(
@@ -89,7 +91,7 @@ class TestAnIterableIsReadOnce:
             limits=LIMITS,
         )
         before = len(seen)
-        model.control.write("src", "signals", {"n": 1})
+        model.control.write("signals", {"n": 1}, writer="src")
         assert len(seen) > before
 
     def test_writes_to_given_as_a_generator_still_permits_the_write(self) -> None:
@@ -107,7 +109,9 @@ class TestAnIterableIsReadOnce:
             ],
             limits=LIMITS,
         )
-        assert isinstance(model.control.write("triage", "signals", {"n": 1}), Written)
+        assert isinstance(
+            model.control.write("signals", {"n": 1}, writer="triage"), Written
+        )
 
     def test_a_declaration_reads_back_what_it_was_given(self) -> None:
         agent = Agent(name="a", notify=lambda n: None, subscribes_to=(x for x in "ab"))

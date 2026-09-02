@@ -44,16 +44,16 @@ class TestRegisteringAgain:
         model = a_model([Agent(name="ocp", notify=first.append)])
         model.control.register_agent(Agent(name="ocp", notify=second.append))
         before = len(first)
-        model.control.set_premise("operator", "window", "w2", expected_version=1)
+        model.control.set_premise("window", "w2", expected_version=1, writer="operator")
         assert len(first) == before, "the old callback is no longer reached"
         assert len(second) == 2
 
     def test_the_cursor_survives_so_nothing_already_seen_repeats(self) -> None:
         first: list[Notification] = []
         model = a_model([Agent(name="ocp", notify=first.append)])
-        model.control.ack("ocp", first[0].notification_id)
-        model.control.set_premise("operator", "window", "w2", expected_version=1)
-        model.control.ack("ocp", first[1].notification_id)
+        model.control.ack(first[0].notification_id, agent="ocp")
+        model.control.set_premise("window", "w2", expected_version=1, writer="operator")
+        model.control.ack(first[1].notification_id, agent="ocp")
 
         second: list[Notification] = []
         model.control.register_agent(Agent(name="ocp", notify=second.append))
@@ -65,10 +65,10 @@ class TestRegisteringAgain:
     def test_it_hears_about_what_it_missed_while_it_was_gone(self) -> None:
         first: list[Notification] = []
         model = a_model([Agent(name="ocp", notify=first.append)])
-        model.control.ack("ocp", first[0].notification_id)
+        model.control.ack(first[0].notification_id, agent="ocp")
         # It disappears here, and two changes land.
-        model.control.set_premise("operator", "window", "w2", expected_version=1)
-        model.control.set_premise("operator", "window", "w3", expected_version=2)
+        model.control.set_premise("window", "w2", expected_version=1, writer="operator")
+        model.control.set_premise("window", "w3", expected_version=2, writer="operator")
 
         second: list[Notification] = []
         model.control.register_agent(Agent(name="ocp", notify=second.append))
@@ -83,9 +83,9 @@ class TestRegisteringAgain:
             Agent(name="ocp", notify=got.append, subscribes_to=["platform"])
         )
         before = len(got)
-        model.control.set_premise("operator", "window", "w2", expected_version=1)
+        model.control.set_premise("window", "w2", expected_version=1, writer="operator")
         assert len(got) == before, "it no longer subscribes to the premise"
-        model.control.write("other", "platform", "a finding")
+        model.control.write("platform", "a finding", writer="other")
         assert len(got) == before + 1
 
     def test_the_run_does_not_wait_on_a_notification_the_old_process_held(
@@ -97,6 +97,6 @@ class TestRegisteringAgain:
         # It never acknowledged, then it came back and acknowledged the one
         # it was given on returning.
         model.control.register_agent(Agent(name="ocp", notify=got.append))
-        model.control.ack("ocp", got[-1].notification_id)
+        model.control.ack(got[-1].notification_id, agent="ocp")
         clock.advance(LIMITS.idle)
         assert model.control.outcome() == Settled()

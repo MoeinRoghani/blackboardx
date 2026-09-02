@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from functools import partial
-from typing import NewType, Protocol, TypeAlias
+from typing import NewType, Protocol, TypeAlias, runtime_checkable
 
 from blackboard._board import (
     BlackboardError,
@@ -528,6 +528,111 @@ class _BoundReader:
         return self._store.read_regions(self._board_id)
 
 
+@runtime_checkable
+class AgentBoard(Protocol):
+    """One board, as one agent sees it: what an agent body is written against.
+
+    ``BoardClient`` satisfies this over HTTP and ``Control.as_agent`` returns
+    it in process, so a body written once serves either deployment. Every
+    method omits the agent's own name, because the object already carries it.
+
+    Reads are the four ``BoardReader`` has. Writes are the three
+    ``Control`` has, without the identity argument.
+    """
+
+    @property
+    def board_id(self) -> str:
+        """The board this object reads and writes."""
+        ...
+
+    def read_regions(self) -> list[Level | Premise]:
+        """Returns the regions declared on this board, with their kinds."""
+        ...
+
+    def read_level(
+        self, level: str, from_sequence: int = 0, limit: int | None = None
+    ) -> list[Contribution]:
+        """Returns a level's contributions from the sequence bound, inclusive."""
+        ...
+
+    def read_premise(self, premise: str) -> PremiseState:
+        """Returns a premise's current value and version."""
+        ...
+
+    def read_board(
+        self, from_sequence: int = 0, limit: int | None = None
+    ) -> list[BoardChange]:
+        """Returns every write to every region, in sequence order, from the bound."""
+        ...
+
+    def write(
+        self, level: str, content: object, idempotency_key: str | None = None
+    ) -> Written | Rejected:
+        """Proposes a contribution to a level, as this object's agent."""
+        ...
+
+    def set_premise(
+        self,
+        premise: str,
+        value: object,
+        expected_version: int,
+        idempotency_key: str | None = None,
+    ) -> Written | Conflict | Rejected:
+        """Sets a premise, provided it is still at ``expected_version``."""
+        ...
+
+    def ack(self, notification_id: NotificationId | int) -> None:
+        """Records that this agent finished responding to a notification."""
+        ...
+
+
+class _AgentBoard:
+    """One agent's view of a live run. What ``Control.as_agent`` returns."""
+
+    def __init__(self, control: Control, agent: str) -> None:
+        self._control = control
+        self._agent = agent
+
+    @property
+    def board_id(self) -> str:
+        return self._control.board_id
+
+    def read_regions(self) -> list[Level | Premise]:
+        return self._control.reader.read_regions()
+
+    def read_level(
+        self, level: str, from_sequence: int = 0, limit: int | None = None
+    ) -> list[Contribution]:
+        return self._control.reader.read_level(level, from_sequence, limit)
+
+    def read_premise(self, premise: str) -> PremiseState:
+        return self._control.reader.read_premise(premise)
+
+    def read_board(
+        self, from_sequence: int = 0, limit: int | None = None
+    ) -> list[BoardChange]:
+        return self._control.reader.read_board(from_sequence, limit)
+
+    def write(
+        self, level: str, content: object, idempotency_key: str | None = None
+    ) -> Written | Rejected:
+        return self._control.write(level, content, idempotency_key, writer=self._agent)
+
+    def set_premise(
+        self,
+        premise: str,
+        value: object,
+        expected_version: int,
+        idempotency_key: str | None = None,
+    ) -> Written | Conflict | Rejected:
+        return self._control.set_premise(
+            premise, value, expected_version, idempotency_key, writer=self._agent
+        )
+
+    def ack(self, notification_id: NotificationId | int) -> None:
+        self._control.ack(notification_id, agent=self._agent)
+
+
 class Control:
     """The control component's write path, over the board it is given.
 
@@ -579,6 +684,23 @@ class Control:
         self._wall_call = clock.call_at(
             clock.now() + resolved.wall_clock, self._wall_clock_expired
         )
+
+    @property
+    def board_id(self) -> str:
+        """The board this control component runs over."""
+        return self._board_id
+
+    def as_agent(self, name: str) -> AgentBoard:
+        """Returns this board as one agent sees it.
+
+        The object carries the agent's name, so its methods are the ones
+        ``BoardClient`` has and an agent body written against ``AgentBoard``
+        runs either in this process or against a blackboard over HTTP.
+
+        The agent need not be registered. Registering decides what wakes it;
+        this decides what it writes as.
+        """
+        return _AgentBoard(self, name)
 
     @property
     def reader(self) -> BoardReader:
@@ -666,10 +788,11 @@ class Control:
 
     def write(
         self,
-        writer: str,
         level: str,
         content: object,
         idempotency_key: str | None = None,
+        *,
+        writer: str,
     ) -> Written | Rejected:
         """Runs one level write through admission and, if admitted, the board.
 
@@ -739,11 +862,12 @@ class Control:
 
     def set_premise(
         self,
-        writer: str,
         premise: str,
         value: object,
         expected_version: int,
         idempotency_key: str | None = None,
+        *,
+        writer: str,
     ) -> Written | Conflict | Rejected:
         """Runs one premise write through admission and, if admitted, the board.
 
@@ -829,7 +953,7 @@ class Control:
             self._condition.wait_for(lambda: self._outcome is not None, timeout=seconds)
             return self._outcome
 
-    def ack(self, agent: str, notification_id: NotificationId) -> None:
+    def ack(self, notification_id: NotificationId | int, *, agent: str) -> None:
         """Records that the agent finished responding to a notification.
 
         The cursor advances to the end of the range the notification
@@ -837,8 +961,9 @@ class Control:
         changes nothing; one naming a notification never issued to that
         agent raises.
         """
+        acknowledged = NotificationId(notification_id)
         with self._lock:
-            key = (agent, notification_id)
+            key = (agent, acknowledged)
             outstanding = self._outstanding.pop(key, None)
             if outstanding is None:
                 if key in self._issued:
@@ -850,7 +975,7 @@ class Control:
             state.cursor = max(state.cursor, outstanding.to_sequence)
             self._audit.append(
                 NotificationAcknowledged(
-                    at=self._clock.now(), agent=agent, notification_id=notification_id
+                    at=self._clock.now(), agent=agent, notification_id=acknowledged
                 )
             )
         self._check_completion()
