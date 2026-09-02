@@ -83,7 +83,7 @@ def test_omitting_the_declaration_subscribes_to_no_level() -> None:
     assert received == []
 
 
-def test_registering_notifies_for_a_level_that_already_holds_contributions() -> None:
+def test_premiseing_notifies_for_a_level_that_already_holds_contributions() -> None:
     clock = ManualClock(start=START)
     control = make_control(clock)
     control.write("ocp", "platform", "written before anyone registered")

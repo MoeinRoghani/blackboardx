@@ -36,7 +36,7 @@ def a_model(agents: list[Agent] | None = None) -> Model:
 
 
 class TestNamingAgentsAtCreation:
-    def test_every_named_agent_is_registered(self) -> None:
+    def test_every_named_agent_is_premiseed(self) -> None:
         first: list[Notification] = []
         second: list[Notification] = []
         model = a_model(
@@ -56,7 +56,7 @@ class TestNamingAgentsAtCreation:
         assert notification.regions == frozenset({"window"})
         assert notification.from_sequence == 1
 
-    def test_the_premises_open_before_any_agent_is_registered(self) -> None:
+    def test_the_premises_open_before_any_agent_is_premiseed(self) -> None:
         model = a_model([Agent(name="ocp", notify=lambda n: None)])
         events = model.control.read_audit()
         opened = next(i for i, e in enumerate(events) if isinstance(e, PremiseOpened))

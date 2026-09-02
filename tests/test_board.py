@@ -72,7 +72,7 @@ class TestAppend:
         with pytest.raises(UndeclaredRegionError):
             board.read_level("missing")
 
-    def test_append_to_a_register_is_refused(self) -> None:
+    def test_append_to_a_premise_is_refused(self) -> None:
         board = make_board()
         with pytest.raises(RegionKindError):
             board.append("window", "a")
@@ -120,7 +120,7 @@ class TestSet:
         result = board.set("window", "late", expected_version=1)
         assert result == Conflict(current_version=2)
 
-    def test_a_conflicting_write_leaves_the_register_unchanged(self) -> None:
+    def test_a_conflicting_write_leaves_the_premise_unchanged(self) -> None:
         board = make_board()
         board.set("window", "w1", expected_version=0)
         board.set("window", "late", expected_version=0)
@@ -150,7 +150,7 @@ class TestSet:
         with pytest.raises(UndeclaredRegionError):
             board.set("missing", "a", expected_version=0)
 
-    def test_concurrent_register_writers_lose_no_update(
+    def test_concurrent_premise_writers_lose_no_update(
         self, frequent_thread_switches: None
     ) -> None:
         board = _board_with(Premise("namespace"))
@@ -262,7 +262,7 @@ class TestDeclarations:
         board.declare(Level("change"))
         assert board.append("change", "c") == 2
 
-    def test_a_register_declared_later_has_no_value_until_written(self) -> None:
+    def test_a_premise_declared_later_has_no_value_until_written(self) -> None:
         board = make_board()
         board.append("application", "a")
         board.declare(Premise("trigger"))
