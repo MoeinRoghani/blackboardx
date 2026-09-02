@@ -26,6 +26,7 @@ from blackboard._board import (
     Conflict,
     Contribution,
     DuplicateRegionError,
+    IdempotencyKeyError,
     Level,
     Premise,
     PremiseState,
@@ -43,10 +44,12 @@ CREATE TABLE IF NOT EXISTS regions (
     PRIMARY KEY (board_id, name)
 );
 CREATE TABLE IF NOT EXISTS contributions (
-    board_id TEXT NOT NULL,
-    sequence INTEGER NOT NULL,
-    region   TEXT NOT NULL,
-    content  TEXT NOT NULL,
+    board_id        TEXT NOT NULL,
+    sequence        INTEGER NOT NULL,
+    region          TEXT NOT NULL,
+    content         TEXT NOT NULL,
+    version         INTEGER,
+    idempotency_key TEXT,
     PRIMARY KEY (board_id, sequence)
 );
 CREATE TABLE IF NOT EXISTS premises (
@@ -58,7 +61,15 @@ CREATE TABLE IF NOT EXISTS premises (
 );
 CREATE INDEX IF NOT EXISTS contributions_by_region
     ON contributions (board_id, region, sequence);
+CREATE UNIQUE INDEX IF NOT EXISTS contributions_by_key
+    ON contributions (board_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 """
+
+#: Columns added after the first release. A file written by an earlier
+#: version is opened by this one, so they are added where they are absent
+#: rather than assumed.
+_ADDED_COLUMNS = (("version", "INTEGER"), ("idempotency_key", "TEXT"))
 
 _LEVEL = "level"
 _PREMISE = "premise"
@@ -83,6 +94,7 @@ class SqliteStore:
         self._path = path
         self._lock = threading.Lock()
         self._connection = sqlite3.connect(path, check_same_thread=False)
+        self._add_missing_columns()
         self._connection.executescript(_SCHEMA)
         self._connection.commit()
 
@@ -121,24 +133,77 @@ class SqliteStore:
                     (board_id, region.name),
                 )
 
-    def append(self, board_id: str, level: str, content: object) -> int:
+    def _add_missing_columns(self) -> None:
+        # executescript runs its own transaction, so this happens first.
+        present = {
+            row[1]
+            for row in self._connection.execute(
+                "SELECT * FROM pragma_table_info('contributions')"
+            )
+        }
+        if not present:
+            return
+        with self._connection:
+            for name, kind in _ADDED_COLUMNS:
+                if name not in present:
+                    self._connection.execute(
+                        f"ALTER TABLE contributions ADD COLUMN {name} {kind}"
+                    )
+
+    def _already_written(
+        self, board_id: str, idempotency_key: str | None, region: str
+    ) -> Written | None:
+        if idempotency_key is None:
+            return None
+        row = self._connection.execute(
+            "SELECT sequence, region, version FROM contributions "
+            "WHERE board_id = ? AND idempotency_key = ?",
+            (board_id, idempotency_key),
+        ).fetchone()
+        if row is None:
+            return None
+        if row[1] != region:
+            raise IdempotencyKeyError(
+                f"{idempotency_key!r} named {row[1]!r} and is now naming {region!r}"
+            )
+        return Written(sequence=int(row[0]), version=row[2], repeated=True)
+
+    def append(
+        self,
+        board_id: str,
+        level: str,
+        content: object,
+        idempotency_key: str | None = None,
+    ) -> Written:
         carried = json.dumps(content)
         with self._lock, self._connection:
             self._require(board_id, level, _LEVEL)
+            done = self._already_written(board_id, idempotency_key, level)
+            if done is not None:
+                return done
             sequence = self._next_sequence(board_id)
             self._connection.execute(
-                "INSERT INTO contributions (board_id, sequence, region, content) "
-                "VALUES (?, ?, ?, ?)",
-                (board_id, sequence, level, carried),
+                "INSERT INTO contributions "
+                "(board_id, sequence, region, content, idempotency_key) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (board_id, sequence, level, carried, idempotency_key),
             )
-            return sequence
+            return Written(sequence=sequence)
 
     def set(
-        self, board_id: str, premise: str, value: object, expected_version: int
+        self,
+        board_id: str,
+        premise: str,
+        value: object,
+        expected_version: int,
+        idempotency_key: str | None = None,
     ) -> Written | Conflict:
         carried = json.dumps(value)
         with self._lock, self._connection:
             self._require(board_id, premise, _PREMISE)
+            done = self._already_written(board_id, idempotency_key, premise)
+            if done is not None:
+                return done
             row = self._connection.execute(
                 "SELECT version FROM premises WHERE board_id = ? AND name = ?",
                 (board_id, premise),
@@ -153,9 +218,10 @@ class SqliteStore:
                 (carried, current + 1, board_id, premise),
             )
             self._connection.execute(
-                "INSERT INTO contributions (board_id, sequence, region, content) "
-                "VALUES (?, ?, ?, ?)",
-                (board_id, sequence, premise, carried),
+                "INSERT INTO contributions "
+                "(board_id, sequence, region, content, version, idempotency_key) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (board_id, sequence, premise, carried, current + 1, idempotency_key),
             )
             return Written(sequence=sequence, version=current + 1)
 

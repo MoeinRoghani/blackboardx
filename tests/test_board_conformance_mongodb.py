@@ -69,7 +69,7 @@ def test_a_run_survives_the_process_that_made_it(database: Any) -> None:
     assert [c.content for c in second.read_level(board, "platform")] == [
         {"findings": ["oom"]}
     ]
-    assert second.append(board, "platform", "later") == 3
+    assert second.append(board, "platform", "later").sequence == 3
 
 
 def test_a_conflict_takes_no_sequence_number(database: Any) -> None:
@@ -83,7 +83,7 @@ def test_a_conflict_takes_no_sequence_number(database: Any) -> None:
     )
     # The number the conflicting write took went back, so the next write
     # takes 2 rather than 3 and the record has no hole in it.
-    assert store.append(board, "platform", "next") == 2
+    assert store.append(board, "platform", "next").sequence == 2
 
 
 def test_the_record_is_stored_as_a_document_the_database_can_query(

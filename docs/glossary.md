@@ -66,6 +66,8 @@ Every term this project uses, and what it means here. A term is defined once, in
 | **Transport** | How one notification leaves the process, in `blackboard.delivery`. `HttpxTransport` posts it; another implementation sends it somewhere else. |
 | **Lane** | One agent's queue and the worker that drains it. Each call to `HttpNotifier.to` opens one, which is what lets agents be reached at the same time. |
 | **Refusal** | A delivery the agent will answer the same way next time, such as a 400. The notifier reports it rather than retrying. Distinct from a **failure**, which is worth another attempt. |
+| **Idempotency key** | A name the caller gives one write so a store writes it once. A key already written answers with what that write produced rather than producing another. |
+| **Repeat** | A write whose key the store had already written. `Written.repeated` says so, and nothing was added. |
 | **Adapter** | A store backed by a database the application already runs, constructed over a connection the application owns. `PostgresStore` and `MongoStore`. |
 | **Conformance suite** | The tests in `tests/conformance.py` that every store implementation must pass. |
 | **Record** | What the board holds. Durable where the board is a database. |
