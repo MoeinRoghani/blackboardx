@@ -37,7 +37,7 @@ Registering an agent to write to a region declared as a premise raises `RegionKi
 
 ## Consequences
 
-`RejectionCause` has four members. Every one is a decision the run made.
+`RejectionCause` lost `UNDECLARED_REGION`. It later lost `IDEMPOTENCY_KEY_REUSED` for the same reason, in the same unreleased release, leaving `ADMISSION`, `NOT_PERMITTED` and `RUN_CLOSED`. Every one is a decision the run made.
 
 The audit loses `WriteRejected(cause=UNDECLARED_REGION)`. That is consistent: a kind mismatch already raised and was audited nowhere, and the audit records what a run decided rather than what a caller got wrong.
 

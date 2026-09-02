@@ -120,7 +120,7 @@ class PostgresStore:
     """Keeps the board in Postgres. Satisfies ``BoardStore``.
 
     ``pool`` is the application's own connection pool, and this adapter
-    neither opens nor closes it. ``board_id`` names the board within the
+    neither opens nor closes it. Every call names the board within the
     database; two boards under different identifiers share the tables and
     see none of each other's writes.
 

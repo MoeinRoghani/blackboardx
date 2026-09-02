@@ -18,7 +18,7 @@ So a board identifier was usable once. A replica that died retired its board, an
 
 Two entry points, because there are two intents and confusing them is how a typo becomes a silently empty board.
 
-`create_model` opens a board that does not exist. It declares the regions and writes the opening premise values, and it refuses a board that already holds regions.
+`create_model` opens a board that does not exist. It declares the regions and writes the opening premise values, so a board that already holds a region of the same name is refused by `store.declare` raising `DuplicateRegionError`. It does not check that the board is otherwise empty.
 
 `attach_model` opens a run over a board that does. It declares nothing and takes no opening premises, because the record holds them and the versions they are at. It refuses a board holding no regions, so attaching cannot quietly become a create whose every write is then rejected.
 

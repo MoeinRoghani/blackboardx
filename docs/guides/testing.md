@@ -2,24 +2,27 @@
 
 Every timed behaviour is observable without waiting, because the clock is injected.
 
-## Which board a test uses
+## Which store a test uses
 
-| Test | Board |
+| Test | Store |
 | --- | --- |
 | A unit test of your agents, rules, or timing | `InMemoryStore()` |
 | A test that has to see the storage semantics a deployment has | `SqliteStore(":memory:")` |
+| A test that closes a store and opens the record again | `SqliteStore(str(tmp_path / "board.sqlite3"))` |
 | A test of your own `BoardStore` implementation | Your adapter, through the conformance suite |
 
-Content crosses every board as JSON, the in-memory one included, so a test cannot pass against content a deployment would refuse.
+`SqliteStore` takes its path and has no default. `":memory:"` is private to the store that opened it, so a second `SqliteStore(":memory:")` in the same process reads an empty board; a test that opens the same record twice gives both a file.
+
+Content crosses every store as JSON, the in-memory one included, so a test cannot pass against content a deployment would refuse.
 
 ## The manual clock
 
 ```python
 from datetime import UTC, datetime, timedelta
-from blackboard import ManualClock
+from blackboard import InMemoryStore, ManualClock, Settled, create_model
 
 clock = ManualClock(start=datetime(2026, 8, 21, 12, 0, tzinfo=UTC))
-model = create_model(..., clock=clock, board=InMemoryStore())
+model = create_model(..., clock=clock, store=InMemoryStore())
 ```
 
 `advance` moves time and fires every due call synchronously, on the calling thread, in due order. A call armed during an advance fires inside it when its instant falls at or before the target.
@@ -41,10 +44,51 @@ def agent_cycle(notification):
     model.control.ack(notification.notification_id, agent="ocp")
 
 
-model.control.register_agent(Agent(name="ocp", notify=agent_cycle))
+model.control.register_agent(
+    Agent(name="ocp", notify=agent_cycle, subscribes_to={"signals"})
+)
 ```
 
+Name what wakes it. An agent registered without `subscribes_to` is woken by every
+premise and by no level, so a cycle driven by a level write never runs.
+
 Chained notifications are drained from a queue rather than the call stack, so agents that wake each other do not grow it. Nothing in the library bounds such an exchange except the wall clock, so a test that drives one bounds it itself.
+
+## One agent body, tested in process
+
+`Control.as_agent(name)` returns the board as that agent sees it. It satisfies
+`AgentBoard`, and so does the `BoardClient` an agent deployed on its own holds,
+so a body written against that protocol is tested with no HTTP and no client.
+
+```python
+from blackboard import AgentBoard
+
+LIMITS = RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=5))
+
+
+def triage(board: AgentBoard, from_sequence: int) -> None:
+    for signal in board.read_level("signals", from_sequence):
+        board.write("findings", {"from": signal.sequence})
+
+
+def test_the_agent_body_in_process():
+    model = create_model(
+        board_id="incident-3391",
+        store=InMemoryStore(),
+        regions=[Level("signals"), Level("findings"), Premise("severity")],
+        premises={"severity": "high"},
+        limits=LIMITS,
+        clock=ManualClock(),
+    )
+    model.control.write("signals", "disk full", writer="watchdog")
+
+    triage(model.control.as_agent("triage"), 0)
+
+    assert [c.content for c in model.reader.read_level("findings")] == [{"from": 2}]
+```
+
+The finding is at sequence 2 rather than 1, because the opening value of
+`severity` is a write and took sequence 1.
 
 ## Driving a batch window
 
@@ -60,8 +104,62 @@ model.control.set_premise(
 
 assert notifications == []                       # still inside the window
 clock.advance(timedelta(seconds=3))
-assert len(notifications) == 1                   # one notification covering both
+assert len(notifications) == 1                   # one notification, covering the window
 ```
+
+The window opens at the first change the region takes, which is the opening value
+`create_model` writes, so the one notification covers that write and both premise
+writes after it. A level carries a window on the same terms, so
+`Level("signals", batch_window=timedelta(seconds=5))` is driven by the same two
+advances.
+
+## A run that opens over an existing record
+
+`attach_model` opens a run over a board a store already holds, so a test of a
+replacement replica needs no second process. Give both stores one file, because
+a second `SqliteStore(":memory:")` reads an empty board.
+
+```python
+def test_a_run_that_opens_over_an_existing_record(tmp_path):
+    file = str(tmp_path / "board.sqlite3")
+    regions = [Level("signals"), Level("findings"), Premise("severity")]
+
+    first = SqliteStore(file)
+    opened = create_model(
+        board_id="incident-3391",
+        store=first,
+        regions=regions,
+        premises={"severity": "high"},
+        limits=LIMITS,
+        clock=ManualClock(),
+    )
+    opened.control.write("signals", "disk full", writer="watchdog")
+    opened.control.abort("the process is going away")
+    first.close()
+
+    second = SqliteStore(file)
+    woken = []
+    resumed = attach_model(
+        board_id="incident-3391",
+        store=second,
+        regions=regions,
+        agents=[Agent(name="triage", notify=woken.append, subscribes_to={"signals"})],
+        limits=LIMITS,
+        clock=ManualClock(),
+    )
+
+    assert resumed.reader.read_premise("severity").version == 1
+    assert woken[0].from_sequence == 1
+    assert resumed.control.write("findings", "x", writer="triage").sequence == 3
+
+    resumed.control.abort("done")
+    second.close()
+```
+
+The sequence continues from the record, and the agent is woken from sequence 1
+because a run carries no cursor over. `regions` is checked against the record by
+name and by kind, so a test that renames a region there fails at `attach_model`
+rather than at the first write.
 
 ## Assert on the audit, not on timing
 
@@ -84,7 +182,7 @@ The audit records every event in the order it occurred, which is a fact about wh
 pip install 'blackboardx[conformance]'
 ```
 
-Subclass `BoardConformance`, give it a `store` fixture returning a fresh store, and every case runs against yours. Subclass `SharedStoreConformance` as well, with a `store` fixture of its own, for the cases about one store holding many boards.
+Subclass `BoardConformance`, give it a `store` fixture returning a fresh store, and its fifty-eight cases run against yours. Subclass `SharedStoreConformance` as well, with a `store` fixture of its own, for the eleven cases about one store holding many boards.
 
 ```python
 import pytest
@@ -108,3 +206,7 @@ class TestCassandraHoldsManyBoards(SharedStoreConformance):
 That is how `InMemoryStore`, `SqliteStore`, `PostgresStore`, and `MongoStore` are held to the same behaviour, the last two against real servers. They are held to that module rather than a copy of it, so what you run is what the library runs.
 
 Reading the rules and reimplementing them is not the same thing. A store that gives each region its own counter, which is the obvious reading, fails six cases here.
+
+`ManualClock` and `SystemClock` both satisfy the `Clock` protocol, whose
+`call_at` returns a `ScheduledCall` the control component cancels when a
+deadline moves. A clock of your own satisfies the same two methods.

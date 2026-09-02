@@ -61,7 +61,7 @@ written.sequence
 | --- | --- |
 | `store.append(board_id, level, content) -> int` | `store.append(board_id, level, content, idempotency_key=None) -> Written` |
 | `store.set(board_id, premise, value, expected_version)` | the same, with `idempotency_key=None` after it |
-| seven methods on `BoardStore` | eight; `delete` removes one board |
+| six methods on `BoardStore` | eight; `read_regions` names them and `delete` removes one board |
 
 Only a store of your own needs work. Add the parameter to `append` and to `set`, return `Written` from `append`, and read [an adapter of your own](concepts/storage.md#an-adapter-of-your-own) for what a key has to guarantee. The conformance suite, which now ships with the package, decides whether you got it right.
 
@@ -137,7 +137,7 @@ A key that names a region it did not name before raises `IdempotencyKeyError`, w
 
 ### Databases an earlier version wrote
 
-Your database needs no migration by hand. The store rename moved no rows, because they were already scoped by `board_id`, and the three stores that keep a record on disk add what a key needs to a database 0.7 wrote when they open it: `SqliteStore` and `PostgresStore` add two columns, `MongoStore` an index.
+Your database needs no migration by hand. The store rename moved no rows, because they were already scoped by `board_id`, and the three stores that keep a record on disk add what a key needs to a database 0.7 wrote. `SqliteStore` adds its two columns when it opens the file. `PostgresStore` and `MongoStore` add theirs when you call `create_schema` or `create_indexes`, which an application already calls once at startup.
 
 Those three now stamp a record with a schema number and check that number when they open. A database written by 0.7 or earlier carries no stamp and is adopted rather than refused, because 0.8 reads everything those wrote. From here on, a database written for a schema the library cannot read is refused when the store opens rather than at whichever query touches the change.
 
@@ -193,20 +193,21 @@ Renaming the region for what it holds also removed `seed`: a premise has a value
 ### Names
 
 | Was | Is | Removed in |
-| `Register` | `Premise` | 0.6.0 |
-| `RegisterState` | `PremiseState` | 0.6.0 |
-| `UnsetRegisterError` | `UnsetPremiseError` | 0.6.0 |
-| `ProposedRegisterWrite` | `ProposedPremiseWrite` | 0.6.0 |
-| `RegisterSeeded` | `PremiseOpened` | 0.6.0 |
-| `SeedError` | `PremiseError` | 0.6.0 |
-| `RunBudgets` | `RunLimits` | 0.6.0 |
-| `Accepted` | `Written` | 0.6.0 |
-| `read_register` | `read_premise` | 0.6.0 |
-| `set_register` | `set_premise` | 0.6.0 |
-| `create_model(seed=...)` | `create_model(premises=...)` | 0.6.0 |
-| `Control(budgets=...)` | `Control(limits=...)` | 0.6.0 |
+| --- | --- | --- |
+| `Register` | `Premise` | 0.7.0 |
+| `RegisterState` | `PremiseState` | 0.7.0 |
+| `UnsetRegisterError` | `UnsetPremiseError` | 0.7.0 |
+| `ProposedRegisterWrite` | `ProposedPremiseWrite` | 0.7.0 |
+| `RegisterSeeded` | `PremiseOpened` | 0.7.0 |
+| `SeedError` | `PremiseError` | 0.7.0 |
+| `RunBudgets` | `RunLimits` | 0.7.0 |
+| `Accepted` | `Written` | 0.7.0 |
+| `read_register` | `read_premise` | 0.7.0 |
+| `set_register` | `set_premise` | 0.7.0 |
+| `create_model(seed=...)` | `create_model(premises=...)` | 0.7.0 |
+| `Control(budgets=...)` | `Control(limits=...)` | 0.7.0 |
 | `Control.write(agent=...)` | `Control.write(writer=...)` | already gone |
-| `ProposedContribution.agent` | `ProposedContribution.writer` | 0.6.0 |
+| `ProposedContribution.agent` | `ProposedContribution.writer` | 0.7.0 |
 
 Each of these worked, with a warning, in 0.5 and 0.6. All of them were removed in 0.7.
 

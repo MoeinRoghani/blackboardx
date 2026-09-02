@@ -1,12 +1,13 @@
 # API reference
 
-The public surface is six modules. Everything else in the package is
-internal, and a name outside these pages may change without a deprecation.
+The public surface is six import paths: the package and five submodules.
+Everything else in the package is internal, and a name outside these pages may
+change without a deprecation.
 
-| Module | Holds | Imported by |
+| Import path | Holds | Imported by |
 | --- | --- | --- |
-| `blackboard` | The board, the control component, and model creation | The blackboard |
-| `blackboard.wire` | The request and response bodies that cross between the two halves | Both |
+| `blackboard` | The board, the control component, `create_model` and `attach_model`, and the `AgentBoard` an agent body is written against | Both |
+| `blackboard.wire` | The request and response bodies that cross between the two halves, and the seven operations that carry them | Both |
 | `blackboard.server` | Answering an agent's request, without a web framework | The blackboard |
 | `blackboard.delivery` | Sending notifications to agents over HTTP | The blackboard |
 | `blackboard.agent` | Reading and writing a board from an agent | The agent |

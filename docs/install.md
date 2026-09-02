@@ -10,7 +10,7 @@ The distribution is named `blackboardx` and the import name is `blackboard`.
 from blackboard import create_model
 ```
 
-It requires Python 3.11 or later, and the base install has no runtime dependencies. Neither board it ships needs one: `InMemoryStore` holds the record in the process, and `SqliteStore` uses `sqlite3` from the standard library. The package ships `py.typed`, so type checkers use its annotations without a stub package.
+It requires Python 3.11 or later, and the base install has no runtime dependencies. Neither store the base install ships needs one: `InMemoryStore` holds the record in the process, and `SqliteStore` uses `sqlite3` from the standard library. The package ships `py.typed`, so type checkers use its annotations without a stub package.
 
 ## Extras
 
@@ -31,7 +31,7 @@ pip install 'blackboardx[postgres]'
 pip install 'blackboardx[mongodb]'
 ```
 
-Naming a board whose extra is not installed raises an `ImportError` saying which extra supplies it. [Storage](concepts/storage.md) covers the choice.
+Naming a store whose extra is not installed raises an `ImportError` saying which extra supplies it: `MongoStore needs the 'mongodb' extra: pip install 'blackboardx[mongodb]'`. [Storage](concepts/storage.md) covers the choice.
 
 A blackboard that reaches its agents over HTTP adds the transport:
 
@@ -65,12 +65,12 @@ Several at once is a comma. There is no `all` extra: `postgres` and `mongodb` ar
 
 | Ships | Does not ship |
 | --- | --- |
-| `SqliteStore`, `PostgresStore`, `MongoStore` | Any HTTP server, and any route it would serve |
+| `InMemoryStore`, `SqliteStore`, `PostgresStore`, `MongoStore` | Any HTTP server, and any route it would serve |
 | The `BoardStore` protocol, for any other database | Any agent implementation |
-| The control component and model creation | Any process supervisor |
+| The control component, and `create_model` and `attach_model` | Any process supervisor |
 | `HttpNotifier`, which sends to agents over HTTP | Any database server, credential, or migration tool |
 | `BoardService`, which answers an agent's requests | Any authentication or authorisation |
-| `BoardClient`, which an agent calls a blackboard with | |
+| `BoardClient` and `AsyncBoardClient`, which an agent calls a blackboard with | |
 | The conformance suite, for a store of your own | |
 | The wire bodies both halves encode and decode | Any queue that survives a restart |
 | `SystemClock` and `ManualClock` | |

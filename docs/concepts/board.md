@@ -29,7 +29,7 @@ An application does that reading itself.
 
 ```python
 state = board.read_premise("case")
-board.set("case", {**state.value, "window": "20:00-22:00"}, state.version)
+board.set_premise("case", {**state.value, "window": "20:00-22:00"}, state.version)
 ```
 
 The writer reads the current value, builds the whole new value from it, and writes that under the version it read. Two writers filling in different fields at the same moment lose nothing: the second is told the value moved, reads the newer one, and builds again from that.
@@ -47,9 +47,16 @@ Sequence assignment is the only point at which two writes wait on each other.
 Any caller may read anything, at any time. Reads bypass the control component entirely, so they consume no capacity and cannot be refused.
 
 ```python
+board.read_regions()  # what is declared, and of which kind
 board.read_level("platform", from_sequence=4)  # that level, from a bound
 board.read_premise("window")  # value and version
 board.read_board(from_sequence=4)  # every region, in order
+```
+
+A read needs the record and not the run. `reader_for` binds those four reads to one board of a store, and they answer from the record whether or not a run is open over it.
+
+```python
+board = reader_for(store, "incident-3391")
 ```
 
 Reads return snapshots, so mutating the returned list changes nothing. Content crosses the board as JSON and comes back detached from what the caller wrote, so mutating a stored object afterwards changes nothing a later reader sees. A tuple written comes back a list, and content JSON cannot carry raises `TypeError` before anything is stored.
