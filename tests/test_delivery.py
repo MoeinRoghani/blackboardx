@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from typing import Any
 
 import pytest
@@ -17,9 +18,9 @@ import pytest
 from blackboard import Agent, Notification, NotificationId
 from blackboard.delivery import (
     DeliveryFailed,
-    DeliveryFailure,
     DeliveryRefused,
     HttpNotifier,
+    Undelivered,
     default_backoff,
 )
 
@@ -143,7 +144,7 @@ def test_a_failed_delivery_is_retried_until_it_lands() -> None:
 
 
 def test_a_refusal_is_not_retried() -> None:
-    failures: list[DeliveryFailure] = []
+    failures: list[Undelivered] = []
     recorder = Recorder([DeliveryRefused("that is not a notification")])
     with HttpNotifier(
         transport=recorder, backoff=nowait, attempts=4, on_failure=failures.append
@@ -155,7 +156,7 @@ def test_a_refusal_is_not_retried() -> None:
 
 
 def test_giving_up_reports_the_failure() -> None:
-    failures: list[DeliveryFailure] = []
+    failures: list[Undelivered] = []
     recorder = Recorder([DeliveryFailed("no route")] * 9)
     with HttpNotifier(
         transport=recorder, backoff=nowait, attempts=3, on_failure=failures.append
@@ -190,11 +191,20 @@ def test_a_failing_agent_does_not_stop_the_next_notification() -> None:
     assert [body["notification_id"] for _, body in recorder.sent] == [1, 2]
 
 
-def test_closing_stops_the_transport_too() -> None:
+def test_a_supplied_transport_is_not_closed_by_the_notifier() -> None:
+    """The caller that opened it owns it, which is the rule the client follows."""
     recorder = Recorder()
     notifier = HttpNotifier(transport=recorder, backoff=nowait)
     notifier.close()
-    assert recorder.closed
+    assert not recorder.closed
+
+
+def test_a_transport_the_notifier_built_is_closed_with_it() -> None:
+    pytest.importorskip("httpx")
+    notifier = HttpNotifier(backoff=nowait)
+    inner = notifier._transport
+    notifier.close()
+    assert inner._client.is_closed  # type: ignore[attr-defined]
 
 
 def test_closing_twice_is_not_an_error() -> None:
@@ -204,7 +214,7 @@ def test_closing_twice_is_not_an_error() -> None:
 
 
 def test_a_notification_after_close_is_reported_rather_than_dropped() -> None:
-    failures: list[DeliveryFailure] = []
+    failures: list[Undelivered] = []
     recorder = Recorder()
     notifier = HttpNotifier(
         transport=recorder, backoff=nowait, on_failure=failures.append
@@ -218,7 +228,7 @@ def test_a_notification_after_close_is_reported_rather_than_dropped() -> None:
 
 
 def test_a_failure_report_that_raises_does_not_kill_the_lane() -> None:
-    def explode(failure: DeliveryFailure) -> None:
+    def explode(failure: Undelivered) -> None:
         raise RuntimeError("the metrics endpoint is down")
 
     recorder = Recorder([DeliveryRefused("no"), None])
@@ -275,14 +285,12 @@ class TestHttpxTransport:
             self.answering(self.answer(400)).send("https://ocp.example/notify", {})
 
     def test_a_503_is_worth_another_attempt(self) -> None:
-        with pytest.raises(DeliveryFailed) as raised:
+        with pytest.raises(DeliveryFailed):
             self.answering(self.answer(503)).send("https://ocp.example/notify", {})
-        assert not isinstance(raised.value, DeliveryRefused)
 
     def test_a_429_is_worth_another_attempt(self) -> None:
-        with pytest.raises(DeliveryFailed) as raised:
+        with pytest.raises(DeliveryFailed):
             self.answering(self.answer(429)).send("https://ocp.example/notify", {})
-        assert not isinstance(raised.value, DeliveryRefused)
 
     def test_retry_after_in_seconds_is_carried_out(self) -> None:
         answer = self.answer(429, {"Retry-After": "12"})
@@ -302,9 +310,8 @@ class TestHttpxTransport:
         def refuse(request: Any) -> Any:
             raise httpx.ConnectError("connection refused")
 
-        with pytest.raises(DeliveryFailed) as raised:
+        with pytest.raises(DeliveryFailed):
             self.answering(refuse).send("https://ocp.example/notify", {})
-        assert not isinstance(raised.value, DeliveryRefused)
 
     def test_the_body_arrives_as_json(self) -> None:
         seen: list[Any] = []
@@ -354,3 +361,99 @@ def test_a_run_reaches_its_agents_through_the_notifier() -> None:
     assert body["agent"] == "triage"
     assert body["regions"] == ["signals"]
     assert body["board_id"] == "board-1"
+
+
+class TestClosingReportsWhatItDrops:
+    """Closing must not return having silently kept a queue."""
+
+    def failing(self) -> Recorder:
+        return Recorder([DeliveryFailed("no route")] * 40)
+
+    def test_a_lane_parked_in_a_backoff_reports_before_close_returns(self) -> None:
+        failures: list[Undelivered] = []
+        recorder = self.failing()
+        notifier = HttpNotifier(
+            transport=recorder,
+            attempts=9,
+            backoff=lambda attempt, after: 30.0,
+            on_failure=failures.append,
+            close_timeout=0.2,
+        )
+        notify = notifier.to("https://ocp.example/notify")
+        for n in range(5):
+            notify(notification(notification_id=n + 1))
+        assert recorder.arrived.wait(5)
+        notifier.close()
+        assert len(failures) == 5
+
+    def test_closing_is_bounded_once_however_many_lanes(self) -> None:
+        recorder = self.failing()
+        notifier = HttpNotifier(
+            transport=recorder,
+            attempts=9,
+            backoff=lambda attempt, after: 30.0,
+            close_timeout=0.4,
+        )
+        for n in range(6):
+            notifier.to(f"https://agent-{n}.example/notify")(
+                notification(agent=f"a{n}", notification_id=n + 1)
+            )
+        assert recorder.arrived.wait(5)
+        started = time.monotonic()
+        notifier.close()
+        # Six lanes, each parked for 30s. Per-lane it would be 2.4s at best.
+        assert time.monotonic() - started < 2.0
+
+
+class TestReleasingOneLane:
+    def test_a_lane_closes_without_closing_the_notifier(self) -> None:
+        recorder = Recorder()
+        with HttpNotifier(transport=recorder, backoff=nowait) as notifier:
+            finished = notifier.to("https://done.example/notify")
+            still_running = notifier.to("https://live.example/notify")
+            finished.close()
+            still_running(notification(agent="live"))
+            assert recorder.arrived.wait(5)
+        assert [url for url, _ in recorder.sent] == ["https://live.example/notify"]
+
+    def test_a_closed_lane_reports_what_it_still_held(self) -> None:
+        failures: list[Undelivered] = []
+        recorder = Recorder([DeliveryFailed("no route")] * 20)
+        notifier = HttpNotifier(
+            transport=recorder,
+            attempts=9,
+            backoff=lambda attempt, after: 30.0,
+            on_failure=failures.append,
+            close_timeout=0.2,
+        )
+        lane = notifier.to("https://ocp.example/notify")
+        for n in range(3):
+            lane(notification(notification_id=n + 1))
+        assert recorder.arrived.wait(5)
+        lane.close()
+        notifier.close()
+        assert len(failures) == 3
+
+    def test_closing_a_lane_twice_is_not_an_error(self) -> None:
+        with HttpNotifier(transport=Recorder(), backoff=nowait) as notifier:
+            lane = notifier.to("https://ocp.example/notify")
+            lane.close()
+            lane.close()
+
+    def test_the_notifier_still_closes_after_its_lanes_did(self) -> None:
+        recorder = Recorder()
+        notifier = HttpNotifier(transport=recorder, backoff=nowait)
+        notifier.to("https://a.example/n").close()
+        notifier.to("https://b.example/n").close()
+        notifier.close()
+
+    def test_a_notification_after_a_lane_closed_is_reported(self) -> None:
+        failures: list[Undelivered] = []
+        with HttpNotifier(
+            transport=Recorder(), backoff=nowait, on_failure=failures.append
+        ) as notifier:
+            lane = notifier.to("https://ocp.example/notify")
+            lane.close()
+            lane(notification())
+        assert len(failures) == 1
+        assert failures[0].attempts == 0

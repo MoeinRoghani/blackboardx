@@ -42,6 +42,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
@@ -57,11 +58,12 @@ if TYPE_CHECKING:
 __all__ = [
     "MAX_BACKOFF",
     "DeliveryFailed",
-    "DeliveryFailure",
     "DeliveryRefused",
     "HttpNotifier",
     "HttpxTransport",
+    "Lane",
     "Transport",
+    "Undelivered",
     "default_backoff",
 ]
 
@@ -80,16 +82,17 @@ class DeliveryFailed(BlackboardError):
         self.retry_after = retry_after
 
 
-class DeliveryRefused(DeliveryFailed):
+class DeliveryRefused(BlackboardError):
     """A delivery the agent will refuse again.
 
     A 400, a 404, a 422. Sending the same body a second time produces the
-    same answer, so the notifier reports it rather than retrying.
+    same answer, so the notifier reports it rather than retrying. It is not
+    a ``DeliveryFailed``, because that one says another attempt might land.
     """
 
 
 @dataclass(frozen=True)
-class DeliveryFailure:
+class Undelivered:
     """What the notifier reports when it stops trying.
 
     ``attempts`` is how many times the transport was called, so it is zero
@@ -178,11 +181,66 @@ class _Sending:
     transport: Transport
     attempts: int
     backoff: Callable[[int, float | None], float]
-    report: Callable[[DeliveryFailure], None]
+    report: Callable[[Undelivered], None]
     stopping: threading.Event
 
 
+#: How long close waits, after cutting short every backoff, for the lanes to
+#: report what they are abandoning. They have nothing left to block on by
+#: then, so this is a scheduling margin rather than a timeout.
+_REPORTING_GRACE = 5.0
+
+
+def _either(mine: threading.Event, shared: threading.Event, seconds: float) -> bool:
+    """Waits for either event or for the time to pass. True if one was set.
+
+    A lane closed on its own must wake without cutting short the retries of
+    every other lane, so it watches its own event as well as the notifier's.
+    """
+    end = time.monotonic() + seconds
+    while not (mine.is_set() or shared.is_set()):
+        left = end - time.monotonic()
+        if left <= 0:
+            break
+        mine.wait(min(left, 0.05))
+    return mine.is_set() or shared.is_set()
+
+
 _STOP = object()
+
+
+class Lane:
+    """One agent's delivery lane: its queue, and the worker that drains it.
+
+    What :meth:`HttpNotifier.to` returns. Call it to deliver a notification,
+    which is why an ``Agent`` takes it directly as ``notify``. Close it when
+    the run that used it ends, which stops its worker and releases its queue
+    without closing the notifier or any other lane.
+    """
+
+    def __init__(self, notifier: HttpNotifier, inner: _Lane) -> None:
+        self._notifier = notifier
+        self._inner = inner
+
+    def __call__(self, notification: Notification) -> None:
+        """Queues one notification and returns, on the writer's thread."""
+        self._inner.enqueue(notification)
+
+    def close(self) -> None:
+        """Stops this lane and reports whatever it still held.
+
+        Returns once it has reported, so nothing is left queued behind a
+        closed lane. Closing twice does nothing the second time, and closing
+        after the notifier has closed is safe.
+        """
+        self._inner.shut(self._notifier._close_timeout, _REPORTING_GRACE)
+        self._notifier._release(self._inner)
+
+    def __enter__(self) -> Lane:
+        return self
+
+    def __exit__(self, *exception: object) -> None:
+        self.close()
 
 
 class HttpNotifier:
@@ -195,8 +253,10 @@ class HttpNotifier:
     up on, on the lane's own thread; a failure is logged at ``ERROR``
     whatever it does.
 
-    Closing drains what is queued, waiting up to ``close_timeout`` seconds,
-    and then closes the transport.
+    Closing drains what is queued, waiting up to ``close_timeout`` seconds in
+    total rather than per lane. Whatever is still queued then is reported
+    through ``on_failure`` before ``close`` returns. A transport the notifier
+    built is closed with it; one you supplied is yours to close.
     """
 
     def __init__(
@@ -205,11 +265,12 @@ class HttpNotifier:
         transport: Transport | None = None,
         attempts: int = 4,
         backoff: Callable[[int, float | None], float] = default_backoff,
-        on_failure: Callable[[DeliveryFailure], None] | None = None,
+        on_failure: Callable[[Undelivered], None] | None = None,
         close_timeout: float = 10.0,
     ) -> None:
         if attempts < 1:
             raise ValueError(f"attempts is at least 1, not {attempts}")
+        self._ours = transport is None
         self._transport = transport if transport is not None else HttpxTransport()
         self._on_failure = on_failure
         self._close_timeout = close_timeout
@@ -225,27 +286,36 @@ class HttpNotifier:
         self._lanes: list[_Lane] = []
         self._closed = False
 
-    def to(self, url: str) -> Callable[[Notification], None]:
-        """Returns the ``notify`` callable for one agent.
+    def to(self, url: str) -> Lane:
+        """Opens a lane to one agent and returns it.
 
-        Each call opens a lane of its own, so give every agent its own
-        callable even when they share an address. Two agents behind one
-        callable share a queue and take turns.
+        The lane is the ``notify`` callable an ``Agent`` is created with, and
+        it can be closed on its own. Each call opens a lane of its own, so
+        give every agent its own even when two share an address: two agents
+        behind one lane share a queue and take turns.
+
+        Close a lane when the run that used it ends. A notifier serving many
+        runs over its life would otherwise hold a queue and a thread for
+        every agent of every run it has ever served.
         """
-        lane = _Lane(url, self._sending)
+        inner = _Lane(url, self._sending)
         with self._lock:
             if self._closed:
                 raise RuntimeError("this notifier is closed")
-            self._lanes.append(lane)
-        return lane.enqueue
+            self._lanes.append(inner)
+        return Lane(self, inner)
 
     def close(self) -> None:
-        """Sends what is queued, stops the lanes, and closes the transport.
+        """Sends what is queued, stops the lanes, and returns.
 
-        Returns once every lane has stopped or ``close_timeout`` has passed.
-        Whatever is still queued at that point is reported through
-        ``on_failure`` by the lane that held it. Closing twice does nothing
-        the second time.
+        Waits up to ``close_timeout`` seconds in total, not per lane. A lane
+        still parked in a retry after that abandons it, and everything it
+        still holds is reported through ``on_failure`` before this returns.
+
+        A transport this notifier built is closed here. One that was supplied
+        is left open, because the caller that opened it owns it.
+
+        Closing twice does nothing the second time.
         """
         with self._lock:
             if self._closed:
@@ -254,10 +324,19 @@ class HttpNotifier:
             lanes = list(self._lanes)
         for lane in lanes:
             lane.stop()
+        # One deadline across every lane, not one each, so closing a notifier
+        # with five stuck lanes costs one timeout rather than five.
+        deadline = time.monotonic() + self._close_timeout
         for lane in lanes:
-            lane.join(self._close_timeout)
+            lane.join(max(0.0, deadline - time.monotonic()))
+        # Only now cut short whatever is still parked in a backoff wait. Doing
+        # it first would abandon a retry that had time left; doing it never
+        # left the lane holding its queue with nothing reported.
         self._stopping.set()
-        self._transport.close()
+        for lane in lanes:
+            lane.join(_REPORTING_GRACE)
+        if self._ours:
+            self._transport.close()
 
     def __enter__(self) -> HttpNotifier:
         return self
@@ -265,7 +344,12 @@ class HttpNotifier:
     def __exit__(self, *exception: object) -> None:
         self.close()
 
-    def _report(self, failure: DeliveryFailure) -> None:
+    def _release(self, lane: _Lane) -> None:
+        with self._lock:
+            if lane in self._lanes:
+                self._lanes.remove(lane)
+
+    def _report(self, failure: Undelivered) -> None:
         logger.error(
             "notification %d for %s was not delivered to %s after %d attempts: %s",
             failure.notification.notification_id,
@@ -288,6 +372,7 @@ class _Lane:
     def __init__(self, url: str, sending: _Sending) -> None:
         self._url = url
         self._sending = sending
+        self._abandon = threading.Event()
         self._queue: queue.SimpleQueue[Any] = queue.SimpleQueue()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -298,7 +383,7 @@ class _Lane:
         with self._lock:
             if self._stopped:
                 self._sending.report(
-                    DeliveryFailure(
+                    Undelivered(
                         url=self._url,
                         agent=notification.agent,
                         notification=notification,
@@ -315,6 +400,17 @@ class _Lane:
                 )
                 self._thread.start()
         self._queue.put(notification)
+
+    def shut(self, drain: float, grace: float) -> None:
+        """Stops the lane, lets it drain, then cuts short any retry it holds.
+
+        Returns once the lane has reported whatever it is abandoning, so a
+        caller that gets here has nothing left silently queued.
+        """
+        self.stop()
+        self.join(drain)
+        self._abandon.set()
+        self.join(grace)
 
     def stop(self) -> None:
         """Asks the lane to finish what is queued and end."""
@@ -347,7 +443,7 @@ class _Lane:
             if item is _STOP:
                 continue
             self._sending.report(
-                DeliveryFailure(
+                Undelivered(
                     url=self._url,
                     agent=item.agent,
                     notification=item,
@@ -388,7 +484,7 @@ class _Lane:
                     wait,
                     failed,
                 )
-                if self._sending.stopping.wait(wait):
+                if _either(self._abandon, self._sending.stopping, wait):
                     self._fail(notification, attempt, failed)
                     return
 
@@ -396,7 +492,7 @@ class _Lane:
         self, notification: Notification, attempts: int, error: Exception
     ) -> None:
         self._sending.report(
-            DeliveryFailure(
+            Undelivered(
                 url=self._url,
                 agent=notification.agent,
                 notification=notification,
