@@ -14,6 +14,35 @@ socket.
 One `Control` serves one board, so the service holds the runs it is
 responsible for and `control_for` finds the one a request names.
 
+Give it the store as well and a read is answered from the record when no run
+is held, so any replica answers a read for any board the store holds:
+
+```python
+service = BoardService(control_for=runs.get, store=store, prefix="/v1")
+```
+
+Writes still need the run, and answer 404 without one. A board the store never
+held answers 404 either way.
+
+`on_open` and `on_closed` on `create_model` and `attach_model` are how `runs`
+fills and empties:
+
+```python
+def route(model):
+    runs[model.control.board_id] = model.control
+
+
+def forget(outcome):
+    runs.pop(board_id, None)
+
+
+model = create_model(..., on_open=route, on_closed=forget)
+```
+
+`on_open` runs before the first agent is woken, which matters because waking
+an agent runs its callback on this thread: without it, an agent that reads
+back through this service meets 404 for the board that is creating it.
+
 === "FastAPI"
 
     ```python

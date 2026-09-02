@@ -526,6 +526,15 @@ class _BoundReader:
         return self._store.read_regions(self._board_id)
 
 
+def reader_for(store: BoardStore, board_id: str) -> BoardReader:
+    """Returns a read handle over one board of a store, with no run behind it.
+
+    A read needs the record and not the run, so a process holding the store
+    can serve one for any board in it. Writing needs a ``Control``.
+    """
+    return _BoundReader(store, board_id)
+
+
 @runtime_checkable
 class AgentBoard(Protocol):
     """One board, as one agent sees it: what an agent body is written against.
@@ -651,6 +660,7 @@ class Control:
         store: BoardStore,
         clock: Clock,
         adopt: bool = False,
+        on_closed: Callable[[RunOutcome], None] | None = None,
     ) -> None:
         resolved = limits
         self._board_id = board_id
@@ -669,11 +679,13 @@ class Control:
         self._issued: set[tuple[str, NotificationId]] = set()
         self._outstanding: dict[tuple[str, NotificationId], _Outstanding] = {}
         self._next_notification_id = 1
+        self._closing: list[RunOutcome] = []
         self._delivery_queue: deque[_Delivery] = deque()
         self._delivering = threading.local()
         self._termination_predicate = termination_predicate
         self._limits = resolved
         self._outcome: RunOutcome | None = None
+        self._on_closed = on_closed
         self._wall_call: ScheduledCall | None = None
         self._idle_call: ScheduledCall | None = None
         self._idle_generation = 0
@@ -940,6 +952,7 @@ class Control:
         """Closes the run as aborted. A run already closed keeps its outcome."""
         with self._lock:
             self._close_locked(Aborted(reason=reason))
+        self._tell_closed()
 
     def outcome(self) -> RunOutcome | None:
         """Returns the closed run's outcome, or nothing while the run is open."""
@@ -1193,7 +1206,13 @@ class Control:
             predicate = self._termination_predicate
             if predicate is None:
                 self._close_locked(Settled(unfinished=self._unfinished_locked()))
-                return
+                closed = True
+            else:
+                closed = False
+        if closed:
+            self._tell_closed()
+            return
+        assert predicate is not None
         decision = predicate(self._reader)
         with self._lock:
             if self._outcome is not None or generation != self._idle_generation:
@@ -1202,6 +1221,7 @@ class Control:
                 self._close_locked(Settled(unfinished=self._unfinished_locked()))
             else:
                 self._touch_idle_locked()
+        self._tell_closed()
 
     def _check_completion(self) -> None:
         """Records that something happened, which pushes the idle deadline out.
@@ -1262,12 +1282,25 @@ class Control:
         self._outstanding.clear()
         self._audit.append(RunClosed(at=self._clock.now(), outcome=outcome))
         self._condition.notify_all()
+        self._closing.append(outcome)
+
+    def _tell_closed(self) -> None:
+        # Called with the lock released, once, on whichever thread closed the
+        # run. Application code at the boundary, so a raise here must not
+        # reach the writer that happened to be the one to close it.
+        while self._closing:
+            outcome = self._closing.pop()
+            if self._on_closed is None:
+                continue
+            with suppress(Exception):
+                self._on_closed(outcome)
 
     def _wall_clock_expired(self) -> None:
         with self._lock:
             if self._outcome is not None:
                 return
             self._close_locked(WallClockExpired(unfinished=self._unfinished_locked()))
+        self._tell_closed()
 
     def _refuse_region(
         self, writer: str, region: str, expected: _RegionKind

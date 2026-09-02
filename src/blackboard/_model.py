@@ -19,7 +19,7 @@ registers itself instead.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 
@@ -41,6 +41,7 @@ from blackboard._control import (
     PremiseError,
     RunClosedError,
     RunLimits,
+    RunOutcome,
     TerminationPredicate,
 )
 
@@ -69,6 +70,8 @@ def create_model(
     termination_predicate: TerminationPredicate | None = None,
     limits: RunLimits,
     clock: Clock | None = None,
+    on_open: Callable[[Model], None] | None = None,
+    on_closed: Callable[[RunOutcome], None] | None = None,
 ) -> Model:
     """Opens a run and returns the model.
 
@@ -120,13 +123,16 @@ def create_model(
         board_id=board_id,
         store=store,
         clock=clock if clock is not None else SystemClock(),
+        on_closed=on_closed,
     )
+    model = Model(reader=control.reader, control=control)
     # The wall clock can expire while the run is opening, in which case the
     # model returns already closed, no premise receives its value, and no
     # agent is registered.
     try:
         with suppress(RunClosedError):
             control._open_premises(dict(premises))
+            _opened(on_open, model)
             # After the premises, so that each agent's one notification
             # covers the values they opened with.
             for agent in roster:
@@ -138,7 +144,7 @@ def create_model(
         # model the caller never received.
         control.abort(f"creation failed: {failed}")
         raise
-    return Model(reader=control.reader, control=control)
+    return model
 
 
 def attach_model(
@@ -151,6 +157,8 @@ def attach_model(
     termination_predicate: TerminationPredicate | None = None,
     limits: RunLimits,
     clock: Clock | None = None,
+    on_open: Callable[[Model], None] | None = None,
+    on_closed: Callable[[RunOutcome], None] | None = None,
 ) -> Model:
     """Opens a run over a board that already holds a record.
 
@@ -190,15 +198,30 @@ def attach_model(
         store=store,
         clock=clock if clock is not None else SystemClock(),
         adopt=True,
+        on_closed=on_closed,
     )
+    model = Model(reader=control.reader, control=control)
     try:
         with suppress(RunClosedError):
+            _opened(on_open, model)
             for agent in roster:
                 control.register_agent(agent)
     except BaseException as failed:
         control.abort(f"attaching failed: {failed}")
         raise
-    return Model(reader=control.reader, control=control)
+    return model
+
+
+def _opened(on_open: Callable[[Model], None] | None, model: Model) -> None:
+    """Tells the caller the run exists, before any agent is woken.
+
+    Application code at the library's boundary, so an exception here is
+    suppressed rather than left to abort a run that has already opened.
+    """
+    if on_open is None:
+        return
+    with suppress(Exception):
+        on_open(model)
 
 
 def _agree(
