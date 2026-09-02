@@ -5,13 +5,14 @@ import threading
 from collections.abc import Iterator
 
 import pytest
+from conformance import Bound
 
 from blackboard import (
     BoardChange,
     Conflict,
     Contribution,
     DuplicateRegionError,
-    InMemoryBoard,
+    InMemoryStore,
     Level,
     Premise,
     PremiseState,
@@ -22,8 +23,19 @@ from blackboard import (
 )
 
 
-def make_board() -> InMemoryBoard:
-    return InMemoryBoard([Level("application"), Level("platform"), Premise("window")])
+def make_board() -> Bound:
+    """One board inside a fresh store, with the regions these tests use."""
+    board = Bound(InMemoryStore(), "test-board")
+    for region in (Level("application"), Level("platform"), Premise("window")):
+        board.declare(region)
+    return board
+
+
+def _board_with(*regions: Level | Premise) -> Bound:
+    board = Bound(InMemoryStore(), "test-board")
+    for region in regions:
+        board.declare(region)
+    return board
 
 
 @pytest.fixture
@@ -141,7 +153,7 @@ class TestSet:
     def test_concurrent_register_writers_lose_no_update(
         self, frequent_thread_switches: None
     ) -> None:
-        board = InMemoryBoard([Premise("namespace")])
+        board = _board_with(Premise("namespace"))
         board.set("namespace", [], expected_version=0)
         barrier = threading.Barrier(8)
 

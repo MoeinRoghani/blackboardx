@@ -51,23 +51,28 @@ class Model:
 
 def create_model(
     *,
+    board_id: str,
+    store: BoardStore,
     regions: Iterable[Level | Premise],
     premises: Mapping[str, object],
     agents: Iterable[Agent] | None = None,
     admission_rule: AdmissionRule | None = None,
     termination_predicate: TerminationPredicate | None = None,
     limits: RunLimits,
-    board: BoardStore,
     clock: Clock | None = None,
 ) -> Model:
     """Opens a run and returns the model.
 
     ``limits`` carries the run's wall clock and idle durations.
 
-    ``board`` says where the record is kept and has no default, because a
-    run whose record no second process can read is not a shared solution
-    model. ``SqliteBoard`` serves one machine; an adapter against your own
-    database serves a deployment.
+    ``board_id`` names this board inside the store. The caller supplies it,
+    because only the caller knows what identifies a run in its own system.
+    The library never reads it.
+
+    ``store`` says where the record is kept and has no default, because a run
+    whose record no second process can read is not a shared solution model.
+    One store serves every board an application runs. ``SqliteStore`` serves
+    one machine; an adapter against your own database serves a deployment.
 
     ``agents`` names the agents the run starts with. Each is registered
     once the premises hold their opening values, so each receives one
@@ -91,7 +96,8 @@ def create_model(
         admission_rule=admission_rule,
         termination_predicate=termination_predicate,
         limits=limits,
-        board=board,
+        board_id=board_id,
+        store=store,
         clock=clock if clock is not None else SystemClock(),
     )
     # The wall clock can expire while the run is opening, in which case the

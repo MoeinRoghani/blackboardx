@@ -63,7 +63,7 @@ _PREMISE = "premise"
 _Result = TypeVar("_Result")
 
 
-class MongoBoard:
+class MongoStore:
     """Keeps the board in MongoDB. Satisfies ``BoardStore``.
 
     ``database`` is the application's own ``pymongo.database.Database``, and
@@ -89,15 +89,14 @@ class MongoBoard:
     whatever migration the application already runs.
     """
 
-    def __init__(self, database: Database[Any], *, board_id: str = "default") -> None:
+    def __init__(self, database: Database[Any]) -> None:
         self._database = database
-        self._board_id = board_id
 
     @classmethod
     @contextmanager
     def from_uri(
-        cls, uri: str, database: str, *, board_id: str = "default", **client_kwargs: Any
-    ) -> Iterator[MongoBoard]:
+        cls, uri: str, database: str, **client_kwargs: Any
+    ) -> Iterator[MongoStore]:
         """Opens a client for the duration of a ``with`` block, for a script or test.
 
         An application that already runs a client passes its database to the
@@ -105,7 +104,7 @@ class MongoBoard:
         """
         client: MongoClient[Any] = MongoClient(uri, **client_kwargs)
         try:
-            yield cls(client[database], board_id=board_id)
+            yield cls(client[database])
         finally:
             client.close()
 
@@ -128,7 +127,7 @@ class MongoBoard:
             [("board_id", ASCENDING), ("region", ASCENDING), ("sequence", ASCENDING)]
         )
 
-    def declare(self, region: Level | Premise) -> None:
+    def declare(self, board_id: str, region: Level | Premise) -> None:
         if not isinstance(region, Level | Premise):
             raise TypeError(
                 "a region declaration is a Level or a Premise, "
@@ -137,19 +136,19 @@ class MongoBoard:
         kind = _LEVEL if isinstance(region, Level) else _PREMISE
 
         def work(session: Any) -> None:
-            if self._kind_of(region.name, session) is not None:
+            if self._kind_of(board_id, region.name, session) is not None:
                 raise DuplicateRegionError(
                     f"a region named {region.name!r} is already declared"
                 )
             self._database[_BOARDS].update_one(
-                {"_id": self._board_id},
+                {"_id": board_id},
                 {"$setOnInsert": {"next_sequence": 1}},
                 upsert=True,
                 session=session,
             )
             try:
                 self._database[_REGIONS].insert_one(
-                    {"board_id": self._board_id, "name": region.name, "kind": kind},
+                    {"board_id": board_id, "name": region.name, "kind": kind},
                     session=session,
                 )
             except Exception as clash:  # pragma: no cover - a race on one name
@@ -161,7 +160,7 @@ class MongoBoard:
             if kind == _PREMISE:
                 self._database[_PREMISES].insert_one(
                     {
-                        "board_id": self._board_id,
+                        "board_id": board_id,
                         "name": region.name,
                         "value": None,
                         "version": 0,
@@ -171,15 +170,15 @@ class MongoBoard:
 
         self._in_a_transaction(work)
 
-    def append(self, level: str, content: object) -> int:
+    def append(self, board_id: str, level: str, content: object) -> int:
         carried = _as_json(content)
 
         def work(session: Any) -> int:
-            self._require(level, _LEVEL, session)
-            sequence = self._take_sequence(session)
+            self._require(board_id, level, _LEVEL, session)
+            sequence = self._take_sequence(session, board_id)
             self._database[_CONTRIBUTIONS].insert_one(
                 {
-                    "board_id": self._board_id,
+                    "board_id": board_id,
                     "sequence": sequence,
                     "region": level,
                     "content": carried,
@@ -191,21 +190,21 @@ class MongoBoard:
         return self._in_a_transaction(work)
 
     def set(
-        self, premise: str, value: object, expected_version: int
+        self, board_id: str, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
         carried = _as_json(value)
         losses: list[Conflict] = []
 
         def work(session: Any) -> Written | None:
             losses.clear()
-            self._require(premise, _PREMISE, session)
+            self._require(board_id, premise, _PREMISE, session)
             # The version guard comes first, so a write that loses it never
             # touches the counter. That is what keeps a conflict from taking
             # a sequence number, and it keeps three of every four writers in
             # a race off the one document they would all abort against.
             updated = self._database[_PREMISES].find_one_and_update(
                 {
-                    "board_id": self._board_id,
+                    "board_id": board_id,
                     "name": premise,
                     "version": expected_version,
                 },
@@ -215,13 +214,17 @@ class MongoBoard:
             )
             if updated is None:
                 losses.append(
-                    Conflict(current_version=self._current_version(premise, session))
+                    Conflict(
+                        current_version=self._current_version(
+                            board_id, premise, session
+                        )
+                    )
                 )
                 return None
-            sequence = self._take_sequence(session)
+            sequence = self._take_sequence(session, board_id)
             self._database[_CONTRIBUTIONS].insert_one(
                 {
-                    "board_id": self._board_id,
+                    "board_id": board_id,
                     "sequence": sequence,
                     "region": premise,
                     "content": carried,
@@ -233,13 +236,15 @@ class MongoBoard:
         written = self._in_a_transaction(work)
         return losses[0] if written is None else written
 
-    def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
-        self._require(level, _LEVEL, None)
+    def read_level(
+        self, board_id: str, level: str, from_sequence: int = 0
+    ) -> list[Contribution]:
+        self._require(board_id, level, _LEVEL, None)
         documents = (
             self._database[_CONTRIBUTIONS]
             .find(
                 {
-                    "board_id": self._board_id,
+                    "board_id": board_id,
                     "region": level,
                     "sequence": {"$gte": from_sequence},
                 }
@@ -253,10 +258,10 @@ class MongoBoard:
             for document in documents
         ]
 
-    def read_premise(self, premise: str) -> PremiseState:
-        self._require(premise, _PREMISE, None)
+    def read_premise(self, board_id: str, premise: str) -> PremiseState:
+        self._require(board_id, premise, _PREMISE, None)
         document = self._database[_PREMISES].find_one(
-            {"board_id": self._board_id, "name": premise}
+            {"board_id": board_id, "name": premise}
         )
         if document is None or int(document["version"]) == 0:
             raise UnsetPremiseError(
@@ -264,10 +269,10 @@ class MongoBoard:
             )
         return PremiseState(value=document["value"], version=int(document["version"]))
 
-    def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
         documents = (
             self._database[_CONTRIBUTIONS]
-            .find({"board_id": self._board_id, "sequence": {"$gte": from_sequence}})
+            .find({"board_id": board_id, "sequence": {"$gte": from_sequence}})
             .sort("sequence", ASCENDING)
         )
         return [
@@ -298,15 +303,15 @@ class MongoBoard:
         except OperationFailure as failure:
             if _needs_a_replica_set(failure):
                 raise NotImplementedError(
-                    "MongoBoard needs a replica set or a sharded cluster, because "
+                    "MongoStore needs a replica set or a sharded cluster, because "
                     "every write spans two documents and is therefore a "
                     "transaction. A standalone server cannot run one."
                 ) from failure
             raise
 
-    def _take_sequence(self, session: Any) -> int:
+    def _take_sequence(self, session: Any, board_id: str) -> int:
         document = self._database[_BOARDS].find_one_and_update(
-            {"_id": self._board_id},
+            {"_id": board_id},
             {"$inc": {"next_sequence": 1}},
             return_document=ReturnDocument.BEFORE,
             session=session,
@@ -315,24 +320,24 @@ class MongoBoard:
             # A write can only reach here through a declared region, and
             # declaring one opens the board.
             raise UndeclaredRegionError(
-                f"no board is open under the identifier {self._board_id!r}"
+                f"no board is open under the identifier {board_id!r}"
             )
         return int(document["next_sequence"])
 
-    def _kind_of(self, name: str, session: Any = None) -> str | None:
+    def _kind_of(self, board_id: str, name: str, session: Any = None) -> str | None:
         document = self._database[_REGIONS].find_one(
-            {"board_id": self._board_id, "name": name}, session=session
+            {"board_id": board_id, "name": name}, session=session
         )
         return None if document is None else str(document["kind"])
 
-    def _current_version(self, premise: str, session: Any) -> int:
+    def _current_version(self, board_id: str, premise: str, session: Any) -> int:
         document = self._database[_PREMISES].find_one(
-            {"board_id": self._board_id, "name": premise}, session=session
+            {"board_id": board_id, "name": premise}, session=session
         )
         return 0 if document is None else int(document["version"])
 
-    def _require(self, name: str, kind: str, session: Any) -> None:
-        found = self._kind_of(name, session)
+    def _require(self, board_id: str, name: str, kind: str, session: Any) -> None:
+        found = self._kind_of(board_id, name, session)
         if found is None:
             raise UndeclaredRegionError(f"no region is declared with the name {name!r}")
         if found != kind:

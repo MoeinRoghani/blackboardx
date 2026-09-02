@@ -8,7 +8,7 @@ from blackboard import (
     BoardStore,
     Conflict,
     Contribution,
-    InMemoryBoard,
+    InMemoryStore,
     Level,
     ManualClock,
     Premise,
@@ -31,36 +31,38 @@ class RecordingBoard:
     """A board that satisfies the protocol and records what it was asked to do."""
 
     def __init__(self) -> None:
-        self._inner = InMemoryBoard()
+        self._inner = InMemoryStore()
         self.calls: list[str] = []
 
-    def declare(self, region: Level | Premise) -> None:
+    def declare(self, board_id: str, region: Level | Premise) -> None:
         self.calls.append(f"declare:{region.name}")
-        self._inner.declare(region)
+        self._inner.declare(board_id, region)
 
-    def append(self, level: str, content: object) -> int:
+    def append(self, board_id: str, level: str, content: object) -> int:
         self.calls.append(f"append:{level}")
-        return self._inner.append(level, content)
+        return self._inner.append(board_id, level, content)
 
     def set(
-        self, premise: str, value: object, expected_version: int
+        self, board_id: str, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
         self.calls.append(f"set:{premise}")
-        return self._inner.set(premise, value, expected_version)
+        return self._inner.set(board_id, premise, value, expected_version)
 
-    def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
-        return self._inner.read_level(level, from_sequence)
+    def read_level(
+        self, board_id: str, level: str, from_sequence: int = 0
+    ) -> list[Contribution]:
+        return self._inner.read_level(board_id, level, from_sequence)
 
-    def read_premise(self, premise: str) -> PremiseState:
-        return self._inner.read_premise(premise)
+    def read_premise(self, board_id: str, premise: str) -> PremiseState:
+        return self._inner.read_premise(board_id, premise)
 
-    def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
-        return self._inner.read_board(from_sequence)
+    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
+        return self._inner.read_board(board_id, from_sequence)
 
 
 def test_a_substitute_board_satisfies_the_protocol() -> None:
     store: BoardStore = RecordingBoard()
-    assert isinstance(store.read_board(), list)
+    assert isinstance(store.read_board("test-board"), list)
 
 
 def test_the_control_component_drives_the_supplied_board() -> None:
@@ -70,7 +72,8 @@ def test_the_control_component_drives_the_supplied_board() -> None:
         premises={"window": "w"},
         limits=LIMITS,
         termination_predicate=keep_open,
-        board=store,
+        board_id="test-board",
+        store=store,
         clock=ManualClock(start=START),
     )
     assert model.control.write("ocp", "platform", "finding") == Written(sequence=2)
@@ -89,7 +92,8 @@ def test_without_one_the_in_memory_board_is_used() -> None:
         limits=LIMITS,
         termination_predicate=keep_open,
         clock=ManualClock(start=START),
-        board=InMemoryBoard(),
+        board_id="test-board",
+        store=InMemoryStore(),
     )
     assert model.control.write("ocp", "platform", "finding") == Written(sequence=1)
     assert [c.content for c in model.reader.read_level("platform")] == ["finding"]

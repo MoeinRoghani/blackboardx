@@ -8,7 +8,7 @@ from blackboard import (
     Agent,
     BoardReader,
     DuplicateAgentError,
-    InMemoryBoard,
+    InMemoryStore,
     Level,
     ManualClock,
     Notification,
@@ -62,7 +62,8 @@ def make_control(clock: ManualClock, *agents: Agent) -> Control:
         termination_predicate=keep_open,
         limits=LIMITS,
         clock=clock,
-        board=InMemoryBoard(),
+        board_id="test-board",
+        store=InMemoryStore(),
     )
     for declared in agents:
         control.register_agent(declared)
@@ -85,6 +86,7 @@ class TestZeroWindowDispatch:
         control.set_premise("operator", "window", "w", expected_version=0)
         expected = [
             Notification(
+                board_id="test-board",
                 notification_id=NotificationId(nid),
                 agent=name,
                 from_sequence=1,
@@ -311,7 +313,8 @@ class TestStaleTimerCalls:
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=clock,
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         recorder = Recorder()
         control.register_agent(
@@ -388,7 +391,8 @@ class TestChainedWakes:
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=clock,
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         control_holder.append(control)
         for name, target in (("a", "rb"), ("b", "ra")):

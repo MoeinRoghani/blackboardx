@@ -7,7 +7,7 @@ import pytest
 from blackboard import (
     Agent,
     DuplicateAgentError,
-    InMemoryBoard,
+    InMemoryStore,
     Level,
     ManualClock,
     Model,
@@ -30,7 +30,8 @@ def a_model(agents: list[Agent] | None = None) -> Model:
         agents=agents,
         limits=LIMITS,
         clock=ManualClock(start=START),
-        board=InMemoryBoard(),
+        board_id="test-board",
+        store=InMemoryStore(),
     )
 
 

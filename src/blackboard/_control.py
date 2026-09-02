@@ -60,9 +60,12 @@ from blackboard._clock import Clock, ScheduledCall
 
 
 class BoardStore(Protocol):
-    """The operations the control component performs on a board.
+    """The operations the control component performs on a store.
 
-    ``InMemoryBoard`` and ``SqliteBoard`` satisfy it, as does any adapter an
+    A store holds many boards. Every call names the board it acts on, so one
+    connection to a database serves every board an application runs.
+
+    ``InMemoryStore`` and ``SqliteStore`` satisfy it, as does any adapter an
     application writes against its own database. The control component names
     no concrete type, and holds every implementation to one conformance suite.
 
@@ -71,29 +74,31 @@ class BoardStore(Protocol):
     cannot carry raises ``TypeError`` before anything is stored.
     """
 
-    def declare(self, region: Level | Premise) -> None:
-        """Creates a region."""
+    def declare(self, board_id: str, region: Level | Premise) -> None:
+        """Creates a region on one board."""
         ...
 
-    def append(self, level: str, content: object) -> int:
+    def append(self, board_id: str, level: str, content: object) -> int:
         """Adds one contribution to a level and returns its sequence number."""
         ...
 
     def set(
-        self, premise: str, value: object, expected_version: int
+        self, board_id: str, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
         """Replaces a premise's value under the version the caller expects."""
         ...
 
-    def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
+    def read_level(
+        self, board_id: str, level: str, from_sequence: int = 0
+    ) -> list[Contribution]:
         """Returns a level's contributions from the sequence bound, inclusive."""
         ...
 
-    def read_premise(self, premise: str) -> PremiseState:
+    def read_premise(self, board_id: str, premise: str) -> PremiseState:
         """Returns a premise's current value and version."""
         ...
 
-    def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
         """Returns every write to every region, in sequence order, from the bound."""
         ...
 
@@ -209,6 +214,7 @@ class Notification:
     """
 
     notification_id: NotificationId
+    board_id: str
     agent: str
     from_sequence: int
     to_sequence: int
@@ -407,6 +413,30 @@ class _RegionKind(Enum):
     PREMISE = "premise"
 
 
+class _BoundReader:
+    """A read handle on one board of a store.
+
+    The store names a board on every call. A rule, a predicate and the model
+    read one board and should not repeat its identifier, so this binds it.
+    """
+
+    def __init__(self, store: BoardStore, board_id: str) -> None:
+        self._store = store
+        self._board_id = board_id
+
+    def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
+        """Returns a level's contributions from the sequence bound, inclusive."""
+        return self._store.read_level(self._board_id, level, from_sequence)
+
+    def read_premise(self, premise: str) -> PremiseState:
+        """Returns a premise's current value and version."""
+        return self._store.read_premise(self._board_id, premise)
+
+    def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
+        """Returns every write to every region, in sequence order, from the bound."""
+        return self._store.read_board(self._board_id, from_sequence)
+
+
 class Control:
     """The control component's write path, over the board it is given.
 
@@ -423,11 +453,14 @@ class Control:
         admission_rule: AdmissionRule | None = None,
         termination_predicate: TerminationPredicate | None = None,
         limits: RunLimits,
-        board: BoardStore,
+        board_id: str,
+        store: BoardStore,
         clock: Clock,
     ) -> None:
         resolved = limits
-        self._board: BoardStore = board
+        self._board_id = board_id
+        self._store: BoardStore = store
+        self._reader = _BoundReader(store, board_id)
         self._clock = clock
         self._admission_rule = (
             admission_rule if admission_rule is not None else _accept_every_write
@@ -459,14 +492,14 @@ class Control:
     @property
     def reader(self) -> BoardReader:
         """The board's read side. Reads bypass the control component entirely."""
-        return self._board
+        return self._reader
 
     def declare(self, region: Level | Premise) -> None:
         """Creates a region on the board and records its kind."""
         with self._lock:
             if self._outcome is not None:
                 raise RunClosedError("the run has closed")
-            self._board.declare(region)
+            self._store.declare(self._board_id, region)
             if isinstance(region, Level):
                 self._kinds[region.name] = _RegionKind.LEVEL
             else:
@@ -509,7 +542,9 @@ class Control:
                     continue
                 if kind is _RegionKind.PREMISE and self._has_value(name):
                     state.pending[name] = now + self._batch_windows[name]
-                elif kind is _RegionKind.LEVEL and self._board.read_level(name):
+                elif kind is _RegionKind.LEVEL and self._store.read_level(
+                    self._board_id, name
+                ):
                     state.pending[name] = now
             delivery = self._evaluate_dispatch_locked(state, now)
             if delivery is not None:
@@ -521,7 +556,7 @@ class Control:
     def _has_value(self, premise: str) -> bool:
         # Callers hold self._lock.
         try:
-            self._board.read_premise(premise)
+            self._store.read_premise(self._board_id, premise)
         except UnsetPremiseError:
             return False
         return True
@@ -544,7 +579,7 @@ class Control:
                     f"{writer!r} may not write to {level!r}",
                 )
         proposed = ProposedContribution(writer=writer, level=level, content=content)
-        verdict = self._admission_rule(proposed, self._board)
+        verdict = self._admission_rule(proposed, self._reader)
         deliveries: list[_Delivery] = []
         result: Written | Rejected
         if isinstance(verdict, Reject):
@@ -557,7 +592,7 @@ class Control:
                 if gate is not None:
                     result = gate
                 else:
-                    sequence = self._board.append(level, content)
+                    sequence = self._store.append(self._board_id, level, content)
                     self._last_sequence = sequence
                     self._audit.append(
                         WriteAccepted(
@@ -586,7 +621,7 @@ class Control:
             value=value,
             expected_version=expected_version,
         )
-        verdict = self._admission_rule(proposed, self._board)
+        verdict = self._admission_rule(proposed, self._reader)
         deliveries: list[_Delivery] = []
         result: Written | Conflict | Rejected
         if isinstance(verdict, Reject):
@@ -599,7 +634,9 @@ class Control:
                 if gate is not None:
                     result = gate
                 else:
-                    result = self._board.set(premise, value, expected_version)
+                    result = self._store.set(
+                        self._board_id, premise, value, expected_version
+                    )
                     if isinstance(result, Written):
                         self._last_sequence = result.sequence
                         self._audit.append(
@@ -738,7 +775,9 @@ class Control:
                 raise PremiseError("; ".join(parts))
             now = self._clock.now()
             for premise, value in premises.items():
-                result = self._board.set(premise, value, expected_version=0)
+                result = self._store.set(
+                    self._board_id, premise, value, expected_version=0
+                )
                 assert isinstance(result, Written)  # a fresh premise cannot conflict
                 assert result.version is not None  # a premise write carries one
                 self._last_sequence = result.sequence
@@ -780,6 +819,7 @@ class Control:
         self._next_notification_id += 1
         notification = Notification(
             notification_id=notification_id,
+            board_id=self._board_id,
             agent=state.declaration.name,
             from_sequence=state.cursor + 1,
             to_sequence=self._last_sequence,
@@ -859,7 +899,7 @@ class Control:
             if predicate is None:
                 self._close_locked(Settled(unfinished=self._unfinished_locked()))
                 return
-        decision = predicate(self._board)
+        decision = predicate(self._reader)
         with self._lock:
             if self._outcome is not None or generation != self._idle_generation:
                 return

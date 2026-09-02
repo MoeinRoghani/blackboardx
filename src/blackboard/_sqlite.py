@@ -64,7 +64,7 @@ _LEVEL = "level"
 _PREMISE = "premise"
 
 
-class SqliteBoard:
+class SqliteStore:
     """Keeps the board in SQLite. Satisfies ``BoardStore``.
 
     ``path`` names the database file. The default, ``":memory:"``, keeps it
@@ -79,9 +79,8 @@ class SqliteBoard:
     migrate separately and the file is the application's own.
     """
 
-    def __init__(self, path: str = ":memory:", *, board_id: str = "default") -> None:
+    def __init__(self, path: str = ":memory:") -> None:
         self._path = path
-        self._board_id = board_id
         self._lock = threading.Lock()
         self._connection = sqlite3.connect(path, check_same_thread=False)
         self._connection.executescript(_SCHEMA)
@@ -92,7 +91,7 @@ class SqliteBoard:
         with self._lock:
             self._connection.close()
 
-    def declare(self, region: Level | Premise) -> None:
+    def declare(self, board_id: str, region: Level | Premise) -> None:
         if not isinstance(region, Level | Premise):
             raise TypeError(
                 "a region declaration is a Level or a Premise, "
@@ -100,14 +99,14 @@ class SqliteBoard:
             )
         kind = _LEVEL if isinstance(region, Level) else _PREMISE
         with self._lock, self._connection:
-            if self._kind_of(region.name) is not None:
+            if self._kind_of(board_id, region.name) is not None:
                 raise DuplicateRegionError(
                     f"a region named {region.name!r} is already declared"
                 )
             try:
                 self._connection.execute(
                     "INSERT INTO regions (board_id, name, kind) VALUES (?, ?, ?)",
-                    (self._board_id, region.name, kind),
+                    (board_id, region.name, kind),
                 )
             except sqlite3.IntegrityError as clash:
                 # Another connection declared the name between the read above
@@ -119,64 +118,66 @@ class SqliteBoard:
                 self._connection.execute(
                     "INSERT INTO premises (board_id, name, value, version) "
                     "VALUES (?, ?, NULL, 0)",
-                    (self._board_id, region.name),
+                    (board_id, region.name),
                 )
 
-    def append(self, level: str, content: object) -> int:
+    def append(self, board_id: str, level: str, content: object) -> int:
         carried = json.dumps(content)
         with self._lock, self._connection:
-            self._require(level, _LEVEL)
-            sequence = self._next_sequence()
+            self._require(board_id, level, _LEVEL)
+            sequence = self._next_sequence(board_id)
             self._connection.execute(
                 "INSERT INTO contributions (board_id, sequence, region, content) "
                 "VALUES (?, ?, ?, ?)",
-                (self._board_id, sequence, level, carried),
+                (board_id, sequence, level, carried),
             )
             return sequence
 
     def set(
-        self, premise: str, value: object, expected_version: int
+        self, board_id: str, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
         carried = json.dumps(value)
         with self._lock, self._connection:
-            self._require(premise, _PREMISE)
+            self._require(board_id, premise, _PREMISE)
             row = self._connection.execute(
                 "SELECT version FROM premises WHERE board_id = ? AND name = ?",
-                (self._board_id, premise),
+                (board_id, premise),
             ).fetchone()
             current = int(row[0])
             if expected_version != current:
                 return Conflict(current_version=current)
-            sequence = self._next_sequence()
+            sequence = self._next_sequence(board_id)
             self._connection.execute(
                 "UPDATE premises SET value = ?, version = ? "
                 "WHERE board_id = ? AND name = ?",
-                (carried, current + 1, self._board_id, premise),
+                (carried, current + 1, board_id, premise),
             )
             self._connection.execute(
                 "INSERT INTO contributions (board_id, sequence, region, content) "
                 "VALUES (?, ?, ?, ?)",
-                (self._board_id, sequence, premise, carried),
+                (board_id, sequence, premise, carried),
             )
             return Written(sequence=sequence, version=current + 1)
 
-    def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
+    def read_level(
+        self, board_id: str, level: str, from_sequence: int = 0
+    ) -> list[Contribution]:
         with self._lock:
-            self._require(level, _LEVEL)
+            self._require(board_id, level, _LEVEL)
             rows = self._connection.execute(
                 "SELECT sequence, content FROM contributions "
                 "WHERE board_id = ? AND region = ? AND sequence >= ? "
                 "ORDER BY sequence",
-                (self._board_id, level, from_sequence),
+                (board_id, level, from_sequence),
             ).fetchall()
         return [Contribution(sequence=r[0], content=json.loads(r[1])) for r in rows]
 
-    def read_premise(self, premise: str) -> PremiseState:
+    def read_premise(self, board_id: str, premise: str) -> PremiseState:
         with self._lock:
-            self._require(premise, _PREMISE)
+            self._require(board_id, premise, _PREMISE)
             row = self._connection.execute(
                 "SELECT value, version FROM premises WHERE board_id = ? AND name = ?",
-                (self._board_id, premise),
+                (board_id, premise),
             ).fetchone()
         if int(row[1]) == 0:
             raise UnsetPremiseError(
@@ -184,29 +185,29 @@ class SqliteBoard:
             )
         return PremiseState(value=json.loads(row[0]), version=int(row[1]))
 
-    def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
         with self._lock:
             rows = self._connection.execute(
                 "SELECT sequence, region, content FROM contributions "
                 "WHERE board_id = ? AND sequence >= ? ORDER BY sequence",
-                (self._board_id, from_sequence),
+                (board_id, from_sequence),
             ).fetchall()
         return [
             BoardChange(sequence=r[0], region=r[1], content=json.loads(r[2]))
             for r in rows
         ]
 
-    def _kind_of(self, name: str) -> str | None:
+    def _kind_of(self, board_id: str, name: str) -> str | None:
         # Callers hold self._lock.
         row = self._connection.execute(
             "SELECT kind FROM regions WHERE board_id = ? AND name = ?",
-            (self._board_id, name),
+            (board_id, name),
         ).fetchone()
         return None if row is None else str(row[0])
 
-    def _require(self, name: str, kind: str) -> None:
+    def _require(self, board_id: str, name: str, kind: str) -> None:
         # Callers hold self._lock.
-        found = self._kind_of(name)
+        found = self._kind_of(board_id, name)
         if found is None:
             raise UndeclaredRegionError(f"no region is declared with the name {name!r}")
         if found != kind:
@@ -218,12 +219,12 @@ class SqliteBoard:
                 f"{name!r} names a level, and this operation takes a premise"
             )
 
-    def _next_sequence(self) -> int:
+    def _next_sequence(self, board_id: str) -> int:
         # Callers hold self._lock. One counter across every region of this
         # board, taken from the record itself so that reopening a file
         # continues where it left off.
         row: Any = self._connection.execute(
             "SELECT COALESCE(MAX(sequence), 0) FROM contributions WHERE board_id = ?",
-            (self._board_id,),
+            (board_id,),
         ).fetchone()
         return int(row[0]) + 1

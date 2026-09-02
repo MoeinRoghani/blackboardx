@@ -9,13 +9,13 @@ Read [what is durable and what is not](#what-is-durable-and-what-is-not) before 
 | Part | What it is | Ours |
 | --- | --- | --- |
 | `blackboardx` | This package | yes |
-| Storage adapter | A `BoardStore` implementation against your database | `PostgresBoard` or `MongoBoard`, or you write one |
+| Storage adapter | A `BoardStore` implementation against your database | `PostgresStore` or `MongoStore`, or you write one |
 | Blackboard service | A container importing the library, serving HTTP | yes |
 | Agent client | A small package agents import, wrapping the HTTP calls | yes |
 | Database | One primary you already run | no |
 | Agents | Independent deployments | no |
 
-The package ships `PostgresBoard` and `MongoBoard` for a deployment and `SqliteBoard` for one machine, all satisfying the `BoardStore` protocol. Against any other database the six methods are yours to write: three read, three write, and both reconciliation rules map onto ordinary primitives. [Storage](storage.md) covers what each has to guarantee.
+The package ships `PostgresStore` and `MongoStore` for a deployment and `SqliteStore` for one machine, all satisfying the `BoardStore` protocol. Against any other database the six methods are yours to write: three read, three write, and both reconciliation rules map onto ordinary primitives. [Storage](storage.md) covers what each has to guarantee.
 
 ## What is durable and what is not
 

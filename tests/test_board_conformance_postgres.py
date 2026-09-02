@@ -13,7 +13,7 @@ from uuid import uuid4
 import pytest
 from conformance import BoardConformance, SharedStoreConformance
 
-from blackboard import BoardStore, PostgresBoard
+from blackboard import BoardStore, PostgresStore
 
 DSN = os.environ.get("BLACKBOARD_TEST_POSTGRES_DSN")
 
@@ -28,64 +28,58 @@ def pool() -> Iterator[object]:
 
     assert DSN is not None
     with ConnectionPool(DSN, min_size=1, max_size=8) as opened:
-        PostgresBoard(opened).create_schema()
+        PostgresStore(opened).create_schema()
         yield opened
 
 
-class TestPostgresBoard(BoardConformance):
+class TestPostgresStore(BoardConformance):
     @pytest.fixture
-    def board(self, pool: object) -> BoardStore:
-        return PostgresBoard(pool, board_id=str(uuid4()))  # type: ignore[arg-type]
+    def store(self, pool: object) -> BoardStore:
+        return PostgresStore(pool)  # type: ignore[arg-type]
 
 
 class TestPostgresHoldsManyBoards(SharedStoreConformance):
     @pytest.fixture
-    def two_boards(self, pool: object) -> tuple[BoardStore, BoardStore]:
-        return (
-            PostgresBoard(pool, board_id=str(uuid4())),  # type: ignore[arg-type]
-            PostgresBoard(pool, board_id=str(uuid4())),  # type: ignore[arg-type]
-        )
-
-    @pytest.fixture
-    def same_board_twice(self, pool: object) -> tuple[BoardStore, BoardStore]:
-        board_id = str(uuid4())
-        return (
-            PostgresBoard(pool, board_id=board_id),  # type: ignore[arg-type]
-            PostgresBoard(pool, board_id=board_id),  # type: ignore[arg-type]
-        )
+    def store(self, pool: object) -> BoardStore:
+        return PostgresStore(pool)  # type: ignore[arg-type]
 
 
 def test_create_schema_runs_against_a_database_that_already_has_it(
     pool: object,
 ) -> None:
-    PostgresBoard(pool).create_schema()  # type: ignore[arg-type]
+    PostgresStore(pool).create_schema()  # type: ignore[arg-type]
 
 
 def test_a_run_survives_the_process_that_made_it(pool: object) -> None:
-    board_id = str(uuid4())
     from blackboard import Level, Premise
 
-    first = PostgresBoard(pool, board_id=board_id)  # type: ignore[arg-type]
-    first.declare(Level("platform"))
-    first.declare(Premise("window"))
-    first.set("window", ["t1", "t2"], expected_version=0)
-    first.append("platform", {"findings": ["oom"]})
+    board = str(uuid4())
+    first = PostgresStore(pool)  # type: ignore[arg-type]
+    first.declare(board, Level("platform"))
+    first.declare(board, Premise("window"))
+    first.set(board, "window", ["t1", "t2"], expected_version=0)
+    first.append(board, "platform", {"findings": ["oom"]})
 
-    # A second adapter over the same database is what another pod holds.
-    second = PostgresBoard(pool, board_id=board_id)  # type: ignore[arg-type]
-    assert second.read_premise("window").value == ["t1", "t2"]
-    assert [c.content for c in second.read_level("platform")] == [{"findings": ["oom"]}]
-    assert second.append("platform", "later") == 3
+    # A second store over the same database is what another pod holds.
+    second = PostgresStore(pool)  # type: ignore[arg-type]
+    assert second.read_premise(board, "window").value == ["t1", "t2"]
+    assert [c.content for c in second.read_level(board, "platform")] == [
+        {"findings": ["oom"]}
+    ]
+    assert second.append(board, "platform", "later") == 3
 
 
 def test_a_conflict_takes_no_sequence_number(pool: object) -> None:
     from blackboard import Conflict, Level, Premise
 
-    board = PostgresBoard(pool, board_id=str(uuid4()))  # type: ignore[arg-type]
-    board.declare(Level("platform"))
-    board.declare(Premise("window"))
-    board.set("window", "w1", expected_version=0)
-    assert board.set("window", "w2", expected_version=0) == Conflict(current_version=1)
+    board = str(uuid4())
+    store = PostgresStore(pool)  # type: ignore[arg-type]
+    store.declare(board, Level("platform"))
+    store.declare(board, Premise("window"))
+    store.set(board, "window", "w1", expected_version=0)
+    assert store.set(board, "window", "w2", expected_version=0) == Conflict(
+        current_version=1
+    )
     # The number the conflicting write took went back, so the next write
     # takes 2 rather than 3 and the record has no hole in it.
-    assert board.append("platform", "next") == 2
+    assert store.append(board, "platform", "next") == 2

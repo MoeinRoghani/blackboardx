@@ -11,7 +11,7 @@ from blackboard import (
     Premise,
     RunLimits,
     Settled,
-    SqliteBoard,
+    SqliteStore,
     create_model,
 )
 
@@ -19,11 +19,12 @@ notifications = []
 
 # 1. Declare the regions, open the premises, and name the agents.
 model = create_model(
+    board_id="incident-4471",
+    store=SqliteStore("incidents.sqlite3"),
     regions=[Level("platform"), Premise("window")],
     premises={"window": ["2026-08-16T20:00", "2026-08-16T22:00"]},
     agents=[Agent(name="ocp", notify=notifications.append)],
     limits=RunLimits(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
-    board=SqliteBoard("incident.sqlite3"),
 )
 
 # 2. Each agent was woken as the run opened.
@@ -52,7 +53,7 @@ The contribution has sequence 2 because the opening premise write took sequence 
 
 **Regions** are the named parts of the board. A `Level` holds what the agents worked out; a `Premise` holds something the work was given. [The board](concepts/board.md) describes what each holds and what a write to each one does.
 
-**The board** is where the record is kept. It is a required argument, because a run has to write somewhere a reader can find it. `SqliteBoard` suits one machine; a deployment passes an adapter for its own database. [Storage](concepts/storage.md) covers the choice.
+**The store** is where the record is kept, and **the board id** says which board inside it this run is. One store holds many boards, so a service builds one store and creates many boards in it. [Storage](concepts/storage.md) covers the choice of store.
 
 **The opening premises** give every declared premise its first value. They must name each one exactly once.
 
