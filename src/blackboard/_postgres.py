@@ -37,6 +37,7 @@ from blackboard._board import (
     Conflict,
     Contribution,
     DuplicateRegionError,
+    IdempotencyKeyError,
     Level,
     Premise,
     PremiseState,
@@ -62,12 +63,18 @@ CREATE TABLE IF NOT EXISTS blackboard_regions (
     PRIMARY KEY (board_id, name)
 );
 CREATE TABLE IF NOT EXISTS blackboard_contributions (
-    board_id TEXT   NOT NULL,
-    sequence BIGINT NOT NULL,
-    region   TEXT   NOT NULL,
-    content  JSONB  NOT NULL,
+    board_id        TEXT   NOT NULL,
+    sequence        BIGINT NOT NULL,
+    region          TEXT   NOT NULL,
+    content         JSONB  NOT NULL,
+    version         BIGINT,
+    idempotency_key TEXT,
     PRIMARY KEY (board_id, sequence)
 );
+ALTER TABLE blackboard_contributions
+    ADD COLUMN IF NOT EXISTS version BIGINT;
+ALTER TABLE blackboard_contributions
+    ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
 CREATE TABLE IF NOT EXISTS blackboard_premises (
     board_id TEXT   NOT NULL,
     name     TEXT   NOT NULL,
@@ -77,6 +84,9 @@ CREATE TABLE IF NOT EXISTS blackboard_premises (
 );
 CREATE INDEX IF NOT EXISTS blackboard_contributions_by_region
     ON blackboard_contributions (board_id, region, sequence);
+CREATE UNIQUE INDEX IF NOT EXISTS blackboard_contributions_by_key
+    ON blackboard_contributions (board_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 """
 
 _LEVEL = "level"
@@ -172,20 +182,53 @@ class PostgresStore:
                     (board_id, region.name),
                 )
 
-    def append(self, board_id: str, level: str, content: object) -> int:
+    def _already_written(
+        self, connection: Any, board_id: str, idempotency_key: str | None, region: str
+    ) -> Written | None:
+        if idempotency_key is None:
+            return None
+        row = connection.execute(
+            "SELECT sequence, region, version FROM blackboard_contributions "
+            "WHERE board_id = %s AND idempotency_key = %s",
+            (board_id, idempotency_key),
+        ).fetchone()
+        if row is None:
+            return None
+        if row[1] != region:
+            raise IdempotencyKeyError(
+                f"{idempotency_key!r} named {row[1]!r} and is now naming {region!r}"
+            )
+        return Written(sequence=int(row[0]), version=row[2], repeated=True)
+
+    def append(
+        self,
+        board_id: str,
+        level: str,
+        content: object,
+        idempotency_key: str | None = None,
+    ) -> Written:
         carried = json.dumps(content)
         with self._pool.connection() as connection, connection.transaction():
             self._require(connection, board_id, level, _LEVEL)
+            done = self._already_written(connection, board_id, idempotency_key, level)
+            if done is not None:
+                return done
             sequence = self._take_sequence(connection, board_id)
             connection.execute(
                 "INSERT INTO blackboard_contributions "
-                "(board_id, sequence, region, content) VALUES (%s, %s, %s, %s::jsonb)",
-                (board_id, sequence, level, carried),
+                "(board_id, sequence, region, content, idempotency_key) "
+                "VALUES (%s, %s, %s, %s::jsonb, %s)",
+                (board_id, sequence, level, carried, idempotency_key),
             )
-            return sequence
+            return Written(sequence=sequence)
 
     def set(
-        self, board_id: str, premise: str, value: object, expected_version: int
+        self,
+        board_id: str,
+        premise: str,
+        value: object,
+        expected_version: int,
+        idempotency_key: str | None = None,
     ) -> Written | Conflict:
         carried = json.dumps(value)
         outcome: Written | Conflict
@@ -193,6 +236,11 @@ class PostgresStore:
             try:
                 with connection.transaction():
                     self._require(connection, board_id, premise, _PREMISE)
+                    done = self._already_written(
+                        connection, board_id, idempotency_key, premise
+                    )
+                    if done is not None:
+                        return done
                     # Taking the sequence first locks the board row, so no
                     # concurrent write to this board can interleave with the
                     # conditional update below.
@@ -215,10 +263,17 @@ class PostgresStore:
                         # number.
                         raise _RollBack
                     connection.execute(
-                        "INSERT INTO blackboard_contributions "
-                        "(board_id, sequence, region, content) "
-                        "VALUES (%s, %s, %s, %s::jsonb)",
-                        (board_id, sequence, premise, carried),
+                        "INSERT INTO blackboard_contributions (board_id, sequence,"
+                        " region, content, version, idempotency_key) "
+                        "VALUES (%s, %s, %s, %s::jsonb, %s, %s)",
+                        (
+                            board_id,
+                            sequence,
+                            premise,
+                            carried,
+                            int(updated[0]),
+                            idempotency_key,
+                        ),
                     )
                     outcome = Written(sequence=sequence, version=int(updated[0]))
             except _RollBack:

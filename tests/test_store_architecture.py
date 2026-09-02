@@ -43,9 +43,9 @@ class TestOneStoreManyBoards:
         store = InMemoryStore()
         for name in ("board-a", "board-b"):
             store.declare(name, Level("platform"))
-        assert store.append("board-a", "platform", "one") == 1
-        assert store.append("board-a", "platform", "two") == 2
-        assert store.append("board-b", "platform", "one") == 1
+        assert store.append("board-a", "platform", "one").sequence == 1
+        assert store.append("board-a", "platform", "two").sequence == 2
+        assert store.append("board-b", "platform", "one").sequence == 1
 
     def test_a_region_declared_on_one_board_is_undeclared_on_the_other(self) -> None:
         store = InMemoryStore()

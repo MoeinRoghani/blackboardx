@@ -38,15 +38,28 @@ class RecordingBoard:
         self.calls.append(f"declare:{region.name}")
         self._inner.declare(board_id, region)
 
-    def append(self, board_id: str, level: str, content: object) -> int:
+    def append(
+        self,
+        board_id: str,
+        level: str,
+        content: object,
+        idempotency_key: str | None = None,
+    ) -> Written:
         self.calls.append(f"append:{level}")
-        return self._inner.append(board_id, level, content)
+        return self._inner.append(board_id, level, content, idempotency_key)
 
     def set(
-        self, board_id: str, premise: str, value: object, expected_version: int
+        self,
+        board_id: str,
+        premise: str,
+        value: object,
+        expected_version: int,
+        idempotency_key: str | None = None,
     ) -> Written | Conflict:
         self.calls.append(f"set:{premise}")
-        return self._inner.set(board_id, premise, value, expected_version)
+        return self._inner.set(
+            board_id, premise, value, expected_version, idempotency_key
+        )
 
     def read_level(
         self,

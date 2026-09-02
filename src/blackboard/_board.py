@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from typing import Any
 
@@ -46,6 +46,15 @@ class DuplicateRegionError(BlackboardError):
 
 class RegionKindError(BlackboardError):
     """An operation that takes a level named a premise, or the reverse."""
+
+
+class IdempotencyKeyError(BlackboardError):
+    """An idempotency key was used for a region it did not name before.
+
+    A key names one write. Sending it again for a different region is a
+    caller's mistake rather than a retry, and the store refuses it instead of
+    silently answering with the write it does name.
+    """
 
 
 class UnsetPremiseError(BlackboardError):
@@ -81,10 +90,14 @@ class Written:
 
     ``version`` is the premise's new revision count. A level write leaves
     it ``None``, because a level holds no version to replace.
+
+    ``repeated`` says the store had already written this idempotency key and
+    answered with what that write produced. Nothing was added.
     """
 
     sequence: int
     version: int | None = None
+    repeated: bool = False
 
 
 @dataclass(frozen=True)
@@ -127,6 +140,28 @@ class _BoardState:
     levels: dict[str, list[Contribution]] = field(default_factory=dict)
     premises: dict[str, PremiseState | None] = field(default_factory=dict)
     changes: list[BoardChange] = field(default_factory=list)
+    #: Every idempotency key this board has written, and what it produced.
+    keys: dict[str, tuple[str, Written]] = field(default_factory=dict)
+
+
+def _already_written(
+    board: _BoardState, idempotency_key: str | None, region: str
+) -> Written | None:
+    """Returns what this key already produced, or ``None`` if it is new.
+
+    A key that named a different region is a mistake rather than a retry.
+    """
+    if idempotency_key is None:
+        return None
+    seen = board.keys.get(idempotency_key)
+    if seen is None:
+        return None
+    named, written = seen
+    if named != region:
+        raise IdempotencyKeyError(
+            f"{idempotency_key!r} named {named!r} and is now naming {region!r}"
+        )
+    return replace(written, repeated=True)
 
 
 class InMemoryStore:
@@ -169,33 +204,53 @@ class InMemoryStore:
             else:
                 board.premises[region.name] = None
 
-    def append(self, board_id: str, level: str, content: object) -> int:
-        """Adds one contribution to a level and returns its sequence number."""
+    def append(
+        self,
+        board_id: str,
+        level: str,
+        content: object,
+        idempotency_key: str | None = None,
+    ) -> Written:
+        """Adds one contribution to a level and returns where it landed."""
         carried = _as_json(content)
         with self._lock:
             board = self._board(board_id)
             contributions = self._level_contributions(board, level)
+            done = _already_written(board, idempotency_key, level)
+            if done is not None:
+                return done
             board.sequence += 1
             contributions.append(Contribution(sequence=board.sequence, content=carried))
             board.changes.append(
                 BoardChange(sequence=board.sequence, region=level, content=carried)
             )
-            return board.sequence
+            written = Written(sequence=board.sequence)
+            if idempotency_key is not None:
+                board.keys[idempotency_key] = (level, written)
+            return written
 
     def set(
-        self, board_id: str, premise: str, value: object, expected_version: int
+        self,
+        board_id: str,
+        premise: str,
+        value: object,
+        expected_version: int,
+        idempotency_key: str | None = None,
     ) -> Written | Conflict:
         """Replaces a premise's value under the version the caller expects.
 
         A write naming any version other than the premise's current one fails:
         it returns a conflict carrying the current version, takes no sequence
         number, and leaves the premise unchanged. A premise never written has
-        version 0.
+        version 0. A conflict writes nothing, so it uses up no key.
         """
         carried = _as_json(value)
         with self._lock:
             board = self._board(board_id)
             state = self._premise_state(board, premise)
+            done = _already_written(board, idempotency_key, premise)
+            if done is not None:
+                return done
             current_version = 0 if state is None else state.version
             if expected_version != current_version:
                 return Conflict(current_version=current_version)
@@ -206,7 +261,10 @@ class InMemoryStore:
             board.changes.append(
                 BoardChange(sequence=board.sequence, region=premise, content=carried)
             )
-            return Written(sequence=board.sequence, version=current_version + 1)
+            written = Written(sequence=board.sequence, version=current_version + 1)
+            if idempotency_key is not None:
+                board.keys[idempotency_key] = (premise, written)
+            return written
 
     def read_level(
         self,

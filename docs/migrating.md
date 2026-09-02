@@ -2,6 +2,30 @@
 
 Every name that moved, what replaced it, and the release its old form stops working in.
 
+## 0.8 to 0.9
+
+A write may carry an idempotency key, so `BoardStore.append` answers with `Written` rather than a sequence number. Nothing else in the protocol changed shape.
+
+```python
+# 0.8
+sequence = store.append("incident-4471", "findings", {"cause": "a bad deploy"})
+```
+
+```python
+# 0.9
+written = store.append("incident-4471", "findings", {"cause": "a bad deploy"})
+written.sequence
+```
+
+Only a store of your own needs work. Add the parameter to `append` and to `set`, return `Written` from `append`, and read [an adapter of your own](concepts/storage.md#an-adapter-of-your-own) for what a key has to guarantee. The conformance suite decides whether you got it right.
+
+| Was | Is |
+| --- | --- |
+| `store.append(board_id, level, content) -> int` | `store.append(board_id, level, content, idempotency_key=None) -> Written` |
+| `store.set(board_id, premise, value, expected_version)` | the same, with `idempotency_key=None` after it |
+
+The four stores the library ships add what they need to a database an earlier version wrote. Nothing is migrated by hand.
+
 ## 0.7 to 0.8
 
 A store holds many boards. A board object no longer stands for one run.

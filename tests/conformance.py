@@ -16,6 +16,7 @@ from blackboard import (
     Conflict,
     Contribution,
     DuplicateRegionError,
+    IdempotencyKeyError,
     Level,
     Premise,
     PremiseState,
@@ -40,11 +41,20 @@ class Bound:
     def declare(self, region: Level | Premise) -> None:
         self.store.declare(self.board_id, region)
 
-    def append(self, level: str, content: object) -> int:
-        return self.store.append(self.board_id, level, content)
+    def append(self, level: str, content: object, key: str | None = None) -> int:
+        return self.appended(level, content, key).sequence
 
-    def set(self, premise: str, value: object, expected_version: int) -> object:
-        return self.store.set(self.board_id, premise, value, expected_version)
+    def appended(self, level: str, content: object, key: str | None = None) -> Written:
+        return self.store.append(self.board_id, level, content, key)
+
+    def set(
+        self,
+        premise: str,
+        value: object,
+        expected_version: int,
+        key: str | None = None,
+    ) -> Written | Conflict:
+        return self.store.set(self.board_id, premise, value, expected_version, key)
 
     def read_level(
         self, level: str, from_sequence: int = 0, limit: int | None = None
@@ -360,6 +370,76 @@ class BoardConformance:
     def test_a_board_with_no_regions_names_none(self, board: Bound) -> None:
         assert board.read_regions() == []
 
+    # A key names one write
+
+    def test_a_key_writes_once_however_often_it_is_sent(self, ready: Bound) -> None:
+        first = ready.appended("platform", {"n": 1}, key="k1")
+        again = ready.appended("platform", {"n": 1}, key="k1")
+        assert again.sequence == first.sequence
+        assert len(ready.read_level("platform")) == 1
+
+    def test_a_repeat_says_it_is_one(self, ready: Bound) -> None:
+        assert ready.appended("platform", {"n": 1}, key="k1").repeated is False
+        assert ready.appended("platform", {"n": 1}, key="k1").repeated is True
+
+    def test_a_repeat_takes_no_sequence_number(self, ready: Bound) -> None:
+        ready.appended("platform", {"n": 1}, key="k1")
+        ready.appended("platform", {"n": 1}, key="k1")
+        assert ready.append("platform", {"n": 2}) == 2
+
+    def test_a_repeat_leaves_what_the_first_write_stored(self, ready: Bound) -> None:
+        ready.appended("platform", {"n": 1}, key="k1")
+        ready.appended("platform", {"n": 999}, key="k1")
+        assert [c.content for c in ready.read_level("platform")] == [{"n": 1}]
+
+    def test_two_keys_are_two_writes(self, ready: Bound) -> None:
+        ready.appended("platform", {"n": 1}, key="k1")
+        ready.appended("platform", {"n": 1}, key="k2")
+        assert len(ready.read_level("platform")) == 2
+
+    def test_no_key_deduplicates_nothing(self, ready: Bound) -> None:
+        ready.append("platform", {"n": 1})
+        ready.append("platform", {"n": 1})
+        assert len(ready.read_level("platform")) == 2
+
+    def test_a_key_used_for_another_region_is_refused(self, ready: Bound) -> None:
+        ready.appended("platform", {"n": 1}, key="k1")
+        with pytest.raises(IdempotencyKeyError):
+            ready.appended("application", {"n": 1}, key="k1")
+
+    def test_a_refused_key_writes_nothing(self, ready: Bound) -> None:
+        ready.appended("platform", {"n": 1}, key="k1")
+        with pytest.raises(IdempotencyKeyError):
+            ready.appended("application", {"n": 1}, key="k1")
+        assert ready.read_level("application") == []
+
+    def test_a_refused_key_takes_no_sequence_number(self, ready: Bound) -> None:
+        ready.appended("platform", {"n": 1}, key="k1")
+        with pytest.raises(IdempotencyKeyError):
+            ready.appended("application", {"n": 1}, key="k1")
+        assert ready.append("platform", {"n": 2}) == 2
+
+    def test_a_premise_is_set_once_under_one_key(self, ready: Bound) -> None:
+        first = ready.set("window", "a", 0, key="k1")
+        assert isinstance(first, Written)
+        again = ready.set("window", "b", 0, key="k1")
+        assert again == Written(
+            sequence=first.sequence, version=first.version, repeated=True
+        )
+        assert ready.read_premise("window").value == "a"
+
+    def test_a_repeated_set_reaches_the_record_once(self, ready: Bound) -> None:
+        ready.set("window", "a", 0, key="k1")
+        ready.set("window", "a", 0, key="k1")
+        assert [c.region for c in ready.read_board()] == ["window"]
+
+    def test_a_conflicting_set_leaves_its_key_unused(self, ready: Bound) -> None:
+        ready.set("window", "a", 0)
+        assert isinstance(ready.set("window", "b", 0, key="k1"), Conflict)
+        current = ready.read_premise("window").version
+        assert isinstance(ready.set("window", "b", current, key="k1"), Written)
+        assert ready.read_premise("window").value == "b"
+
 
 class SharedStoreConformance:
     """Subclass this and supply a ``store`` fixture. One store, many boards.
@@ -461,3 +541,20 @@ class SharedStoreConformance:
         assert first.read_board() == [
             BoardChange(sequence=1, region="application", content="a")
         ]
+
+    def test_a_key_writes_once_across_two_views_of_one_board(
+        self, same_board_twice: tuple[Bound, Bound]
+    ) -> None:
+        first, second = same_board_twice
+        first.declare(Level("platform"))
+        first.appended("platform", {"n": 1}, key="k1")
+        assert second.appended("platform", {"n": 1}, key="k1").repeated is True
+        assert len(first.read_level("platform")) == 1
+
+    def test_a_key_on_one_board_does_not_silence_another(
+        self, two_boards: tuple[Bound, Bound]
+    ) -> None:
+        for board in two_boards:
+            board.declare(Level("platform"))
+            board.appended("platform", {"n": 1}, key="k1")
+        assert all(len(b.read_level("platform")) == 1 for b in two_boards)

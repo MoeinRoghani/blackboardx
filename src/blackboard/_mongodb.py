@@ -39,6 +39,7 @@ from blackboard._board import (
     Conflict,
     Contribution,
     DuplicateRegionError,
+    IdempotencyKeyError,
     Level,
     Premise,
     PremiseState,
@@ -126,6 +127,13 @@ class MongoStore:
         self._database[_CONTRIBUTIONS].create_index(
             [("board_id", ASCENDING), ("region", ASCENDING), ("sequence", ASCENDING)]
         )
+        # Partial, so the documents written before keys existed, which carry
+        # no idempotency_key at all, do not collide with one another.
+        self._database[_CONTRIBUTIONS].create_index(
+            [("board_id", ASCENDING), ("idempotency_key", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"idempotency_key": {"$type": "string"}},
+        )
 
     def declare(self, board_id: str, region: Level | Premise) -> None:
         if not isinstance(region, Level | Premise):
@@ -170,11 +178,46 @@ class MongoStore:
 
         self._in_a_transaction(work)
 
-    def append(self, board_id: str, level: str, content: object) -> int:
+    def _already_written(
+        self,
+        board_id: str,
+        idempotency_key: str | None,
+        region: str,
+        session: Any,
+    ) -> Written | None:
+        if idempotency_key is None:
+            return None
+        found = self._database[_CONTRIBUTIONS].find_one(
+            {"board_id": board_id, "idempotency_key": idempotency_key},
+            session=session,
+        )
+        if found is None:
+            return None
+        if found["region"] != region:
+            raise IdempotencyKeyError(
+                f"{idempotency_key!r} named {found['region']!r}"
+                f" and is now naming {region!r}"
+            )
+        return Written(
+            sequence=int(found["sequence"]),
+            version=found.get("version"),
+            repeated=True,
+        )
+
+    def append(
+        self,
+        board_id: str,
+        level: str,
+        content: object,
+        idempotency_key: str | None = None,
+    ) -> Written:
         carried = _as_json(content)
 
-        def work(session: Any) -> int:
+        def work(session: Any) -> Written:
             self._require(board_id, level, _LEVEL, session)
+            done = self._already_written(board_id, idempotency_key, level, session)
+            if done is not None:
+                return done
             sequence = self._take_sequence(session, board_id)
             self._database[_CONTRIBUTIONS].insert_one(
                 {
@@ -182,15 +225,22 @@ class MongoStore:
                     "sequence": sequence,
                     "region": level,
                     "content": carried,
+                    "version": None,
+                    "idempotency_key": idempotency_key,
                 },
                 session=session,
             )
-            return sequence
+            return Written(sequence=sequence)
 
         return self._in_a_transaction(work)
 
     def set(
-        self, board_id: str, premise: str, value: object, expected_version: int
+        self,
+        board_id: str,
+        premise: str,
+        value: object,
+        expected_version: int,
+        idempotency_key: str | None = None,
     ) -> Written | Conflict:
         carried = _as_json(value)
         losses: list[Conflict] = []
@@ -198,6 +248,9 @@ class MongoStore:
         def work(session: Any) -> Written | None:
             losses.clear()
             self._require(board_id, premise, _PREMISE, session)
+            done = self._already_written(board_id, idempotency_key, premise, session)
+            if done is not None:
+                return done
             # The version guard comes first, so a write that loses it never
             # touches the counter. That is what keeps a conflict from taking
             # a sequence number, and it keeps three of every four writers in
@@ -228,6 +281,8 @@ class MongoStore:
                     "sequence": sequence,
                     "region": premise,
                     "content": carried,
+                    "version": int(updated["version"]),
+                    "idempotency_key": idempotency_key,
                 },
                 session=session,
             )

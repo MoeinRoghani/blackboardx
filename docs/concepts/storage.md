@@ -164,15 +164,34 @@ Every store call names a board, and every row is scoped by it. Two boards under 
 
 `BoardStore` is the protocol, and it has seven methods. `declare`, `append` and `set` write. `read_level`, `read_premise`, `read_board` and `read_regions` read. Every one names the board it acts on first.
 
-A store records a region's name and its kind and nothing else, so `read_regions` returns a premise without the batch window it was declared with. The window tells the control component when to notify and is no part of the record. An implementation of those six is a board, and the control component names no concrete type.
+A store records a region's name and its kind and nothing else, so `read_regions` returns a premise without the batch window it was declared with. The window tells the control component when to notify and is no part of the record. An implementation of those seven is a store, and the control component names no concrete type.
 
-Two rules hold every implementation together, and the conformance suite in `tests/conformance.py` checks both against each one, the deployment adapters against real servers:
+Four rules hold every implementation together, and the conformance suite in `tests/conformance.py` checks each one against all of them, the deployment adapters against real servers:
 
 - **One counter.** Every write to any region takes the next number from a single sequence. The number is the position in the total order and the address of the write.
 - **Bounded reads.** Every collection read takes a maximum count, and a reader continues from one past the last sequence it received. A sequence number is the cursor rather than an offset, because an offset shifts when a concurrent write lands.
 - **Version-guarded premise writes.** A premise write names the version it expects to replace. If that is not the current version, the write returns `Conflict` carrying the current version, takes no sequence number, and changes nothing.
+- **A key writes once.** A write may carry an `idempotency_key`. A key the store has already written answers with what that write produced, marked `repeated`, and adds nothing. A key that named a different region raises `IdempotencyKeyError`. A conflicting premise write stores nothing, so it uses up no key. Keys belong to one board.
 
 Content crosses the protocol as JSON, because a deployed board crosses a process boundary. A tuple written comes back a list, and content JSON cannot carry raises `TypeError` before anything is stored. Every implementation behaves this way, including the in-memory one, so a test cannot pass against content a deployment would refuse.
+
+## Writing once, over a network that may repeat
+
+A write that crosses a network can be sent twice. The client sends it, the connection drops before the answer arrives, and the client cannot tell whether the board took it. Sending it again would append the contribution twice, and a level holding one finding twice is not the same board: an agent counting them counts wrong, and an admission rule reading them decides wrong.
+
+An idempotency key fixes that where it can be fixed. The caller names the write, and the store writes it once:
+
+```python
+outcome = store.append(board_id, "findings", {"cause": "a bad deploy"}, "write-8f21")
+if outcome.repeated:
+    ...  # an earlier attempt had already landed; this one added nothing
+```
+
+The key is stored on the contribution row rather than beside it. One insert writes the row and its key together, so they cannot disagree, and the uniqueness of the key is the database's to enforce rather than the adapter's to remember. That is what makes two processes writing under one key safe.
+
+A key names one write on one board. The same key on another board is another write, because two runs share nothing. A key sent for a region it did not name before raises `IdempotencyKeyError`, since that is a mistake rather than a retry. A key sent again for the region it did name returns the first write whatever content comes with it, so a retry sends what it sent before.
+
+`SqliteStore` and `PostgresStore` add the columns to a table written by an earlier version rather than assuming them, and `MongoStore` indexes the key only where one is present, so documents written before keys existed do not collide.
 
 ## Reading a board in pieces
 

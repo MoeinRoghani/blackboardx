@@ -78,14 +78,36 @@ class BoardStore(Protocol):
         """Creates a region on one board."""
         ...
 
-    def append(self, board_id: str, level: str, content: object) -> int:
-        """Adds one contribution to a level and returns its sequence number."""
+    def append(
+        self,
+        board_id: str,
+        level: str,
+        content: object,
+        idempotency_key: str | None = None,
+    ) -> Written:
+        """Adds one contribution to a level and returns where it landed.
+
+        ``idempotency_key`` names one write on one board. A key the store has
+        already written answers with what that write produced, marked
+        ``repeated``, and adds nothing. A key that named a different region
+        raises ``IdempotencyKeyError``, because that is a mistake rather than
+        a retry. Without a key nothing is deduplicated.
+        """
         ...
 
     def set(
-        self, board_id: str, premise: str, value: object, expected_version: int
+        self,
+        board_id: str,
+        premise: str,
+        value: object,
+        expected_version: int,
+        idempotency_key: str | None = None,
     ) -> Written | Conflict:
-        """Replaces a premise's value under the version the caller expects."""
+        """Replaces a premise's value under the version the caller expects.
+
+        ``idempotency_key`` works as it does for ``append``. A conflict
+        writes nothing, so it uses up no key.
+        """
         ...
 
     def read_level(
@@ -645,7 +667,8 @@ class Control:
                 if gate is not None:
                     result = gate
                 else:
-                    sequence = self._store.append(self._board_id, level, content)
+                    appended = self._store.append(self._board_id, level, content)
+                    sequence = appended.sequence
                     self._last_sequence = sequence
                     self._audit.append(
                         WriteAccepted(

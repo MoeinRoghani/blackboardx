@@ -1,12 +1,13 @@
 """The SQLite store is held to the same conformance suite, in memory and on disk."""
 
+import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from conformance import BoardConformance, SharedStoreConformance
 
-from blackboard import BoardStore, Level, Premise, SqliteStore
+from blackboard import BoardStore, Level, Premise, SqliteStore, Written
 
 
 class TestSqliteInProcess(BoardConformance):
@@ -51,5 +52,47 @@ def test_the_record_survives_the_process_that_made_it(tmp_path: Path) -> None:
     ]
     # The counter continues rather than restarting, so a later write cannot
     # take a sequence number an earlier one already holds.
-    assert reopened.append(board, "platform", "later") == 3
+    assert reopened.append(board, "platform", "later").sequence == 3
     reopened.close()
+
+
+_BEFORE_KEYS = """
+CREATE TABLE regions (
+    board_id TEXT NOT NULL, name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('level', 'premise')),
+    PRIMARY KEY (board_id, name));
+CREATE TABLE contributions (
+    board_id TEXT NOT NULL, sequence INTEGER NOT NULL,
+    region TEXT NOT NULL, content TEXT NOT NULL,
+    PRIMARY KEY (board_id, sequence));
+CREATE TABLE premises (
+    board_id TEXT NOT NULL, name TEXT NOT NULL, value TEXT,
+    version INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (board_id, name));
+INSERT INTO regions VALUES ('b1', 'platform', 'level');
+INSERT INTO contributions VALUES ('b1', 1, 'platform', '{"old": true}');
+"""
+
+
+def test_a_file_written_before_keys_existed_is_opened_and_written(
+    tmp_path: Path,
+) -> None:
+    """The columns are added where they are absent rather than assumed."""
+    path = str(tmp_path / "before.sqlite3")
+    older = sqlite3.connect(path)
+    older.executescript(_BEFORE_KEYS)
+    older.commit()
+    older.close()
+
+    store = SqliteStore(path)
+    try:
+        assert [c.content for c in store.read_level("b1", "platform")] == [
+            {"old": True}
+        ]
+        first = store.append("b1", "platform", {"new": True}, "k1")
+        assert first == Written(sequence=2)
+        assert store.append("b1", "platform", {"new": True}, "k1") == Written(
+            sequence=2, repeated=True
+        )
+        assert len(store.read_level("b1", "platform")) == 2
+    finally:
+        store.close()
