@@ -29,6 +29,7 @@ nav:
       - Overview: index.md
       - Installation: install.md
       - Quickstart: quickstart.md
+      - What this version does not do: limits.md
       - Migrating: migrating.md
   - Concepts:
       - The board: concepts/board.md

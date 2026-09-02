@@ -8,6 +8,8 @@ Later systems kept that arrangement and replaced the knowledge, HASP interpretin
 
 `blackboardx` is skeletal in that sense. It supplies the board, which stores what agents write and puts every write in one order, and the control component, which determines who is notified of a change, whether a write is admitted, and when the run ends. An application supplies its regions, their opening premise values, the agents the run starts with, an admission rule, a termination predicate, and limits.
 
+It also carries both halves of the conversation between a blackboard and agents deployed as their own services: the bodies and operations they share, the piece that answers an agent's request, the piece that sends a notification without making the writer wait, and the client an agent calls with. Your service keeps its own HTTP server, its routes, its authentication, and its database; neither half writes the protocol between them.
+
 The distribution name is `blackboardx`; the import name is `blackboard`. The documentation, including the API reference, is at <https://moeinroghani.github.io/blackboardx/>.
 
 ## Install
@@ -29,6 +31,8 @@ The base install has no runtime dependency: the board it ships, `SqliteStore`, i
 | [Concepts](https://moeinroghani.github.io/blackboardx/concepts/board/) | What the board, the control component and a run are |
 | [Storage](https://moeinroghani.github.io/blackboardx/concepts/storage/) | Where the record is kept, and what an adapter owes |
 | [Guides](https://moeinroghani.github.io/blackboardx/guides/writing-an-agent/) | Writing an agent, notifying over HTTP, admission rules, ending a run, testing |
+| [Serve a blackboard](https://moeinroghani.github.io/blackboardx/guides/serving-a-blackboard/) | Answering agents that run as their own services |
+| [What it does not do](https://moeinroghani.github.io/blackboardx/limits/) | Every limit of this version, in one place |
 | [API reference](https://moeinroghani.github.io/blackboardx/reference/) | Every exported name |
 
 ## Example

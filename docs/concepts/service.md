@@ -2,7 +2,7 @@
 
 The library is in-process. An application whose agents are separately deployed services puts one service in front of it, and that service is the only thing that imports the library and the only thing that reaches the database.
 
-Read [what is durable and what is not](#what-is-durable-and-what-is-not) before deciding how many replicas that service runs.
+Read [what is durable and what is not](#what-is-durable-and-what-is-not) before deciding how many replicas that service runs, and [what this version does not do](../limits.md) before deciding to build on it.
 
 ## The parts
 
@@ -32,7 +32,7 @@ A `Control` lives in one process. A second replica holding its own `Control` for
 
 So one board is served by one `Control` in one process at a time. The service is scaled by putting different boards on different replicas, and routed to by board identifier; it is not scaled by putting more replicas behind one board. A replica that dies is replaced, and the run it held is started again against the record it left.
 
-Making the run itself durable, so that a replacement resumes rather than restarts, means putting the registry, the outstanding notifications, and the deadlines in the database alongside the record. That is not in the library today.
+Making the run itself durable, so that a replacement resumes rather than restarts, means putting the registry, the outstanding notifications, and the deadlines in the database alongside the record. That is not in the library today, and `docs/design/durable-runs.md` in the repository sets out what it would take.
 
 A notification lost with the process usually costs nothing, since a notification carries no values and the next one covers the range a lost one would have covered. It costs something when the lost one is the last, and the run then waits until its idle limit closes it.
 
