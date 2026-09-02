@@ -52,3 +52,30 @@ jobs:
             exit 1
           fi
           echo "no parenthesis in the body"
+  breaking-carries-a-migration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: a breaking title carries a BREAKING CHANGE footer
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          if ! printf '%s' "$TITLE" | grep -qE '^[a-z]+(\([a-z-]+\))?!:'; then
+            echo "not a breaking title, nothing to check"
+            exit 0
+          fi
+          if printf '%s' "$BODY" | grep -q '^BREAKING CHANGE:'; then
+            echo "the body carries a BREAKING CHANGE footer"
+            exit 0
+          fi
+          echo "This title carries a '!', so the body needs a BREAKING CHANGE footer."
+          echo
+          echo "The squash merge writes this body into the commit message, and the"
+          echo "release notes are built from that message. Without the footer the"
+          echo "release says a break happened and never says how to migrate."
+          echo
+          echo "Add a line starting with 'BREAKING CHANGE:' stating what changed and"
+          echo "what a caller writes instead. CLAUDE.md requires both the '!' and the"
+          echo "footer, not either."
+          exit 1
