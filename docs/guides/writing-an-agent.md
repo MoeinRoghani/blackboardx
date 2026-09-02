@@ -62,6 +62,14 @@ model.control.register_agent(Agent(name="netops", notify=investigate))
 
 Either way the agent is woken immediately, covering every subscribed region that already holds something, because an agent that has just joined is out of date with the whole board.
 
+## Coming back after a restart
+
+An agent that restarts registers again under the same name. That replaces its declaration, including its callback address and its subscriptions, so a redeployed agent that moved to a new address is reached at the new one.
+
+Its cursor survives, because the agent has not forgotten what it acknowledged. Whatever notification the old process was still holding is discarded, and one fresh notification covers everything since that cursor. One notification says what several would have said, because a notification carries no values.
+
+Naming the same agent twice in one roster at creation is refused, since that is one list written at one moment and a repeat there is a mistake rather than a return.
+
 The callback therefore runs **before** `create_model` or `register_agent` returns. A callback that needs the model must be given it another way, because the call has not returned yet.
 
 ```python

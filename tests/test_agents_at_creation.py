@@ -112,7 +112,8 @@ class TestJoiningMidRun:
         (joined,) = late
         assert joined.regions == frozenset({"window"})
 
-    def test_a_late_name_already_in_the_roster_is_refused(self) -> None:
+    def test_a_late_name_already_in_the_roster_replaces_that_agent(self) -> None:
         model = a_model([Agent(name="ocp", notify=lambda n: None)])
-        with pytest.raises(DuplicateAgentError):
-            model.control.register_agent(Agent(name="ocp", notify=lambda n: None))
+        returning: list[Notification] = []
+        model.control.register_agent(Agent(name="ocp", notify=returning.append))
+        assert len(returning) == 1, "a returning agent is told what it missed"

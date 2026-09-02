@@ -30,6 +30,7 @@ from blackboard._control import (
     BoardReader,
     BoardStore,
     Control,
+    DuplicateAgentError,
     RunClosedError,
     RunLimits,
     TerminationPredicate,
@@ -74,6 +75,11 @@ def create_model(
     One store serves every board an application runs. ``SqliteStore`` serves
     one machine; an adapter against your own database serves a deployment.
 
+    ``agents`` names the agents the run starts with, and naming one twice
+    is refused, because a roster is one list written at one moment. An agent
+    that registers again later is a returning agent rather than a mistake,
+    and replaces its own declaration.
+
     ``agents`` names the agents the run starts with. Each is registered
     once the premises hold their opening values, so each receives one
     notification covering everything already on the board. An agent that
@@ -91,6 +97,12 @@ def create_model(
     when nothing has happened for the idle limit; with no clock the
     operating system clock serves.
     """
+    named = [a.name for a in agents or ()]
+    twice = sorted({n for n in named if named.count(n) > 1})
+    if twice:
+        raise DuplicateAgentError(
+            "the roster names " + ", ".join(repr(n) for n in twice) + " more than once"
+        )
     control = Control(
         regions=regions,
         admission_rule=admission_rule,
