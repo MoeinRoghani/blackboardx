@@ -71,12 +71,19 @@ class NotificationBody(_Body):
 
     It carries no values. The agent reads the board to find out what changed,
     which is why a repeat costs nothing and why order does not matter.
+
+    Both bounds are required. A body that lost ``from_sequence`` would decode
+    as zero, which is a range the control component never issues and which
+    tells an agent to read the whole level. ``regions`` stays optional,
+    because an agent may read past what a notification names.
     """
 
     _required: ClassVar[tuple[str, ...]] = (
         "board_id",
         "notification_id",
         "agent",
+        "from_sequence",
+        "to_sequence",
     )
 
     board_id: str
@@ -92,13 +99,19 @@ class NotificationBody(_Body):
 
 @dataclass(frozen=True)
 class WriteRequest(_Body):
-    """A contribution proposed to a level."""
+    """A contribution proposed to a level.
 
-    _required: ClassVar[tuple[str, ...]] = ("writer", "level")
+    ``content`` is required, because a body that carries none would otherwise
+    store ``null``. ``level`` has a default, because the path already names
+    the region and the service takes it from there; a service that mounts one
+    route of its own can still send it.
+    """
+
+    _required: ClassVar[tuple[str, ...]] = ("writer", "content")
 
     writer: str
-    level: str
     content: object = None
+    level: str = ""
     idempotency_key: str | None = None
 
 
@@ -106,12 +119,16 @@ class WriteRequest(_Body):
 class SetPremiseRequest(_Body):
     """A premise value proposed under the version it expects to replace."""
 
-    _required: ClassVar[tuple[str, ...]] = ("writer", "premise", "expected_version")
+    _required: ClassVar[tuple[str, ...]] = (
+        "writer",
+        "value",
+        "expected_version",
+    )
 
     writer: str
-    premise: str
     expected_version: int
     value: object = None
+    premise: str = ""
     idempotency_key: str | None = None
 
 
@@ -381,3 +398,15 @@ OPERATIONS: tuple[Operation, ...] = (
 #: The query parameters a bounded read takes.
 FROM_SEQUENCE = "from_sequence"
 LIMIT = "limit"
+
+#: How many rows a read over HTTP answers with when it names no ``limit``.
+#:
+#: A read in process takes ``limit=None`` and means it. A read over HTTP is a
+#: page, so it has a size whether or not the caller chose one.
+DEFAULT_LIMIT = 100
+
+#: The most rows a read over HTTP answers with, whatever ``limit`` asks for.
+#:
+#: The cap is silent. ``has_more`` and the sequence cursor carry a reader past
+#: it, which is what they are for.
+MAX_LIMIT = 1000
