@@ -7,7 +7,6 @@ import pytest
 from blackboard import (
     Agent,
     BoardReader,
-    DuplicateAgentError,
     InMemoryStore,
     Level,
     ManualClock,
@@ -71,11 +70,13 @@ def make_control(clock: ManualClock, *agents: Agent) -> Control:
 
 
 class TestDeclarations:
-    def test_a_duplicate_agent_name_is_refused(self) -> None:
+    def test_registering_a_name_again_replaces_that_agent(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock, agent("ocp", Recorder()))
-        with pytest.raises(DuplicateAgentError):
-            control.register_agent(agent("ocp", Recorder()))
+        returning = Recorder()
+        control.register_agent(agent("ocp", returning))
+        control.set_premise("operator", "window", "w", expected_version=0)
+        assert returning.received, "the replacement is the callback now reached"
 
 
 class TestZeroWindowDispatch:

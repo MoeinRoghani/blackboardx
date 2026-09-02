@@ -8,7 +8,6 @@ import pytest
 from blackboard import (
     Agent,
     BoardReader,
-    DuplicateAgentError,
     InMemoryStore,
     Level,
     ManualClock,
@@ -169,8 +168,8 @@ class TestRegistration:
         (notification,) = notifications
         assert notification.regions == frozenset({"window"})
 
-    def test_a_duplicate_name_is_refused(self) -> None:
-        notifications: list[Notification] = []
+    def test_registering_a_name_again_replaces_that_agent(self) -> None:
+        returning: list[Notification] = []
         model = create_model(
             regions=[Premise("window")],
             premises={"window": "w"},
@@ -180,9 +179,10 @@ class TestRegistration:
             board_id="test-board",
             store=InMemoryStore(),
         )
-        model.control.register_agent(declaration("ocp", notifications.append))
-        with pytest.raises(DuplicateAgentError):
-            model.control.register_agent(declaration("ocp", notifications.append))
+        model.control.register_agent(declaration("ocp", lambda n: None))
+        model.control.register_agent(declaration("ocp", returning.append))
+        model.control.set_premise("operator", "window", "w2", expected_version=1)
+        assert returning, "the replacement is the callback now reached"
 
     def test_registering_into_a_closed_run_is_refused(self) -> None:
         model = create_model(

@@ -38,6 +38,8 @@ model.control.register_agent(Agent(name="netops", notify=deliver))
 
 It is woken the same way, so it hears about everything written before it arrived.
 
+Registering a name that is already registered replaces that agent, which is how an agent that restarted or moved rejoins. [Write an agent](../guides/writing-an-agent.md#coming-back-after-a-restart) covers what survives.
+
 ## Ending
 
 A run does not close because nothing is outstanding at some instant. Agents are idle between notifications and they register at different times, so a quiet instant is the gap before the work rather than the end of it. A run ends when the quiet lasts long enough.

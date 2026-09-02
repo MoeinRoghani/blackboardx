@@ -551,18 +551,23 @@ class Control:
         """Registers an agent and wakes it.
 
         The agent is out of date with everything already on the board, so
-        registering issues one notification covering the premises that
-        currently hold a value. Its cursor starts at zero, since it has
-        read nothing.
+        registering issues one notification covering the regions it
+        subscribes to that already hold something. Its cursor starts at
+        zero, since it has read nothing.
+
+        Registering a name that is already registered replaces that agent's
+        declaration, including its callback and its subscriptions, which is
+        what an agent that restarted or moved needs. Its cursor survives,
+        because it has not forgotten what it acknowledged. Whatever
+        notification it was still holding is discarded, and the one issued
+        here covers everything since that cursor. One notification says
+        what several would have said, because a notification carries no
+        values.
         """
         deliveries: list[_Delivery] = []
         with self._lock:
             if self._outcome is not None:
                 raise RunClosedError("the run has closed")
-            if agent.name in self._agents:
-                raise DuplicateAgentError(
-                    f"an agent named {agent.name!r} is already registered"
-                )
             for named in agent.subscribes_to or ():
                 if named not in self._kinds:
                     raise UndeclaredRegionError(
@@ -575,7 +580,14 @@ class Control:
                         f"{named!r} is not a declared level, so {agent.name!r} "
                         "cannot write to it"
                     )
-            state = _AgentState(declaration=agent, cursor=0)
+            returning = self._agents.get(agent.name)
+            if returning is not None:
+                self._forget_outstanding_locked(agent.name)
+                if returning.window_call is not None:
+                    returning.window_call.cancel()
+            state = _AgentState(
+                declaration=agent, cursor=0 if returning is None else returning.cursor
+            )
             self._agents[agent.name] = state
             now = self._clock.now()
             for name, kind in self._kinds.items():
@@ -971,6 +983,16 @@ class Control:
                 writer, region, RejectionCause.RUN_CLOSED, "the run has closed"
             )
         return None
+
+    def _forget_outstanding_locked(self, agent_name: str) -> None:
+        """Drops what an agent was holding, because it is no longer there.
+
+        Callers hold self._lock. A returning agent is told again, in one
+        notification covering everything since its cursor, so nothing it
+        was owed is lost by forgetting what the old process held.
+        """
+        for key in [k for k in self._outstanding if k[0] == agent_name]:
+            del self._outstanding[key]
 
     def _unfinished_locked(self) -> frozenset[str]:
         # An agent has not finished when it still holds an unacknowledged
