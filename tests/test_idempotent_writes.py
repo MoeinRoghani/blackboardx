@@ -11,13 +11,13 @@ import pytest
 
 from blackboard import (
     Agent,
+    Conflict,
     Control,
+    IdempotencyKeyError,
     InMemoryStore,
     Level,
     ManualClock,
     Premise,
-    Rejected,
-    RejectionCause,
     RunLimits,
     WriteAccepted,
     Written,
@@ -25,7 +25,7 @@ from blackboard import (
 )
 from blackboard.agent import BoardClient, Unreachable
 from blackboard.server import BoardService, Request
-from blackboard.wire import WRITE, WrittenBody
+from blackboard.wire import WRITE, ErrorBody, WrittenBody
 
 httpx = pytest.importorskip("httpx")
 
@@ -78,12 +78,13 @@ class TestTheControlComponent:
         assert after_first > before
         assert len(woken) == after_first
 
-    def test_a_key_reused_for_another_region_is_a_rejection(self) -> None:
+    def test_a_key_reused_for_another_region_raises_as_the_store_does(self) -> None:
+        """The caller chose the key, so a key naming two regions is its own
+        mistake rather than a decision this run made. ADR 0016."""
         control = build()
         control.write("signals", {"n": 1}, "k1", writer="triage")
-        outcome = control.write("findings", {"n": 1}, "k1", writer="triage")
-        assert isinstance(outcome, Rejected)
-        assert outcome.cause is RejectionCause.IDEMPOTENCY_KEY_REUSED
+        with pytest.raises(IdempotencyKeyError, match="k1"):
+            control.write("findings", {"n": 1}, "k1", writer="triage")
 
     def test_a_premise_is_set_once_under_one_key(self) -> None:
         control = build()
@@ -173,9 +174,8 @@ class TestTheBlackboardsAnswer:
                 },
             )
         )
-        assert answer.status == 422
-        assert answer.body is not None
-        assert answer.body["cause"] == "idempotency_key_reused"
+        assert answer.status == 409
+        assert ErrorBody.from_json(answer.body).error == "idempotency_key_reused"
 
 
 class TestTheAgentsClient:
@@ -265,10 +265,16 @@ class TestTheAgentsClient:
         assert isinstance(outcome, Written)
         assert control.reader.read_premise("severity").value == "high"
 
-    def test_a_reused_key_reaches_the_agent_as_a_rejection(self) -> None:
+    def test_a_reused_key_reaches_the_agent_as_the_error_it_is(self) -> None:
         control = build()
         with self.client(serving(control)) as board:
             board.write("signals", {"n": 1}, idempotency_key="k1")
-            outcome = board.write("findings", {"n": 1}, idempotency_key="k1")
-        assert isinstance(outcome, Rejected)
-        assert outcome.cause is RejectionCause.IDEMPOTENCY_KEY_REUSED
+            with pytest.raises(IdempotencyKeyError):
+                board.write("findings", {"n": 1}, idempotency_key="k1")
+
+    def test_a_stale_premise_version_is_still_a_conflict_not_an_error(self) -> None:
+        """409 carries two answers, and only one of them is the caller's fault."""
+        control = build()
+        with self.client(serving(control)) as board:
+            board.set_premise("severity", "high", 1)
+            assert isinstance(board.set_premise("severity", "low", 1), Conflict)

@@ -49,7 +49,6 @@ from blackboard._board import (
     Conflict,
     Contribution,
     Deleted,
-    IdempotencyKeyError,
     Level,
     Premise,
     PremiseState,
@@ -236,14 +235,12 @@ class RejectionCause(Enum):
 
     ``ADMISSION``: the admission rule rejected it. ``NOT_PERMITTED``: the
     writing agent did not declare that level. ``RUN_CLOSED``: the run has
-    closed. ``IDEMPOTENCY_KEY_REUSED``: the key names a write to a different
-    region, which is a mistake rather than a retry.
+    closed.
     """
 
     ADMISSION = "admission"
     NOT_PERMITTED = "not_permitted"
     RUN_CLOSED = "run_closed"
-    IDEMPOTENCY_KEY_REUSED = "idempotency_key_reused"
 
 
 @dataclass(frozen=True)
@@ -474,7 +471,6 @@ class _AgentState:
 @dataclass
 class _Outstanding:
     to_sequence: int
-    generation: int = 0
 
 
 def _subscribed(state: _AgentState, region: str, kind: _RegionKind) -> bool:
@@ -838,17 +834,11 @@ class Control:
                 if gate is not None:
                     result = gate
                 else:
-                    try:
-                        result = self._store.append(
-                            self._board_id, level, content, idempotency_key
-                        )
-                    except IdempotencyKeyError as reused:
-                        return self._reject_locked(
-                            writer,
-                            level,
-                            RejectionCause.IDEMPOTENCY_KEY_REUSED,
-                            str(reused),
-                        )
+                    # A key naming two regions is the caller's mistake, so it
+                    # raises here as it does in the store. ADR 0016.
+                    result = self._store.append(
+                        self._board_id, level, content, idempotency_key
+                    )
                     if result.repeated:
                         # Nothing reached the board, so nothing about the run
                         # changed either.
@@ -903,21 +893,13 @@ class Control:
                 if gate is not None:
                     result = gate
                 else:
-                    try:
-                        result = self._store.set(
-                            self._board_id,
-                            premise,
-                            value,
-                            expected_version,
-                            idempotency_key,
-                        )
-                    except IdempotencyKeyError as reused:
-                        return self._reject_locked(
-                            writer,
-                            premise,
-                            RejectionCause.IDEMPOTENCY_KEY_REUSED,
-                            str(reused),
-                        )
+                    result = self._store.set(
+                        self._board_id,
+                        premise,
+                        value,
+                        expected_version,
+                        idempotency_key,
+                    )
                     if isinstance(result, Written) and result.repeated:
                         return result
                     if isinstance(result, Written):
@@ -964,9 +946,12 @@ class Control:
         """Records that the agent finished responding to a notification.
 
         The cursor advances to the end of the range the notification
-        covered. An acknowledgment of a notification no longer outstanding
-        changes nothing; one naming a notification never issued to that
-        agent raises.
+        covered, and every notification to this agent whose range ends at or
+        before that one is acknowledged with it, because the cursor is
+        cumulative and answering the wider range answered the narrower ones.
+
+        An acknowledgment of a notification no longer outstanding changes
+        nothing; one naming a notification never issued to that agent raises.
         """
         acknowledged = NotificationId(notification_id)
         with self._lock:
@@ -980,6 +965,18 @@ class Control:
                 )
             state = self._agents[agent]
             state.cursor = max(state.cursor, outstanding.to_sequence)
+            # The cursor is cumulative, so acknowledging this range
+            # acknowledges every range it already covers. Otherwise an agent
+            # that answered the newest of several overlapping notifications
+            # is named unfinished for work it did, and a notification whose
+            # delivery raised holds the run open for ever.
+            covered = [
+                held
+                for held, still in self._outstanding.items()
+                if held[0] == agent and still.to_sequence <= outstanding.to_sequence
+            ]
+            for held in covered:
+                del self._outstanding[held]
             self._audit.append(
                 NotificationAcknowledged(
                     at=self._clock.now(), agent=agent, notification_id=acknowledged

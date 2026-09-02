@@ -88,6 +88,7 @@ from blackboard._board import (
     BoardChange,
     Conflict,
     Contribution,
+    IdempotencyKeyError,
     Level,
     Premise,
     PremiseState,
@@ -299,6 +300,8 @@ def _premise(status: int, body: object) -> PremiseState:
 
 
 def _write_outcome(status: int, body: object) -> Written | Rejected:
+    if status == 409 and _named(body) == "idempotency_key_reused":
+        _refuse(status, body, expected=())
     if status in (200, 201):
         written = _decode(WrittenBody, body)
         return Written(
@@ -318,6 +321,10 @@ def _write_outcome(status: int, body: object) -> Written | Rejected:
 
 def _premise_outcome(status: int, body: object) -> Written | Conflict | Rejected:
     if status == 409:
+        # 409 carries two answers. A premise that moved on is a Conflict the
+        # caller resolves; a key that named another region is its mistake.
+        if _named(body) == "idempotency_key_reused":
+            _refuse(status, body, expected=())
         return Conflict(current_version=_decode(ConflictBody, body).current_version)
     return _write_outcome(status, body)
 
@@ -360,6 +367,7 @@ _RAISES: Mapping[str, type[BlackboardError]] = {
     "wrong_region_kind": RegionKindError,
     "unset_premise": UnsetPremiseError,
     "unknown_notification": UnknownNotificationError,
+    "idempotency_key_reused": IdempotencyKeyError,
 }
 
 
