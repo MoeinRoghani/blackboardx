@@ -61,6 +61,7 @@ Every term this project uses, and what it means here. A term is defined once, in
 | --- | --- |
 | **`BoardStore`** | The protocol a store implements: seven methods, three that write and four that read. Every one names a board first. |
 | **Wire contract** | The request and response bodies that cross between a blackboard and an agent, in `blackboard.wire`. Both halves import them, so neither can spell a field differently from the other. |
+| **Client** | What an agent calls a blackboard with, in `blackboard.agent`. Bound to one board and one agent name, with the methods `Control` and `BoardReader` already have. |
 | **Operation** | One thing an agent can ask a blackboard to do, with the method and path that carry it. The seven in `blackboard.wire` are the operations `Control` already has. |
 | **Transport** | How one notification leaves the process, in `blackboard.delivery`. `HttpxTransport` posts it; another implementation sends it somewhere else. |
 | **Lane** | One agent's queue and the worker that drains it. Each call to `HttpNotifier.to` opens one, which is what lets agents be reached at the same time. |

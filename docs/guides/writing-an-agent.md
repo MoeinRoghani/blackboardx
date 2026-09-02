@@ -102,3 +102,134 @@ Acknowledgment is everything the control component learns about how an agent ran
 It means the agent has stopped working on that notification. It does not mean the agent found anything, and it does not mean the agent will not be woken again.
 
 When a run closes, it names every agent still holding a notification as unfinished.
+
+## An agent in its own service
+
+Everything above is an agent in the same process as the blackboard, reading
+through `model.reader` and writing through `model.control`. An agent deployed
+on its own does the same five steps against the same names, over HTTP.
+
+```
+pip install 'blackboardx[agent]'
+```
+
+```python
+from blackboard.agent import BoardClient
+from blackboard.wire import NotificationBody
+
+
+@app.post("/notify")
+def notify(body: dict):
+    notification = NotificationBody.from_json(body)
+    with BoardClient(
+        base_url="https://blackboard.internal/v1",
+        board_id=notification.board_id,
+        agent="triage",
+    ) as board:
+        window = board.read_premise("window").value
+        signals = board.read_level("signals", notification.from_sequence)
+        for signal in signals:
+            board.write("findings", investigate(signal, window))
+        board.ack(notification.notification_id)
+    return "", 204
+```
+
+A client is bound to one board and one agent name, so no method takes either
+and none can be given the wrong one. The methods are the ones `BoardReader`
+and `Control` already have, spelled the same and returning the same types, so
+the body of an agent moves out of the blackboard's process unchanged.
+`BoardClient` satisfies the `BoardReader` protocol, so an admission rule or a
+termination predicate written against it reads a remote board too.
+
+Answer the notification before you acknowledge. Acknowledging is what tells
+the run this agent has stopped, and [what acknowledging
+means](#what-acknowledging-means) covers the rest.
+
+### Async
+
+`AsyncBoardClient` has the same methods with `await` in front of them.
+
+```python
+async with AsyncBoardClient(
+    base_url="https://blackboard.internal/v1",
+    board_id=notification.board_id,
+    agent="triage",
+) as board:
+    signals = await board.read_level("signals", notification.from_sequence)
+```
+
+Neither client is written in terms of the other. A synchronous method that
+starts an event loop per call throws away the connection pool, so both are
+real, and the request they build is one piece of shared code.
+
+### What comes back, and what is raised
+
+A write answers the way `Control.write` answers, with `Written` or
+`Rejected`, and setting a premise adds `Conflict`. Those are answers rather
+than faults: the same request sent again gets the same one. A `Conflict` is
+answered by reading the premise and deciding again.
+
+```python
+outcome = board.set_premise("severity", "high", expected_version=3)
+if isinstance(outcome, Conflict):
+    current = board.read_premise("severity")
+    outcome = board.set_premise("severity", decide(current.value), current.version)
+```
+
+Everything else is raised, and where the blackboard has an exception for it
+the client raises that one, so `except UndeclaredRegionError` catches the
+same mistake in either deployment.
+
+| Raised | When |
+| --- | --- |
+| `UndeclaredRegionError` | No region by that name |
+| `RegionKindError` | That name is a premise, and you read it as a level |
+| `UnsetPremiseError` | A premise declared without an opening value |
+| `UnknownNotificationError` | Acknowledging one this agent was never sent |
+| `UnknownBoardError` | The blackboard holds no run for that board |
+| `Unreachable` | It could not be reached, or kept answering 5xx |
+| `ProtocolError` | The two halves are out of step |
+
+### What is attempted again
+
+A read and an acknowledgment are attempted again when the blackboard cannot
+be reached or answers 5xx. Reading twice returns the same thing, and
+acknowledging a notification that is no longer outstanding changes nothing.
+The wait between attempts doubles and is drawn from the range between half of
+it and all of it, and a blackboard that sent `Retry-After` gets the delay it
+asked for.
+
+**A write is not attempted again.** A request that timed out may still have
+been received, and a contribution appended twice is not the same board. The
+write raises `Unreachable`, and what to do next is the agent's to decide,
+because only the agent knows whether writing the same thing twice matters. A
+later version deduplicates on a key the client sends, and writes will be
+retried then.
+
+### Reading a whole level
+
+`read_level(level)` reads to the end, following the blackboard's pages. Give
+it a `limit` to ask for one page instead, and continue from one past the last
+sequence you received.
+
+```python
+page = board.read_level("signals", from_sequence, limit=100)
+next_from = page[-1].sequence + 1 if page else from_sequence
+```
+
+A sequence number is the cursor because an offset would shift when a
+concurrent write lands.
+
+### Authentication and connections
+
+The client opens a plain `httpx` client unless you give it one. Give it one
+configured with whatever your deployment needs, and keep it for the life of
+the service rather than building one per notification:
+
+```python
+session = httpx.Client(headers={"authorization": token}, timeout=10.0)
+board = BoardClient(base_url=..., board_id=..., agent="triage", http_client=session)
+```
+
+A client you supply is yours to close. One the library opened is closed with
+the `BoardClient`.

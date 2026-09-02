@@ -111,6 +111,9 @@ version = "0.7.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
+agent = [
+    { name = "httpx" },
+]
 mongodb = [
     { name = "pymongo" },
 ]
@@ -136,11 +139,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", marker = "extra == 'agent'", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'notifier'", specifier = ">=0.27" },
     { name = "psycopg", extras = ["binary", "pool"], marker = "extra == 'postgres'", specifier = ">=3.2" },
     { name = "pymongo", marker = "extra == 'mongodb'", specifier = ">=4.9" },
 ]
-provides-extras = ["mongodb", "notifier", "postgres"]
+provides-extras = ["agent", "mongodb", "notifier", "postgres"]
 
 [package.metadata.requires-dev]
 dev = [
