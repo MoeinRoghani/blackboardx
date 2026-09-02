@@ -33,6 +33,11 @@ jobs:
   # notes while every check stays green.
   body-parses:
     runs-on: ubuntu-latest
+    # A bot writes its body from a template and has no author to teach, so the
+    # rule applies to the people who can act on it. Commit 30f37e4 is a
+    # Dependabot bump carrying ninety-six parentheses, and release-please cut
+    # three releases after it without dropping anything.
+    if: ${{ !endsWith(github.event.pull_request.user.login, '[bot]') }}
     steps:
       - name: the body carries no parenthesis
         env:
