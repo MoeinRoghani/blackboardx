@@ -10,8 +10,8 @@ Read [what is durable and what is not](#what-is-durable-and-what-is-not) before 
 | --- | --- | --- |
 | `blackboardx` | This package | yes |
 | Storage adapter | A `BoardStore` implementation against your database | `PostgresStore` or `MongoStore`, or you write one |
-| Blackboard service | A container importing the library, serving HTTP | yes |
-| Agent client | A small package agents import, wrapping the HTTP calls | yes |
+| Blackboard service | A container importing the library, serving HTTP | the routing and the answers, not the server |
+| Agent client | What agents import to call it | yes |
 | Database | One primary you already run | no |
 | Agents | Independent deployments | no |
 
@@ -47,12 +47,13 @@ agent  ──HTTP──▶  blackboard service  ──▶  blackboardx  ──�
 
 ## What the service writes, and what it does not
 
-The service owns its HTTP server and its routes, because the framework, the URLs, and the authentication are its own. Everything under those routes the library supplies.
+The service owns its HTTP server, the prefix it mounts under, and its authentication, because the framework and the gateway are its own. Everything under that prefix the library supplies.
 
 | | Whose |
 | --- | --- |
-| The HTTP server, the routes, the authentication | The service |
-| Decoding a request body and encoding a response | `blackboard.wire` |
+| The HTTP server, the mount prefix, the authentication | The service |
+| The paths, the methods, and the status codes | `blackboard.wire` |
+| Matching a request and answering it | `blackboard.server` |
 | Admitting the write, ordering it, storing it | `blackboard` |
 | Sending the notification, retrying it, reporting a failure | `blackboard.delivery` |
 
