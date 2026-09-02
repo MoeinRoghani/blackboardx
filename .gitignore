@@ -47,3 +47,7 @@ coverage.xml
 
 # Local execution state for the multi-session redesign. Never committed.
 .plan/
+
+# Records left by running a documented example.
+*.sqlite3
+*.sqlite3-journal
