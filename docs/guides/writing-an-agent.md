@@ -225,7 +225,7 @@ mistake rather than a retry, and comes back as
 region it does name returns the first write whatever content goes with it, so
 a retry sends what it sent before.
 
-Retrying a keyed write needs a blackboard at 0.9 or later. An older one takes
+Retrying a keyed write needs a blackboard at 0.8 or later. An older one takes
 the key and ignores it, and a retry against it writes twice.
 
 ### Reading a whole level
