@@ -25,12 +25,15 @@ A board adapter makes the **record** durable. It does not make the **run** durab
 | --- | --- |
 | The database, through the board | Regions, contributions, premise values and versions, the sequence |
 | The process, in `Control` | The agent registry, outstanding notifications, the audit, the idle and wall-clock timers |
+| The process, in `HttpNotifier` | Notifications queued but not yet sent |
 
 A `Control` lives in one process. A second replica holding its own `Control` for the same board knows no agent the first registered, owes no notification the first dispatched, and measures silence from its own start. Losing the replica that holds one ends that run: the record survives and the run does not resume.
 
 So one board is served by one `Control` in one process at a time. The service is scaled by putting different boards on different replicas, and routed to by board identifier; it is not scaled by putting more replicas behind one board. A replica that dies is replaced, and the run it held is started again against the record it left.
 
 Making the run itself durable, so that a replacement resumes rather than restarts, means putting the registry, the outstanding notifications, and the deadlines in the database alongside the record. That is not in the library today.
+
+A notification lost with the process usually costs nothing, since a notification carries no values and the next one covers the range a lost one would have covered. It costs something when the lost one is the last, and the run then waits until its idle limit closes it.
 
 ## The path a call takes
 
@@ -42,11 +45,20 @@ agent  ──HTTP──▶  blackboard service  ──▶  blackboardx  ──�
    └──────notification────┘
 ```
 
-## What the service adds
+## What the service writes, and what it does not
 
-The service adds two things the library leaves out, both of which belong to moving a message rather than to the model. Serialisation is not among them, because content already crosses every board as JSON, so a contribution has the same form on the wire that it has in the record.
+The service owns its HTTP server and its routes, because the framework, the URLs, and the authentication are its own. Everything under those routes the library supplies.
 
-**Delivery.** The library hands the service a notification and a callback. Reaching a remote agent over HTTP, retrying, and deciding when an agent is unreachable belong to the service.
+| | Whose |
+| --- | --- |
+| The HTTP server, the routes, the authentication | The service |
+| Decoding a request body and encoding a response | `blackboard.wire` |
+| Admitting the write, ordering it, storing it | `blackboard` |
+| Sending the notification, retrying it, reporting a failure | `blackboard.delivery` |
+
+Serialisation is not on the service's side of that line, because content already crosses every board as JSON, so a contribution has the same form on the wire that it has in the record.
+
+**Delivery.** `HttpNotifier.to(url)` is the callable an `Agent` is created with. It queues the notification and returns, so the agent that wrote is not made to wait, and it sends on a worker of that agent's own, so one agent that is slow delays nobody else. [Notify agents over HTTP](../guides/notifying-agents.md) covers the retry policy and what a failure looks like.
 
 **Idempotency.** An HTTP retry must not append a contribution twice, so the client attaches a key and the service deduplicates on it.
 
