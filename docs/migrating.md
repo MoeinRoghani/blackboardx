@@ -27,6 +27,8 @@ Only a store of your own needs work. Add the parameter to `append` and to `set`,
 
 The four stores the library ships add what they need to a database an earlier version wrote. Nothing is migrated by hand.
 
+The three that keep a record on disk now stamp it with a schema number and check that number when they open. A database written by 0.8 or earlier carries no stamp and is adopted rather than refused, because this version reads everything those wrote. From here on, a database written for a schema this library cannot read is refused when the store opens rather than at whichever query touches the change.
+
 ## 0.7 to 0.8
 
 A store holds many boards. A board object no longer stands for one run.

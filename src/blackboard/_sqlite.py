@@ -36,8 +36,13 @@ from blackboard._board import (
     UnsetPremiseError,
     Written,
 )
+from blackboard._schema import stamp_to_write
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS schema_stamp (
+    id      INTEGER PRIMARY KEY CHECK (id = 1),
+    version INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS regions (
     board_id TEXT NOT NULL,
     name     TEXT NOT NULL,
@@ -97,6 +102,7 @@ class SqliteStore:
         self._connection = sqlite3.connect(path, check_same_thread=False)
         self._add_missing_columns()
         self._connection.executescript(_SCHEMA)
+        self._stamp(path)
         self._connection.commit()
 
     def close(self) -> None:
@@ -150,6 +156,23 @@ class SqliteStore:
                     self._connection.execute(
                         f"ALTER TABLE contributions ADD COLUMN {name} {kind}"
                     )
+
+    def _stamp(self, where: str) -> None:
+        # Once, when the file opens, so a record this version cannot read is
+        # refused at the door rather than at whichever query touches the
+        # missing piece first.
+        row = self._connection.execute(
+            "SELECT version FROM schema_stamp WHERE id = 1"
+        ).fetchone()
+        writing = stamp_to_write(None if row is None else int(row[0]), where=where)
+        if writing is None:
+            return
+        with self._connection:
+            self._connection.execute(
+                "INSERT INTO schema_stamp (id, version) VALUES (1, ?) "
+                "ON CONFLICT (id) DO UPDATE SET version = excluded.version",
+                (writing,),
+            )
 
     def _already_written(
         self, board_id: str, idempotency_key: str | None, region: str

@@ -65,6 +65,7 @@ from blackboard._control import (
     WriteRejected,
 )
 from blackboard._model import Model, create_model
+from blackboard._schema import SCHEMA_VERSION, SchemaVersionError
 from blackboard._sqlite import SqliteStore
 
 if TYPE_CHECKING:
@@ -72,6 +73,7 @@ if TYPE_CHECKING:
     from blackboard._postgres import PostgresStore
 
 __all__ = [
+    "SCHEMA_VERSION",
     "Aborted",
     "Accept",
     "AdmissionRule",
@@ -115,6 +117,7 @@ __all__ = [
     "RunLimits",
     "RunOutcome",
     "ScheduledCall",
+    "SchemaVersionError",
     "Settled",
     "SqliteStore",
     "SystemClock",

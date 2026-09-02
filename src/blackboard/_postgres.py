@@ -47,12 +47,17 @@ from blackboard._board import (
     UnsetPremiseError,
     Written,
 )
+from blackboard._schema import stamp_to_write
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
 
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS blackboard_schema (
+    id      INTEGER PRIMARY KEY CHECK (id = 1),
+    version BIGINT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS blackboard_boards (
     board_id      TEXT PRIMARY KEY,
     next_sequence BIGINT NOT NULL DEFAULT 1
@@ -130,6 +135,7 @@ class PostgresStore:
 
     def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
+        self._stamped = False
 
     @classmethod
     @contextmanager
@@ -150,8 +156,10 @@ class PostgresStore:
         """
         with self._pool.connection() as connection:
             connection.execute(_SCHEMA)
+        self._stamp()
 
     def declare(self, board_id: str, region: Level | Premise) -> None:
+        self._checked()
         if not isinstance(region, Level | Premise):
             raise TypeError(
                 "a region declaration is a Level or a Premise, "
@@ -183,6 +191,38 @@ class PostgresStore:
                     (board_id, region.name),
                 )
 
+    def _stamp(self) -> None:
+        """Records the schema this version writes, or refuses one it cannot read.
+
+        Called when the schema is created and again before the first
+        operation, so a database this store never created is checked too.
+        """
+        with self._pool.connection() as connection, connection.transaction():
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS blackboard_schema ("
+                "id INTEGER PRIMARY KEY CHECK (id = 1), version BIGINT NOT NULL)"
+            )
+            row = connection.execute(
+                "SELECT version FROM blackboard_schema WHERE id = 1"
+            ).fetchone()
+            writing = stamp_to_write(
+                None if row is None else int(row[0]), where="this database"
+            )
+            if writing is not None:
+                connection.execute(
+                    "INSERT INTO blackboard_schema (id, version) VALUES (1, %s) "
+                    "ON CONFLICT (id) DO UPDATE SET version = excluded.version",
+                    (writing,),
+                )
+        self._stamped = True
+
+    def _checked(self) -> None:
+        # Once per store. An application that points this at a database it
+        # did not create never calls create_schema, and the check has to
+        # happen anyway.
+        if not self._stamped:
+            self._stamp()
+
     def _already_written(
         self, connection: Any, board_id: str, idempotency_key: str | None, region: str
     ) -> Written | None:
@@ -208,6 +248,7 @@ class PostgresStore:
         content: object,
         idempotency_key: str | None = None,
     ) -> Written:
+        self._checked()
         carried = json.dumps(content)
         with self._pool.connection() as connection, connection.transaction():
             self._require(connection, board_id, level, _LEVEL)
@@ -231,6 +272,7 @@ class PostgresStore:
         expected_version: int,
         idempotency_key: str | None = None,
     ) -> Written | Conflict:
+        self._checked()
         carried = json.dumps(value)
         outcome: Written | Conflict
         with self._pool.connection() as connection:
@@ -288,6 +330,7 @@ class PostgresStore:
         from_sequence: int = 0,
         limit: int | None = None,
     ) -> list[Contribution]:
+        self._checked()
         with self._pool.connection() as connection:
             self._require(connection, board_id, level, _LEVEL)
             rows = connection.execute(
@@ -299,6 +342,7 @@ class PostgresStore:
         return [Contribution(sequence=int(r[0]), content=r[1]) for r in rows]
 
     def read_premise(self, board_id: str, premise: str) -> PremiseState:
+        self._checked()
         with self._pool.connection() as connection:
             self._require(connection, board_id, premise, _PREMISE)
             row = connection.execute(
@@ -315,6 +359,7 @@ class PostgresStore:
     def read_board(
         self, board_id: str, from_sequence: int = 0, limit: int | None = None
     ) -> list[BoardChange]:
+        self._checked()
         with self._pool.connection() as connection:
             rows = connection.execute(
                 "SELECT sequence, region, content FROM blackboard_contributions "
@@ -326,6 +371,7 @@ class PostgresStore:
         ]
 
     def delete(self, board_id: str) -> Deleted:
+        self._checked()
         with self._pool.connection() as connection, connection.transaction():
             regions = connection.execute(
                 "SELECT COUNT(*) FROM blackboard_regions WHERE board_id = %s",
@@ -349,6 +395,7 @@ class PostgresStore:
             )
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
+        self._checked()
         """Returns the regions declared on one board, with their kinds."""
         with self._pool.connection() as connection:
             rows = connection.execute(

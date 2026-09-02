@@ -193,6 +193,24 @@ A key names one write on one board. The same key on another board is another wri
 
 `SqliteStore` and `PostgresStore` add the columns to a table written by an earlier version rather than assuming them, and `MongoStore` indexes the key only where one is present, so documents written before keys existed do not collide.
 
+## What wrote this record
+
+Each of the three stores that keep a record on disk stamps it with a schema number and checks that number when it opens. A record written for a schema this version cannot read is refused there, with a sentence naming both numbers, rather than at whichever query first touches the piece that changed.
+
+```
+SchemaVersionError: this database holds a record written for schema 2, and
+this version of blackboardx reads 1. Upgrade blackboardx to a version that
+reads it.
+```
+
+The number counts changes to the physical schema rather than releases. Most releases change nothing, and a check that fires on every release is a check nobody can leave on. `blackboard.SCHEMA_VERSION` is what this version reads.
+
+`SqliteStore` checks when the file opens. `PostgresStore` and `MongoStore` check before their first operation as well as when `create_schema` or `create_indexes` runs, because an application pointed at a database it did not create never calls those.
+
+A record written before stamps existed carries none. It is stamped rather than refused, since everything the earlier versions wrote is readable by this one.
+
+The library never stamps a record backwards. An older version would then read fields a newer one wrote and take them at face value, which is the failure the stamp exists to prevent.
+
 ## Removing a board
 
 A store holds many boards, and `delete` removes one:
