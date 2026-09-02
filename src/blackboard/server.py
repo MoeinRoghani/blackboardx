@@ -88,8 +88,10 @@ from blackboard._control import (
 )
 from blackboard.wire import (
     ACK,
+    DEFAULT_LIMIT,
     FROM_SEQUENCE,
     LIMIT,
+    MAX_LIMIT,
     OPERATIONS,
     READ_BOARD,
     READ_LEVEL,
@@ -400,7 +402,7 @@ def _match(template: str, path: str) -> dict[str, str] | None:
 def _bounds(query: Mapping[str, str]) -> tuple[int, int | None] | Response:
     """Reads the sequence bound and the maximum count, or says why it could not."""
     from_sequence = 0
-    limit: int | None = None
+    limit: int | None = DEFAULT_LIMIT
     if FROM_SEQUENCE in query:
         read = _whole(query[FROM_SEQUENCE], FROM_SEQUENCE)
         if isinstance(read, Response):
@@ -410,7 +412,7 @@ def _bounds(query: Mapping[str, str]) -> tuple[int, int | None] | Response:
         read = _whole(query[LIMIT], LIMIT)
         if isinstance(read, Response):
             return read
-        limit = read
+        limit = min(read, MAX_LIMIT)
     return from_sequence, limit
 
 

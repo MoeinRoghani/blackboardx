@@ -128,9 +128,32 @@ from those objects rather than from a string of their own. Mount the prefix
 you gave `BoardService`; the rest of each path is the library's.
 
 The two reads that return a page take `limit` and `from_sequence` as query
-parameters. A page says `has_more` when it stopped early, and the reader
-continues from one past the last sequence it received. A sequence number is
-the cursor because an offset shifts when a concurrent write lands.
+parameters. A read that names no `limit` answers with `blackboard.wire.DEFAULT_LIMIT`
+rows, and a `limit` above `MAX_LIMIT` is capped at it, silently. A page says
+`has_more` when it stopped early, and the reader continues from one past the
+last sequence it received. A sequence number is the cursor because an offset
+shifts when a concurrent write lands.
+
+A read in process takes `limit=None` and means unbounded, because it is not
+paying for a page. A read over HTTP is a page whether or not the caller chose
+a size.
+
+## What a request body carries
+
+| Operation | Body | Required |
+| --- | --- | --- |
+| `POST .../levels/{level}` | `WriteRequest` | `writer`, `content` |
+| `PUT .../premises/{premise}` | `SetPremiseRequest` | `writer`, `value`, `expected_version` |
+| `POST .../acknowledgements` | `AckRequest` | `agent`, `notification_id` |
+
+`content` and `value` are required because a body that carries neither would
+otherwise store `null`, and setting a premise to `null` wakes every
+subscriber to it.
+
+`WriteRequest.level` and `SetPremiseRequest.premise` are optional and are
+ignored where the path names the region, which it always does on these
+routes. They exist so that a service mounting a single route of its own still
+receives a body that says what it is.
 
 ## What the status codes mean
 
