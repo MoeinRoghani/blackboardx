@@ -313,12 +313,23 @@ class Agent:
     application's own execution. A callback that blocks on ``wait_closed``
     holds the run open, because its own unacknowledged notification counts
     as outstanding work.
+
+    Both ``subscribes_to`` and ``writes_to`` are read on every write and
+    every notification, so each is kept as a ``frozenset`` of what was given.
+    A declaration built from a generator therefore behaves like one built
+    from a set, rather than emptying itself on first use.
     """
 
     name: str
     notify: Callable[[Notification], None]
     subscribes_to: Iterable[str] | None = None
     writes_to: Iterable[str] | None = None
+
+    def __post_init__(self) -> None:
+        for field_name in ("subscribes_to", "writes_to"):
+            given = getattr(self, field_name)
+            if given is not None and not isinstance(given, frozenset):
+                object.__setattr__(self, field_name, frozenset(given))
 
 
 class DuplicateAgentError(BlackboardError):
