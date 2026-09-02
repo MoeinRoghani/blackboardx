@@ -5,9 +5,9 @@ operations they need are the ones `Control` already has, so the library
 states which path carries each one and answers them; your service keeps its
 own HTTP server, its framework, and its authentication.
 
-`BoardService.handle` takes a method, a path, and a decoded body, and returns
-a status, headers, and a body. It imports no web framework and opens no
-socket.
+`BoardService.handle` takes a method, a path, a decoded body, and the query
+parameters, and returns a status, headers, and a body. It imports no web
+framework and opens no socket.
 
 ## Mounting it
 
@@ -24,20 +24,29 @@ service = BoardService(control_for=runs.get, store=store, prefix="/v1")
 Writes still need the run, and answer 404 without one. A board the store never
 held answers 404 either way.
 
+`blackboard.reader_for(store, board_id)` builds the same reader those reads
+are answered from, for a caller that wants one of its own without a run. It
+has the four read operations and nothing else.
+
 `on_open` and `on_closed` on `create_model` and `attach_model` are how `runs`
 fills and empties:
 
 ```python
-def route(model):
+def opened(model):
     runs[model.board_id] = model.control
 
 
-def forget(outcome):
-    runs.pop(board_id, None)
-
-
-model = create_model(..., on_open=route, on_closed=forget)
+model = create_model(
+    ...,
+    board_id=board_id,
+    on_open=opened,
+    on_closed=lambda outcome: runs.pop(board_id, None),
+)
 ```
+
+`on_open` is given the model and reads the board identifier off it.
+`on_closed` is given the outcome, which names no board, so the identifier
+comes from the call that opened the run.
 
 `on_open` runs before the first agent is woken, which matters because waking
 an agent runs its callback on this thread: without it, an agent that reads
@@ -128,11 +137,12 @@ from those objects rather than from a string of their own. Mount the prefix
 you gave `BoardService`; the rest of each path is the library's.
 
 The two reads that return a page take `limit` and `from_sequence` as query
-parameters. A read that names no `limit` answers with `blackboard.wire.DEFAULT_LIMIT`
-rows, and a `limit` above `MAX_LIMIT` is capped at it, silently. A page says
-`has_more` when it stopped early, and the reader continues from one past the
-last sequence it received. A sequence number is the cursor because an offset
-shifts when a concurrent write lands.
+parameters. A read that names no `limit` answers with
+`blackboard.wire.DEFAULT_LIMIT` rows, which is 100. A `limit` above
+`blackboard.wire.MAX_LIMIT`, which is 1000, is capped at it silently. A page
+says `has_more` when it stopped early, and the reader continues from one past
+the last sequence it received. A sequence number is the cursor because an
+offset shifts when a concurrent write lands.
 
 A read in process takes `limit=None` and means unbounded, because it is not
 paying for a page. A read over HTTP is a page whether or not the caller chose
@@ -157,35 +167,52 @@ receives a body that says what it is.
 
 ## What the status codes mean
 
-| Status | Meaning | Send it again? |
+| Status | Meaning | Body |
 | --- | --- | --- |
-| 200 | A read, or a write this key had already made | |
-| 201 | A write reached the board for the first time | |
-| 204 | An acknowledgment was recorded | |
-| 400 | The body or a query parameter could not be read | No |
-| 404 | No such board, region, notification, or path | No |
-| 405 | That path takes a different method | No |
-| 409 | A premise moved on, or an idempotency key named another region | Read the premise and decide again, or fix the key |
-| 410 | The run has closed and takes no more writes | No |
-| 422 | The write was refused; the body names the cause | No |
+| 200 | A read, or a write this key had already made | What the read asked for, or a `WrittenBody` with `repeated` set |
+| 201 | A write reached the board for the first time | `WrittenBody` |
+| 204 | An acknowledgment was recorded | No body |
+| 400 | The body or a query parameter could not be read | `ErrorBody`, `bad_body` or `bad_query` |
+| 404 | No such route, board, or region, a region of the other kind, a premise nothing has written, or a notification never issued to that agent | `ErrorBody`, one of `no_such_route`, `unknown_board`, `unknown_region`, `wrong_region_kind`, `unset_premise`, `unknown_notification` |
+| 405 | That path takes a different method | `ErrorBody`, `wrong_method`, with an `Allow` header |
+| 409 | A premise moved on, or an idempotency key named another region | `ConflictBody`, or `ErrorBody` naming `idempotency_key_reused` |
+| 410 | The run has closed and takes no more writes | `ErrorBody`, `run_closed` |
+| 422 | The control component refused the write | `RejectedBody`, whose `cause` is `admission` or `not_permitted` |
 
-Every one of those is an answer rather than a fault, so a client that sends
-the same request again gets the same answer. Only a 5xx and a failure to
-connect are worth another attempt.
+Every 4xx here is an answer the blackboard decided rather than a fault in the
+transfer, so repeating the request is not what resolves it. Only
+a 5xx and a failure to connect are worth another attempt.
 
-Three of those carry a body of their own rather than an `ErrorBody`: 409 is a
-`ConflictBody` naming the premise's current version, 422 is a `RejectedBody`
-naming the cause, and 201 and 200 are a `WrittenBody`. The rest, 400, 404 and
-405, are an `ErrorBody`, where `error` is a stable name to branch on and
-`detail` is written for a person reading a log.
+An `ErrorBody` carries `error` and `detail`. `error` is the stable name to
+branch on. `detail` is written for a person reading a log and changes between
+versions.
+
+409 carries two bodies. A premise write whose expected version is not the
+current one answers a `ConflictBody`, which names the version the premise now
+holds, and the caller reads the premise and decides again against it. A write
+whose idempotency key already named another region answers an `ErrorBody`
+naming `idempotency_key_reused`, and sending it again answers the same. A
+client tells the two apart by whether the body has an `error` key, which is
+what `BoardClient` does.
+
+A region nobody declared is 404 `unknown_region`, and a level operation on a
+premise, or a premise operation on a level, is 404 `wrong_region_kind`. The
+region names come from the application's own declarations rather than from
+anything this run decided, so a request naming one that does not exist is
+answered the same way on every operation, reads and writes alike. In process
+the same write raises `UndeclaredRegionError` rather than returning a
+rejection. The 422 carries what the run decided about a write it understood:
+the admission rule returned `Reject`, or the writer is a registered agent
+whose `writes_to` does not name that level.
 
 ## Writing once
 
 A write body may carry an `idempotency_key`. The blackboard writes one key
 once: a key it has already written answers 200 with the first write's
 sequence and `repeated`, and adds nothing, where a first write answers 201. A
-key sent for a region it did not name before is refused 422 with the cause
-`idempotency_key_reused`.
+key that already named another region is refused 409 with `error` set to
+`idempotency_key_reused`, and in process the same write raises
+`IdempotencyKeyError`.
 
 Nothing in the service does that work. The key goes to the control component
 and from there to the store, where the row and its key are written together.

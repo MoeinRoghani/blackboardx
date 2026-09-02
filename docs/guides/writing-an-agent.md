@@ -40,9 +40,9 @@ Agent(
 
 Omit `subscribes_to` and the agent is woken by every premise and by no level. Name a level and a contribution to it wakes the agent, which is how one agent's finding starts another's work.
 
-Omit `writes_to` and every level is permitted. Name one and a write to any other level comes back `Rejected` with the cause `NOT_PERMITTED`.
+Omit `writes_to` and every level is permitted. Name one and a write to any other level comes back `Rejected` with the cause `NOT_PERMITTED`. The permission is held against the writer's name, so it constrains writes made as `ocp` and nothing else: a write under a name nobody registered reaches any declared level.
 
-Naming a level that was never declared is a different failure, and it is caught earlier: `register_agent` raises `UndeclaredRegionError` rather than letting the agent register with a permission it can never use.
+Naming a level that was never declared is a different failure, and it is caught earlier: `register_agent` raises `UndeclaredRegionError` rather than letting the agent register with a permission it can never use. Naming a premise there raises `RegionKindError`, because only a level takes a contribution.
 
 An agent is never woken by its own write.
 
@@ -60,7 +60,7 @@ An agent that joins a run already under way registers itself instead, and is wok
 model.control.register_agent(Agent(name="netops", notify=investigate))
 ```
 
-Either way the agent is woken immediately, covering every subscribed region that already holds something, because an agent that has just joined is out of date with the whole board.
+Either way the agent is woken immediately, covering every subscribed region that already holds something, because an agent that has just joined is out of date with the whole board. A subscribed premise carrying a batch window is the exception: registering schedules it a window away, so an agent with nothing else pending is woken when that window passes.
 
 ## Coming back after a restart
 
@@ -68,9 +68,9 @@ An agent that restarts registers again under the same name. That replaces its de
 
 Its cursor survives, because the agent has not forgotten what it acknowledged. Whatever notification the old process was still holding is discarded, and one fresh notification covers everything since that cursor. One notification says what several would have said, because a notification carries no values.
 
-Naming the same agent twice in one roster at creation is refused, since that is one list written at one moment and a repeat there is a mistake rather than a return.
+Naming the same agent twice in one roster at creation raises `DuplicateAgentError`, since that is one list written at one moment and a repeat there is a mistake rather than a return.
 
-The callback therefore runs **before** `create_model` or `register_agent` returns. A callback that needs the model must be given it another way, because the call has not returned yet.
+Registering wakes the agent, so the callback runs **before** `create_model` or `register_agent` returns. A callback that needs the model must be given it another way, because the call has not returned yet.
 
 ```python
 holder = []
@@ -99,13 +99,13 @@ Acknowledgment is everything the control component learns about how an agent ran
 
 ## What acknowledging means
 
-Acknowledging a notification also acknowledges every notification you were sent whose range ends at or before that one's. The cursor is cumulative, so answering the widest range answered the narrower ones inside it, and an agent that reads to the board's end can acknowledge only the last identifier it holds.
+Acknowledging a notification also acknowledges every notification you were sent whose range ends at or before that one's. The cursor is cumulative, so answering the widest range answered the narrower ones inside it, and an agent that reads to the board's end need acknowledge no more than the last identifier it holds.
 
-That also covers the notification you never received. A delivery that raised is suppressed, so that one agent's failure does not reach an unrelated writer, which means you cannot acknowledge it by name. Your next acknowledgment covers it.
+That also covers the notification you never received. You cannot acknowledge a notification you never received by name. A delivery that raised is suppressed, so that one agent's failure does not reach an unrelated writer, and the notification it carried never reaches you. Your next acknowledgment covers it.
 
-It means the agent has stopped working on that notification. It does not mean the agent found anything, and it does not mean the agent will not be woken again.
+Acknowledging means the agent has stopped working on that notification. It does not mean the agent found anything, and it does not mean the agent will not be woken again.
 
-When a run closes, it names every agent still holding a notification as unfinished.
+A run that closes on silence or on the wall clock names every agent still holding a notification in its outcome's `unfinished`. A run a caller aborted leaves `unfinished` empty, because `abort` closes the run without collecting them.
 
 ## An agent in its own service
 
@@ -141,6 +141,12 @@ def notify(body: dict):
 A client is bound to one board and one agent name, so no method takes either
 and none can be given the wrong one.
 
+`NotificationBody.from_json` raises `wire.WireError` on a body that is not an
+object, or that leaves out `board_id`, `notification_id`, `agent`,
+`from_sequence` or `to_sequence`. Its base is `Exception` rather than
+`BlackboardError`, so an `except BlackboardError` around the route does not
+catch it.
+
 ## Writing the body once
 
 `BoardClient` and `Control.as_agent` both satisfy `AgentBoard`, the protocol
@@ -172,9 +178,14 @@ with BoardClient(base_url=..., board_id=..., agent="triage") as board:
 
 `AgentBoard` carries the four reads `BoardReader` has and the three writes
 `Control` has, each without the agent's own name, because the object already
-holds it. `BoardClient` also satisfies `BoardReader` on its own, so an
-admission rule or a termination predicate written against that protocol reads
-a remote board too.
+holds it, and a `board_id` property for a body that has to name its own
+board. `BoardClient` also satisfies `BoardReader` on its own, so an admission
+rule or a termination predicate written against that protocol reads a remote
+board too.
+
+`as_agent` registers nothing. Registering decides what wakes an agent;
+`as_agent` decides the name that agent's writes carry, so it serves a writer
+that never registered as well as one that did.
 
 Answer the notification before you acknowledge. Acknowledging is what tells
 the run this agent has stopped, and [what acknowledging
@@ -200,9 +211,10 @@ real, and the request they build is one piece of shared code.
 ### What comes back, and what is raised
 
 A write answers the way `Control.write` answers, with `Written` or
-`Rejected`, and setting a premise adds `Conflict`. Those are answers rather
-than faults: the same request sent again gets the same one. A `Conflict` is
-answered by reading the premise and deciding again.
+`Rejected`, and setting a premise adds `Conflict`. Each of those is a
+decision the run made about a write it understood, so the caller handles it
+where it made the call. A `Conflict` is answered by reading the premise and
+deciding again.
 
 ```python
 outcome = board.set_premise("severity", "high", expected_version=3)
@@ -211,28 +223,33 @@ if isinstance(outcome, Conflict):
     outcome = board.set_premise("severity", decide(current.value), current.version)
 ```
 
-Everything else is raised, and where the blackboard has an exception for it
-the client raises that one, so `except UndeclaredRegionError` catches the
-same mistake in either deployment.
+Everything else is raised. A region name and an idempotency key are the
+caller's to get right, so a wrong one raises rather than answering, and it
+raises the same exception whichever deployment the body runs in. Where the
+blackboard has an exception for a condition, the client raises that one.
 
-| Raised | When |
-| --- | --- |
-| `UndeclaredRegionError` | No region by that name |
-| `RegionKindError` | That name is a premise, and you read it as a level |
-| `UnsetPremiseError` | A premise declared without an opening value |
-| `UnknownNotificationError` | Acknowledging one this agent was never sent |
-| `UnknownBoardError` | The blackboard holds no run for that board |
-| `Unreachable` | It could not be reached, or kept answering 5xx |
-| `ProtocolError` | The two halves are out of step |
+| Raised | When | Where |
+| --- | --- | --- |
+| `UndeclaredRegionError` | No region by that name | Either deployment |
+| `RegionKindError` | That name is a premise, and the call takes a level | Either deployment |
+| `IdempotencyKeyError` | A key that already named one region, sent naming another | Either deployment |
+| `UnsetPremiseError` | A premise declared without an opening value | Either deployment |
+| `UnknownNotificationError` | Acknowledging one this agent was never sent | Either deployment |
+| `UnknownBoardError` | The blackboard holds no run for that board, and no record to answer a read from | Over HTTP |
+| `Unreachable` | It could not be reached, or kept answering 5xx | Over HTTP |
+| `ProtocolError` | The two halves are out of step | Over HTTP |
+
+`RejectionCause` has three members, `ADMISSION`, `NOT_PERMITTED` and
+`RUN_CLOSED`, and a `Rejected` never carries anything else.
 
 ### What is attempted again
 
 A read and an acknowledgment are attempted again when the blackboard cannot
-be reached or answers 5xx. Reading twice returns the same thing, and
-acknowledging a notification that is no longer outstanding changes nothing.
-The wait between attempts doubles and is drawn from the range between half of
-it and all of it, and a blackboard that sent `Retry-After` gets the delay it
-asked for.
+be reached, or answers 408, 425, 429, or any 5xx. Reading twice returns the
+same thing, and acknowledging a notification that is no longer outstanding
+changes nothing. The wait between attempts doubles and is drawn from the
+range between half of it and all of it, and a blackboard that sent
+`Retry-After` gets the delay it asked for, up to thirty seconds.
 
 **A write is attempted again only when it carries a key.** A request that
 timed out may still have been received, and a contribution appended twice is
@@ -255,10 +272,11 @@ a fresh random string each time. The notification's id and a counter is
 usually enough, and a key that survives a restart deduplicates a restart.
 
 A key names one write on one board. Sending it for a different region is a
-mistake rather than a retry, and comes back as
-`Rejected` with the cause `idempotency_key_reused`. Sending it again for the
-region it does name returns the first write whatever content goes with it, so
-a retry sends what it sent before.
+mistake rather than a retry, and raises `IdempotencyKeyError`. Over HTTP the
+blackboard answers 409 naming the key and the client raises from that, so the
+in-process body and the deployed one meet the same exception. Sending the key
+again for the region it does name returns the first write whatever content
+goes with it, so a retry sends what it sent before.
 
 Retrying a keyed write needs a blackboard at 0.8 or later. An older one takes
 the key and ignores it, and a retry against it writes twice.
@@ -273,6 +291,12 @@ sequence you received.
 page = board.read_level("signals", from_sequence, limit=100)
 next_from = page[-1].sequence + 1 if page else from_sequence
 ```
+
+One request to a blackboard answers with at most 100 contributions when it
+names no limit, and at most 1000 whatever limit it names. The cap is silent: a
+`limit` of 5000 comes back with 1000 and the list alone does not say it was
+cut. In process there is no cap, and `read_level` with no limit returns the
+whole level in one call.
 
 A sequence number is the cursor because an offset would shift when a
 concurrent write lands.

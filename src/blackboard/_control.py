@@ -164,7 +164,7 @@ class BoardStore(Protocol):
 
 
 class BoardReader(Protocol):
-    """The three read operations, the handle the admission rule receives."""
+    """The four read operations, the handle the admission rule receives."""
 
     def read_level(
         self, level: str, from_sequence: int = 0, limit: int | None = None
@@ -332,7 +332,12 @@ class Agent:
 
 
 class DuplicateAgentError(BlackboardError):
-    """A registration named an agent that is already registered."""
+    """One roster named the same agent twice.
+
+    A roster is one list written at one moment, so a repeat in it is a
+    mistake. Registering a name again later is a returning agent rather than
+    a duplicate, and replaces that agent's declaration.
+    """
 
 
 class PremiseError(BlackboardError):
@@ -827,7 +832,7 @@ class Control:
         with what that write produced, marked ``repeated``, and changes
         nothing: no audit event, no notification, and no push of the idle
         deadline, because nothing happened. A key that named a different
-        region is refused with ``IDEMPOTENCY_KEY_REUSED``.
+        region raises ``IdempotencyKeyError``, because the caller chose it.
         """
         refusal = self._refuse_region(writer, level, _RegionKind.LEVEL)
         if refusal is not None:

@@ -78,12 +78,40 @@ they stand would accept in a test what a deployment then refuses.
 ## An idempotency key is not compared against the write it names
 
 A key already written returns the first write's outcome whatever content
-arrives with it. Only the region is compared, and a key sent for a different
-region is refused.
+arrives with it. Only the region is compared, and a key that already wrote one
+region and is then sent naming another raises `IdempotencyKeyError`, which
+over HTTP is a 409 whose body reads `{"error": "idempotency_key_reused"}`.
 
 Comparing bodies means normalising what JSONB and BSON did to them on the way
 in, which is where a false mismatch would come from. A retry is expected to
 send what it sent before.
+
+## A read over HTTP stops at a thousand
+
+A read in process takes `limit=None` and means it: `model.reader.read_level`
+returns every contribution from the sequence bound. A read over HTTP is
+bounded twice. It answers with `wire.DEFAULT_LIMIT`, a hundred, when the
+caller names no limit, and never with more than `wire.MAX_LIMIT`, a thousand,
+whatever the caller asks for.
+
+The cap is silent. A request for five thousand answers with a thousand and no
+error, and `has_more` is the only thing that says the level continues. A
+caller that reads a whole level follows `has_more` and moves `from_sequence`
+past the last sequence it saw. `BoardClient.read_level` and
+`BoardClient.read_board` do that themselves when they are given no `limit`;
+given one, they make a single request and return at most that many.
+
+## A batch window is not on the record
+
+A store holds a region's name and its kind. It holds no batch window, so
+`read_regions` returns every region with the default window of zero, whatever
+window was declared, and `wire.RegionBody.declaration` rebuilds it the same way
+on the other side.
+
+The window is configuration rather than record, so a run that attaches states
+its windows again in the `regions` it passes. `attach_model` compares names
+and kinds against the record and nothing else, and a window that disagrees
+with the previous run's is not reported.
 
 ## A record is never stamped backwards
 

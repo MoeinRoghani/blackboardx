@@ -6,7 +6,7 @@
 
 ### Running the adapter tests
 
-`PostgresBoard` and `MongoBoard` are held to the conformance suite against real servers. Those tests skip unless a server is named, so `make test` on a plain checkout runs green without one:
+`PostgresStore` and `MongoStore` are held to the conformance suite against real servers. Those tests skip unless a server is named, so `make test` on a plain checkout runs green without one:
 
 ```
 export BLACKBOARD_TEST_POSTGRES_DSN=postgresql://blackboard:blackboard@localhost:5432/blackboard

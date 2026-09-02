@@ -15,14 +15,14 @@ pip install 'blackboardx[notifier]'
 ```python
 from datetime import timedelta
 
-from blackboard import Agent, Level, RunLimits, create_model
+from blackboard import Agent, Level, Premise, RunLimits, create_model
 from blackboard.delivery import HttpNotifier
 
 with HttpNotifier() as notifier:
     model = create_model(
         board_id=board_id,
         store=store,
-        regions=[Level("signals"), Level("findings")],
+        regions=[Level("signals"), Level("findings"), Premise("severity")],
         premises={"severity": "unknown"},
         agents=[
             Agent(
@@ -36,8 +36,9 @@ with HttpNotifier() as notifier:
                 notify=notifier.to("https://correlator.internal/notify"),
             ),
         ],
-        limits=RunLimits(wall_clock=timedelta(minutes=30)),
+        limits=RunLimits(wall_clock=timedelta(minutes=30), idle=timedelta(minutes=2)),
     )
+    model.control.wait_closed()
 ```
 
 Keep the notifier open for as long as the runs that use it. Closing it stops
@@ -58,6 +59,16 @@ A notifier serving many runs over its life would otherwise hold a queue and a
 thread for every agent of every run it has ever served. Closing a lane reports
 whatever it still held, and returns once it has, so nothing is left queued
 behind a closed lane. Closing the notifier still closes any lane you did not.
+
+`close_timeout` on the notifier, ten seconds by default, bounds both
+closings. Closing the notifier spends it across every lane at once rather
+than on each in turn, so five lanes parked in a retry cost one timeout
+between them. Closing a single lane spends it on that lane, and cuts short no
+other lane's retries. Whatever a lane still holds when the bound passes is
+reported as undelivered before `close` returns.
+
+`to` on a notifier that has already closed raises `RuntimeError`. A run opened
+after that point needs a notifier of its own.
 
 ## Why the writer does not wait
 
@@ -85,23 +96,31 @@ the default of 4 is one send and three retries, and `backoff` decides the
 wait between them. The default doubles that wait each time and draws from the
 range between half of it and all of it, so agents that failed together do not
 all return at the same moment. A server that answered with `Retry-After` gets
-the delay it asked for, capped at thirty seconds.
+the delay it asked for, capped at thirty seconds. Only the seconds form of
+that header is read, and a date in it is ignored in favour of the doubling.
 
-A 4xx that is not 408, 425, or 429 is a refusal rather than a failure. The
-agent will answer the same way next time, so the notifier reports it without
-retrying.
+An answer that is not a 2xx, and is not 408, 425, 429, or a 5xx, is a refusal
+rather than a failure. The agent will answer the same way next time, so the
+notifier reports it without retrying.
 
 Everything the notifier gives up on is logged at `ERROR` on the
 `blackboard.delivery` logger, naming the agent, the notification, and how
-many attempts it took. Pass `on_failure` to receive the same thing as a
-`Undelivered` object, for a counter or an alert:
+many attempts it took. Pass `on_failure` to receive the same thing as an
+`Undelivered` object, which names the address, the agent, the notification,
+how many times the transport was called, and the error that stopped it:
 
 ```python
-notifier = HttpNotifier(on_failure=lambda failure: undelivered.inc())
+def missed(undelivered: Undelivered) -> None:
+    metrics.increment("blackboard.undelivered", agent=undelivered.agent)
+
+
+notifier = HttpNotifier(on_failure=missed)
 ```
 
-That handler runs on the failing agent's worker thread. Keep it short, and do
-not write to the board from it.
+That handler runs on the failing agent's lane thread. A notification handed to
+a lane that has already closed is reported on the thread that handed it over,
+with `attempts` at zero, and the write that woke the agent still returns. Keep
+the handler short, and do not write to the board from it.
 
 A notification that never lands is not the end of the run. The agent has not
 acknowledged, so the run's idle limit still applies and the outcome names
@@ -141,12 +160,12 @@ notifier = HttpNotifier(transport=Recording())
 
 Raise `DeliveryRefused` from `send` for something the agent will refuse
 again, and `DeliveryFailed`, or any other exception, for something another
-attempt might land. The two are siblings rather than one inheriting the
-other, because a refusal is not a failure worth repeating. `DeliveryFailed`
-takes `retry_after` when the far side named a delay.
+attempt might land. Both descend from `BlackboardError` and neither descends
+from the other, so an `except DeliveryFailed` does not catch a refusal.
+`DeliveryFailed` takes `retry_after` when the far side named a delay.
 
-A transport you supply is yours to close. One the notifier built is closed
-with the notifier.
+A transport you supply is yours to close. The notifier builds an
+`HttpxTransport` when it is given none, and closes that one with itself.
 
 The protocol is in the base install. Only `HttpxTransport`, the
 implementation that uses `httpx`, needs the `notifier` extra.
@@ -167,5 +186,7 @@ A JSON object, posted to the address you gave `to`:
 ```
 
 `blackboard.wire.NotificationBody.from_json` decodes it, and ignores fields a
-later version adds. Any 2xx means the agent took it. [Write an
-agent](writing-an-agent.md) covers what the agent does next.
+later version adds. It refuses a body missing either sequence bound, because
+an absent `from_sequence` would decode as zero and send the agent through the
+whole level. Any 2xx means the agent took it.
+[Write an agent](writing-an-agent.md) covers what the agent does next.

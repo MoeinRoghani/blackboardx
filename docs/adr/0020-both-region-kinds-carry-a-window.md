@@ -10,7 +10,7 @@ Accepted. Supersedes the specification's rule that only a premise carries a batc
 
 The batch window is the only damping this library has. A premise declared with a five second window collects the changes that land inside it and issues one notification.
 
-A level had none. Ten writes to a level a subscriber watches produced ten notifications, and a notification carries no values, so all ten said the same thing: read the board. The specification prices a wake as one inference where the agent is a language model, so a burst of ten findings cost ten runs of a model to learn what one notification would have said.
+A level had none. Ten writes to a level a subscriber watches produced ten notifications, and a notification carries no values, so all ten said the same thing: read the board. The specification prices each notification at one inference where the agent is a language model, so a burst of ten findings cost ten runs of a model to learn what one notification would have said.
 
 The rule came from the specification, written when only premises had subscribers. ADR 0008 gave levels subscriptions and left the rule in place, so the asymmetry was a leftover rather than a decision.
 
@@ -18,7 +18,7 @@ The rule came from the specification, written when only premises had subscribers
 
 `Level` takes a `batch_window`, defaulting to zero, with the same non-negative check `Premise` has. The control component records a window for both kinds, so the lookup in `_note_region_change` is direct rather than a lookup with a zero fallback, and a region nobody declared raises there rather than silently taking a zero window.
 
-Registering an agent still wakes it at once, whatever the window. Registration is a catch-up on what is already on the board, not a burst to damp, and an agent that has just joined is waiting to start.
+Registering an agent makes a level it subscribes to due at once, whatever that level's window, because registration is a catch-up on what is already on the board rather than a burst to damp. A premise it subscribes to is due after that premise's window, which is unchanged and is why an agent subscribed to premises alone waits the shortest of those windows for its first notification.
 
 ## Consequences
 

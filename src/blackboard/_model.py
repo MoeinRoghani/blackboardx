@@ -316,17 +316,30 @@ def _check_roster(declarations: list[Level | Premise], roster: list[Agent]) -> N
             + " more than once"
         )
     for agent in roster:
-        _refuse_unknown(agent.name, "subscribe to", agent.subscribes_to, set(names))
-        _refuse_unknown(agent.name, "write to", agent.writes_to, levels)
+        _refuse_unknown(agent.name, agent.subscribes_to, set(names))
+        for named in agent.writes_to or ():
+            if named not in names:
+                raise UndeclaredRegionError(
+                    f"{named!r} is not a declared region, so {agent.name!r} "
+                    "cannot write to it"
+                )
+            if named not in levels:
+                raise RegionKindError(
+                    f"{named!r} names a premise, and {agent.name!r} can only "
+                    "be permitted to write to a level"
+                )
 
 
-def _refuse_unknown(
-    agent: str, doing: str, named: Iterable[str] | None, allowed: set[str]
-) -> None:
+def _refuse_unknown(agent: str, named: Iterable[str] | None, allowed: set[str]) -> None:
+    """Refuses a subscription to a region nobody declared, naming all of them.
+
+    The wording matches ``Control.register_agent``, because the roster and a
+    later registration are the same declaration arriving at two moments and
+    must answer a mistake the same way.
+    """
     unknown = sorted(set(named or ()) - allowed)
     if unknown:
-        kind = "level" if doing == "write to" else "region"
         raise UndeclaredRegionError(
             ", ".join(repr(n) for n in unknown)
-            + f" names no declared {kind}, so {agent!r} cannot {doing} it"
+            + f" is not a declared region, so {agent!r} cannot subscribe to it"
         )

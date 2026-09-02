@@ -8,7 +8,11 @@ Later systems kept that arrangement and replaced the knowledge, HASP interpretin
 
 `blackboardx` is skeletal in that sense. It supplies the board, which stores what agents write and puts every write in one order, and the control component, which determines who is notified of a change, whether a write is admitted, and when the run ends. An application supplies its regions, their opening premise values, the agents the run starts with, an admission rule, a termination predicate, and limits.
 
+The record outlives the run that wrote it. `create_model` opens a board the store does not hold yet; `attach_model` opens a run over a board the store already holds, and continues the sequence from where the record ends.
+
 It also carries both halves of the conversation between a blackboard and agents deployed as their own services: the bodies and operations they share, the piece that answers an agent's request, the piece that sends a notification without making the writer wait, and the client an agent calls with. Your service keeps its own HTTP server, its routes, its authentication, and its database; neither half writes the protocol between them.
+
+An agent reads and writes through `AgentBoard`, the four reads and the three writes without the agent's own name. `Control.as_agent` returns one in the same process as the run, and `BoardClient` is one over HTTP, so an agent body is written once and deployed either way.
 
 The distribution name is `blackboardx`; the import name is `blackboard`. The documentation, including the API reference, is at <https://moeinroghani.github.io/blackboardx/>.
 
@@ -16,18 +20,21 @@ The distribution name is `blackboardx`; the import name is `blackboard`. The doc
 
 ```
 pip install blackboardx
-pip install 'blackboardx[postgres]'    # PostgresStore
-pip install 'blackboardx[mongodb]'     # MongoStore
-pip install 'blackboardx[notifier]'    # sending to agents over HTTP
+pip install 'blackboardx[postgres]'     # PostgresStore
+pip install 'blackboardx[mongodb]'      # MongoStore
+pip install 'blackboardx[notifier]'     # sending notifications to agents over HTTP
+pip install 'blackboardx[agent]'        # BoardClient, for an agent calling a blackboard
+pip install 'blackboardx[conformance]'  # the suite a store of your own is held to
 ```
 
-The base install has no runtime dependency: the board it ships, `SqliteStore`, is backed by SQLite, which comes with Python. A deployment keeps the record in the database it already runs, and the adapter for one needs its driver.
+The base install has no runtime dependency. Neither store it ships needs one: `InMemoryStore` holds the record in the process, and `SqliteStore` uses `sqlite3` from the standard library. A deployment keeps the record in the database it already runs, and the adapter for one needs that database's driver.
 
 ## Documentation
 
 | | |
 | --- | --- |
-| [Quickstart](https://moeinroghani.github.io/blackboardx/quickstart/) | A run in full, in twenty lines |
+| [Installation](https://moeinroghani.github.io/blackboardx/install/) | The extras, and what each one gives you |
+| [Quickstart](https://moeinroghani.github.io/blackboardx/quickstart/) | A run in full, and what each step means |
 | [Concepts](https://moeinroghani.github.io/blackboardx/concepts/board/) | What the board, the control component and a run are |
 | [Storage](https://moeinroghani.github.io/blackboardx/concepts/storage/) | Where the record is kept, and what an adapter owes |
 | [Guides](https://moeinroghani.github.io/blackboardx/guides/writing-an-agent/) | Writing an agent, notifying over HTTP, admission rules, ending a run, testing |
@@ -68,6 +75,8 @@ model.control.ack(notification.notification_id, agent="ocp")
 
 assert model.control.wait_closed(timeout=timedelta(seconds=10)) == Settled()
 ```
+
+Running that a second time raises `DuplicateRegionError`, because the board is already in `incidents.sqlite3`. `attach_model` opens a run over it.
 
 ## License
 
