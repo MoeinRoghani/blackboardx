@@ -650,6 +650,7 @@ class Control:
         board_id: str,
         store: BoardStore,
         clock: Clock,
+        adopt: bool = False,
     ) -> None:
         resolved = limits
         self._board_id = board_id
@@ -677,8 +678,18 @@ class Control:
         self._idle_call: ScheduledCall | None = None
         self._idle_generation = 0
         self._condition = threading.Condition(self._lock)
-        for region in regions:
-            self.declare(region)
+        if adopt:
+            # The record already holds these regions, so recording their
+            # kinds is all that is left. The sequence continues from what the
+            # record ends at, or a notification would cover a range that has
+            # already been read.
+            for region in regions:
+                self._record_kind(region)
+            written = store.read_board(board_id)
+            self._last_sequence = written[-1].sequence if written else 0
+        else:
+            for region in regions:
+                self.declare(region)
         self._wall_call = clock.call_at(
             clock.now() + resolved.wall_clock, self._wall_clock_expired
         )
@@ -711,11 +722,14 @@ class Control:
             if self._outcome is not None:
                 raise RunClosedError("the run has closed")
             self._store.declare(self._board_id, region)
-            if isinstance(region, Level):
-                self._kinds[region.name] = _RegionKind.LEVEL
-            else:
-                self._kinds[region.name] = _RegionKind.PREMISE
-                self._batch_windows[region.name] = region.batch_window
+            self._record_kind(region)
+
+    def _record_kind(self, region: Level | Premise) -> None:
+        if isinstance(region, Level):
+            self._kinds[region.name] = _RegionKind.LEVEL
+        else:
+            self._kinds[region.name] = _RegionKind.PREMISE
+            self._batch_windows[region.name] = region.batch_window
 
     def register_agent(self, agent: Agent) -> None:
         """Registers an agent and wakes it.

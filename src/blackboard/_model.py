@@ -27,6 +27,7 @@ from blackboard._board import (
     DuplicateRegionError,
     Level,
     Premise,
+    RegionKindError,
     UndeclaredRegionError,
 )
 from blackboard._clock import Clock, SystemClock
@@ -140,6 +141,99 @@ def create_model(
     return Model(reader=control.reader, control=control)
 
 
+def attach_model(
+    *,
+    board_id: str,
+    store: BoardStore,
+    regions: Iterable[Level | Premise],
+    agents: Iterable[Agent] | None = None,
+    admission_rule: AdmissionRule | None = None,
+    termination_predicate: TerminationPredicate | None = None,
+    limits: RunLimits,
+    clock: Clock | None = None,
+) -> Model:
+    """Opens a run over a board that already holds a record.
+
+    ``create_model`` declares the regions, so it opens a board once. This
+    opens a run over one that exists, which is what a replica replacing the
+    one that died does, and what a service resuming a run it evicted does.
+
+    There is no ``premises`` argument. The record already holds their values,
+    and the versions they are at.
+
+    ``regions`` still names what the run expects, and is checked against what
+    the record holds. A board holding no regions is refused rather than
+    quietly created, because attaching to nothing would build a run whose
+    every write is rejected. A name or a kind that disagrees with the record
+    is refused naming the region.
+
+    What the record holds carries over: the regions, the contributions, the
+    premise values and their versions, the sequence, and the idempotency
+    keys. What the process held does not, because it died with it: the agent
+    registry, the outstanding notifications, the audit, every agent's cursor,
+    and the notification identifiers, which start again at one.
+
+    So an agent registered against the attached run is woken as one joining a
+    run already under way, covering everything on the board, which is what an
+    agent that lost its own memory of the run needs.
+    """
+    declarations = list(regions)
+    roster = list(agents or ())
+    _check_roster(declarations, roster)
+    _agree(store.read_regions(board_id), declarations, board_id)
+    control = Control(
+        regions=declarations,
+        admission_rule=admission_rule,
+        termination_predicate=termination_predicate,
+        limits=limits,
+        board_id=board_id,
+        store=store,
+        clock=clock if clock is not None else SystemClock(),
+        adopt=True,
+    )
+    try:
+        with suppress(RunClosedError):
+            for agent in roster:
+                control.register_agent(agent)
+    except BaseException as failed:
+        control.abort(f"attaching failed: {failed}")
+        raise
+    return Model(reader=control.reader, control=control)
+
+
+def _agree(
+    held: list[Level | Premise], declared: list[Level | Premise], board_id: str
+) -> None:
+    """Refuses a board whose record does not hold what the caller declared."""
+    if not held:
+        raise UndeclaredRegionError(
+            f"the store holds no regions for {board_id!r}, so there is no run to"
+            " attach to. create_model opens a board that does not exist yet."
+        )
+    on_record = {r.name: type(r).__name__ for r in held}
+    wanted = {r.name: type(r).__name__ for r in declared}
+    missing = sorted(set(wanted) - set(on_record))
+    if missing:
+        raise UndeclaredRegionError(
+            "the record holds no "
+            + ", ".join(repr(n) for n in missing)
+            + f" on {board_id!r}"
+        )
+    absent = sorted(set(on_record) - set(wanted))
+    if absent:
+        raise UndeclaredRegionError(
+            "the record holds "
+            + ", ".join(repr(n) for n in absent)
+            + ", which this run does not declare"
+        )
+    wrong = sorted(n for n, kind in wanted.items() if on_record[n] != kind)
+    if wrong:
+        named = ", ".join(
+            f"{n!r} is a {on_record[n].lower()} on the record" for n in wrong
+        )
+        raise RegionKindError(named)
+
+
 def _check(
     declarations: list[Level | Premise],
     premises: Mapping[str, object],
@@ -158,7 +252,6 @@ def _check(
             "the regions name " + ", ".join(repr(n) for n in twice) + " more than once"
         )
     declared_premises = {r.name for r in declarations if isinstance(r, Premise)}
-    levels = {r.name for r in declarations if isinstance(r, Level)}
     missing = sorted(declared_premises - set(premises))
     if missing:
         raise PremiseError(
@@ -178,6 +271,13 @@ def _check(
                 f"the opening value for {name!r} is not JSON: {carried}"
             ) from carried
 
+    _check_roster(declarations, roster)
+
+
+def _check_roster(declarations: list[Level | Premise], roster: list[Agent]) -> None:
+    """Refuses a roster that names itself twice or names a region nobody declared."""
+    names = [region.name for region in declarations]
+    levels = {r.name for r in declarations if isinstance(r, Level)}
     agent_names = [a.name for a in roster]
     repeated = sorted({n for n in agent_names if agent_names.count(n) > 1})
     if repeated:

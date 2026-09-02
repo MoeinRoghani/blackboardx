@@ -65,7 +65,7 @@ from blackboard._control import (
     WriteAccepted,
     WriteRejected,
 )
-from blackboard._model import Model, create_model
+from blackboard._model import Model, attach_model, create_model
 from blackboard._schema import SCHEMA_VERSION, SchemaVersionError
 from blackboard._sqlite import SqliteStore
 
@@ -132,6 +132,7 @@ __all__ = [
     "WriteAccepted",
     "WriteRejected",
     "Written",
+    "attach_model",
     "create_model",
 ]
 
