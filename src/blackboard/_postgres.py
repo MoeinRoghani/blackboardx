@@ -36,6 +36,7 @@ from blackboard._board import (
     BoardChange,
     Conflict,
     Contribution,
+    Deleted,
     DuplicateRegionError,
     IdempotencyKeyError,
     Level,
@@ -323,6 +324,29 @@ class PostgresStore:
         return [
             BoardChange(sequence=int(r[0]), region=r[1], content=r[2]) for r in rows
         ]
+
+    def delete(self, board_id: str) -> Deleted:
+        with self._pool.connection() as connection, connection.transaction():
+            regions = connection.execute(
+                "SELECT COUNT(*) FROM blackboard_regions WHERE board_id = %s",
+                (board_id,),
+            ).fetchone()
+            writes = connection.execute(
+                "SELECT COUNT(*) FROM blackboard_contributions WHERE board_id = %s",
+                (board_id,),
+            ).fetchone()
+            for table in (
+                "blackboard_contributions",
+                "blackboard_premises",
+                "blackboard_regions",
+                "blackboard_boards",
+            ):
+                connection.execute(
+                    f"DELETE FROM {table} WHERE board_id = %s", (board_id,)
+                )
+            return Deleted(
+                board_id=board_id, regions=int(regions[0]), writes=int(writes[0])
+            )
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         """Returns the regions declared on one board, with their kinds."""

@@ -15,6 +15,7 @@ from blackboard import (
     BoardStore,
     Conflict,
     Contribution,
+    Deleted,
     DuplicateRegionError,
     IdempotencyKeyError,
     Level,
@@ -71,6 +72,9 @@ class Bound:
 
     def read_regions(self) -> list[Level | Premise]:
         return self.store.read_regions(self.board_id)
+
+    def delete(self) -> Deleted:
+        return self.store.delete(self.board_id)
 
 
 class BoardConformance:
@@ -440,6 +444,60 @@ class BoardConformance:
         assert isinstance(ready.set("window", "b", current, key="k1"), Written)
         assert ready.read_premise("window").value == "b"
 
+    # Removing a board
+
+    def test_deleting_says_what_it_removed(self, ready: Bound) -> None:
+        ready.append("platform", {"n": 1})
+        ready.set("window", "w", 0)
+        assert ready.delete() == Deleted(board_id=ready.board_id, regions=3, writes=2)
+
+    def test_deleting_removes_the_regions(self, ready: Bound) -> None:
+        ready.delete()
+        assert ready.read_regions() == []
+
+    def test_deleting_removes_the_contributions(self, ready: Bound) -> None:
+        ready.append("platform", {"n": 1})
+        ready.delete()
+        ready.declare(Level("platform"))
+        assert ready.read_level("platform") == []
+
+    def test_deleting_removes_the_premise_values(self, ready: Bound) -> None:
+        ready.set("window", "w", 0)
+        ready.delete()
+        ready.declare(Premise("window"))
+        # Declared afresh, so it holds nothing, as a premise never written does.
+        with pytest.raises(UnsetPremiseError):
+            ready.read_premise("window")
+
+    def test_a_deleted_region_is_undeclared_again(self, ready: Bound) -> None:
+        ready.delete()
+        with pytest.raises(UndeclaredRegionError):
+            ready.read_level("platform")
+
+    def test_a_board_declared_again_counts_from_one(self, ready: Bound) -> None:
+        ready.append("platform", {"n": 1})
+        ready.append("platform", {"n": 2})
+        ready.delete()
+        ready.declare(Level("platform"))
+        assert ready.append("platform", {"n": 1}) == 1
+
+    def test_deleting_frees_the_keys_it_wrote(self, ready: Bound) -> None:
+        ready.appended("platform", {"n": 1}, key="k1")
+        ready.delete()
+        ready.declare(Level("platform"))
+        assert ready.appended("platform", {"n": 2}, key="k1").repeated is False
+
+    def test_deleting_a_board_nobody_used_names_nothing(
+        self, store: BoardStore
+    ) -> None:
+        board_id = str(uuid4())
+        assert store.delete(board_id) == Deleted(board_id=board_id, regions=0, writes=0)
+
+    def test_deleting_twice_is_safe(self, ready: Bound) -> None:
+        ready.append("platform", {"n": 1})
+        ready.delete()
+        assert ready.delete() == Deleted(board_id=ready.board_id, regions=0, writes=0)
+
 
 class SharedStoreConformance:
     """Subclass this and supply a ``store`` fixture. One store, many boards.
@@ -558,3 +616,27 @@ class SharedStoreConformance:
             board.declare(Level("platform"))
             board.appended("platform", {"n": 1}, key="k1")
         assert all(len(b.read_level("platform")) == 1 for b in two_boards)
+
+    def test_deleting_one_board_leaves_the_other_whole(
+        self, two_boards: tuple[Bound, Bound]
+    ) -> None:
+        kept, removed = two_boards
+        for board in two_boards:
+            board.declare(Level("platform"))
+            board.declare(Premise("window"))
+            board.append("platform", {"n": 1})
+            board.set("window", "w", 0)
+        removed.delete()
+        assert [c.content for c in kept.read_level("platform")] == [{"n": 1}]
+        assert kept.read_premise("window").value == "w"
+        assert len(kept.read_regions()) == 2
+
+    def test_a_deleted_board_does_not_take_the_other_boards_numbers(
+        self, two_boards: tuple[Bound, Bound]
+    ) -> None:
+        kept, removed = two_boards
+        for board in two_boards:
+            board.declare(Level("platform"))
+            board.append("platform", {"n": 1})
+        removed.delete()
+        assert kept.append("platform", {"n": 2}) == 2

@@ -162,9 +162,9 @@ Every store call names a board, and every row is scoped by it. Two boards under 
 
 ## An adapter of your own
 
-`BoardStore` is the protocol, and it has seven methods. `declare`, `append` and `set` write. `read_level`, `read_premise`, `read_board` and `read_regions` read. Every one names the board it acts on first.
+`BoardStore` is the protocol, and it has eight methods. `declare`, `append` and `set` write. `read_level`, `read_premise`, `read_board` and `read_regions` read. `delete` removes one board. Every one names the board it acts on first.
 
-A store records a region's name and its kind and nothing else, so `read_regions` returns a premise without the batch window it was declared with. The window tells the control component when to notify and is no part of the record. An implementation of those seven is a store, and the control component names no concrete type.
+A store records a region's name and its kind and nothing else, so `read_regions` returns a premise without the batch window it was declared with. The window tells the control component when to notify and is no part of the record. An implementation of those eight is a store, and the control component names no concrete type.
 
 Four rules hold every implementation together, and the conformance suite in `tests/conformance.py` checks each one against all of them, the deployment adapters against real servers:
 
@@ -192,6 +192,23 @@ The key is stored on the contribution row rather than beside it. One insert writ
 A key names one write on one board. The same key on another board is another write, because two runs share nothing. A key sent for a region it did not name before raises `IdempotencyKeyError`, since that is a mistake rather than a retry. A key sent again for the region it did name returns the first write whatever content comes with it, so a retry sends what it sent before.
 
 `SqliteStore` and `PostgresStore` add the columns to a table written by an earlier version rather than assuming them, and `MongoStore` indexes the key only where one is present, so documents written before keys existed do not collide.
+
+## Removing a board
+
+A store holds many boards, and `delete` removes one:
+
+```python
+gone = store.delete("incident-4471")
+log.info("removed %d writes across %d regions", gone.writes, gone.regions)
+```
+
+Everything or nothing. The regions, the record, the premise values, and the sequence counter go together in one transaction, so a board that comes back is a board that is gone rather than one that is half there. The same identifier declared again starts its sequence at 1, and the idempotency keys the old board wrote are free.
+
+A board the store never held names nothing rather than failing, so a delete that runs twice is safe and a retention job needs no lookup first.
+
+**Nothing in the library calls it.** Deleting is a retention decision and the control component makes none: a run that closes deletes no board, and no board expires. The application decides.
+
+**Close the run first.** A `Control` still serving the board goes on writing to a record that is no longer there, and the store cannot see that it is running. `control.outcome()` returning something other than `None` is how you know a run has closed.
 
 ## Reading a board in pieces
 

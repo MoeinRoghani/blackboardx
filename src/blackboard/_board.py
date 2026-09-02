@@ -101,6 +101,20 @@ class Written:
 
 
 @dataclass(frozen=True)
+class Deleted:
+    """What removing one board took with it.
+
+    ``regions`` counts the declarations removed and ``writes`` counts the
+    entries in the record. A board the store never held names nothing rather
+    than failing, so deleting one twice is safe.
+    """
+
+    board_id: str
+    regions: int
+    writes: int
+
+
+@dataclass(frozen=True)
 class Conflict:
     """A premise write that failed because the version it named is not current."""
 
@@ -299,6 +313,23 @@ class InMemoryStore:
             board = self._board(board_id)
             found = [c for c in board.changes if c.sequence >= from_sequence]
             return found if limit is None else found[:limit]
+
+    def delete(self, board_id: str) -> Deleted:
+        """Removes one board's regions, record, premise values, and counter.
+
+        The application decides when a board is deleted; nothing in the
+        library calls this. Close the run first: a `Control` still serving
+        this board goes on writing to a record that is no longer there.
+        """
+        with self._lock:
+            board = self._boards.pop(board_id, None)
+            if board is None:
+                return Deleted(board_id=board_id, regions=0, writes=0)
+            return Deleted(
+                board_id=board_id,
+                regions=len(board.levels) + len(board.premises),
+                writes=len(board.changes),
+            )
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         """Returns the regions declared on one board, with their kinds."""
