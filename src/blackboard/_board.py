@@ -63,9 +63,20 @@ class UnsetPremiseError(BlackboardError):
 
 @dataclass(frozen=True)
 class Level:
-    """A declaration of a region that accumulates contributions in arrival order."""
+    """A declaration of a region that accumulates contributions in arrival order.
+
+    The control component reads the batch window when a change to this level
+    lands, to schedule its notification. The board ignores it. A window
+    collapses a burst of writes into one notification, which costs a
+    subscriber one wake instead of one per write.
+    """
 
     name: str
+    batch_window: timedelta = _ZERO_WINDOW
+
+    def __post_init__(self) -> None:
+        if self.batch_window < _ZERO_WINDOW:
+            raise ValueError("a batch window is a non-negative duration")
 
 
 @dataclass(frozen=True)
@@ -104,14 +115,14 @@ class Written:
 class Deleted:
     """What removing one board took with it.
 
-    ``regions`` counts the declarations removed and ``writes`` counts the
-    entries in the record. A board the store never held names nothing rather
-    than failing, so deleting one twice is safe.
+    A board the store never held names nothing rather than failing, so
+    deleting one twice is safe. Both fields are counts, and are named as
+    counts because ``regions`` elsewhere on this surface holds names.
     """
 
     board_id: str
-    regions: int
-    writes: int
+    regions_removed: int
+    writes_removed: int
 
 
 @dataclass(frozen=True)
@@ -324,11 +335,11 @@ class InMemoryStore:
         with self._lock:
             board = self._boards.pop(board_id, None)
             if board is None:
-                return Deleted(board_id=board_id, regions=0, writes=0)
+                return Deleted(board_id=board_id, regions_removed=0, writes_removed=0)
             return Deleted(
                 board_id=board_id,
-                regions=len(board.levels) + len(board.premises),
-                writes=len(board.changes),
+                regions_removed=len(board.levels) + len(board.premises),
+                writes_removed=len(board.changes),
             )
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:

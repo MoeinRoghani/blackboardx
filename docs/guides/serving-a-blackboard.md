@@ -29,7 +29,7 @@ fills and empties:
 
 ```python
 def route(model):
-    runs[model.control.board_id] = model.control
+    runs[model.board_id] = model.control
 
 
 def forget(outcome):

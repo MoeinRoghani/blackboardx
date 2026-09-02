@@ -390,7 +390,9 @@ class MongoStore:
                 self._database[collection].delete_many(named, session=session)
             # The counter is keyed by _id, so it is not named the same way.
             self._database[_BOARDS].delete_one({"_id": board_id}, session=session)
-            return Deleted(board_id=board_id, regions=regions, writes=writes)
+            return Deleted(
+                board_id=board_id, regions_removed=regions, writes_removed=writes
+            )
 
         return self._in_a_transaction(work)
 

@@ -309,7 +309,9 @@ class SqliteStore:
                     f"DELETE FROM {table} WHERE board_id = ?", (board_id,)
                 )
             return Deleted(
-                board_id=board_id, regions=int(regions[0]), writes=int(writes[0])
+                board_id=board_id,
+                regions_removed=int(regions[0]),
+                writes_removed=int(writes[0]),
             )
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
