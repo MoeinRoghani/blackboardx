@@ -18,11 +18,17 @@ registers itself instead.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 
-from blackboard._board import Level, Premise
+from blackboard._board import (
+    DuplicateRegionError,
+    Level,
+    Premise,
+    UndeclaredRegionError,
+)
 from blackboard._clock import Clock, SystemClock
 from blackboard._control import (
     AdmissionRule,
@@ -31,6 +37,7 @@ from blackboard._control import (
     BoardStore,
     Control,
     DuplicateAgentError,
+    PremiseError,
     RunClosedError,
     RunLimits,
     TerminationPredicate,
@@ -78,13 +85,17 @@ def create_model(
     ``agents`` names the agents the run starts with, and naming one twice
     is refused, because a roster is one list written at one moment. An agent
     that registers again later is a returning agent rather than a mistake,
-    and replaces its own declaration.
+    and replaces its own declaration. Each is registered once the premises
+    hold their opening values, so each receives one notification covering
+    everything already on the board. An agent that joins a run already under
+    way registers itself through ``Control.register_agent`` instead.
 
-    ``agents`` names the agents the run starts with. Each is registered
-    once the premises hold their opening values, so each receives one
-    notification covering everything already on the board. An agent that
-    joins a run already under way registers itself through
-    ``Control.register_agent`` instead.
+    Everything the arguments alone can settle is settled before the store is
+    touched: the regions naming each other once, the opening premises being
+    exactly the declared premises, each opening value being JSON, the roster
+    naming each agent once, and every region an agent subscribes to or writes
+    to being declared. A call that raises here has written nothing, so the
+    corrected call opens the board it was going to open.
 
     ``premises`` gives every declared premise its opening value, naming
     each one exactly once. Those writes bypass admission, because they are
@@ -97,14 +108,11 @@ def create_model(
     when nothing has happened for the idle limit; with no clock the
     operating system clock serves.
     """
-    named = [a.name for a in agents or ()]
-    twice = sorted({n for n in named if named.count(n) > 1})
-    if twice:
-        raise DuplicateAgentError(
-            "the roster names " + ", ".join(repr(n) for n in twice) + " more than once"
-        )
+    declarations = list(regions)
+    roster = list(agents or ())
+    _check(declarations, premises, roster)
     control = Control(
-        regions=regions,
+        regions=declarations,
         admission_rule=admission_rule,
         termination_predicate=termination_predicate,
         limits=limits,
@@ -115,10 +123,81 @@ def create_model(
     # The wall clock can expire while the run is opening, in which case the
     # model returns already closed, no premise receives its value, and no
     # agent is registered.
-    with suppress(RunClosedError):
-        control._open_premises(dict(premises))
-        # After the premises, so that each agent's one notification covers
-        # the values they opened with.
-        for agent in agents or ():
-            control.register_agent(agent)
+    try:
+        with suppress(RunClosedError):
+            control._open_premises(dict(premises))
+            # After the premises, so that each agent's one notification
+            # covers the values they opened with.
+            for agent in roster:
+                control.register_agent(agent)
+    except BaseException as failed:
+        # _check reads everything this can still raise on, so reaching here
+        # means the store or a clock failed. Closing the run cancels the two
+        # timers the control component armed, which would otherwise outlive a
+        # model the caller never received.
+        control.abort(f"creation failed: {failed}")
+        raise
     return Model(reader=control.reader, control=control)
+
+
+def _check(
+    declarations: list[Level | Premise],
+    premises: Mapping[str, object],
+    roster: list[Agent],
+) -> None:
+    """Refuses a configuration that cannot open, before the store is touched.
+
+    Everything here is decided by the arguments alone. Reaching the store
+    first would leave a board behind that the corrected call then collides
+    with, and the caller never receives a model to abort.
+    """
+    names = [region.name for region in declarations]
+    twice = sorted({n for n in names if names.count(n) > 1})
+    if twice:
+        raise DuplicateRegionError(
+            "the regions name " + ", ".join(repr(n) for n in twice) + " more than once"
+        )
+    declared_premises = {r.name for r in declarations if isinstance(r, Premise)}
+    levels = {r.name for r in declarations if isinstance(r, Level)}
+    missing = sorted(declared_premises - set(premises))
+    if missing:
+        raise PremiseError(
+            "the opening premises miss " + ", ".join(repr(n) for n in missing)
+        )
+    undeclared = sorted(set(premises) - declared_premises)
+    if undeclared:
+        raise PremiseError(
+            "the opening premises name undeclared "
+            + ", ".join(repr(n) for n in undeclared)
+        )
+    for name, value in premises.items():
+        try:
+            json.dumps(value)
+        except TypeError as carried:
+            raise PremiseError(
+                f"the opening value for {name!r} is not JSON: {carried}"
+            ) from carried
+
+    agent_names = [a.name for a in roster]
+    repeated = sorted({n for n in agent_names if agent_names.count(n) > 1})
+    if repeated:
+        raise DuplicateAgentError(
+            "the roster names "
+            + ", ".join(repr(n) for n in repeated)
+            + " more than once"
+        )
+    for agent in roster:
+        _refuse_unknown(agent.name, "subscribe to", agent.subscribes_to, set(names))
+        _refuse_unknown(agent.name, "write to", agent.writes_to, levels)
+
+
+def _refuse_unknown(
+    agent: str, doing: str, named: Iterable[str] | None, allowed: set[str]
+) -> None:
+    unknown = sorted(set(named or ()) - allowed)
+    if unknown:
+        kind = "level" if doing == "write to" else "region"
+        raise UndeclaredRegionError(
+            ", ".join(repr(n) for n in unknown)
+            + f" names no declared {kind}, so {agent!r} cannot {doing} it"
+        )
