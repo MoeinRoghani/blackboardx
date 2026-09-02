@@ -48,6 +48,7 @@ from blackboard._board import (
     BoardChange,
     Conflict,
     Contribution,
+    IdempotencyKeyError,
     Level,
     Premise,
     PremiseState,
@@ -219,12 +220,15 @@ class RejectionCause(Enum):
     ``ADMISSION``: the admission rule rejected it. ``NOT_PERMITTED``: the
     writing agent did not declare that level. ``UNDECLARED_REGION``: the
     named region was never declared. ``RUN_CLOSED``: the run has closed.
+    ``IDEMPOTENCY_KEY_REUSED``: the key names a write to a different region,
+    which is a mistake rather than a retry.
     """
 
     ADMISSION = "admission"
     NOT_PERMITTED = "not_permitted"
     UNDECLARED_REGION = "undeclared_region"
     RUN_CLOSED = "run_closed"
+    IDEMPOTENCY_KEY_REUSED = "idempotency_key_reused"
 
 
 @dataclass(frozen=True)
@@ -636,8 +640,21 @@ class Control:
             return False
         return True
 
-    def write(self, writer: str, level: str, content: object) -> Written | Rejected:
-        """Runs one level write through admission and, if admitted, the board."""
+    def write(
+        self,
+        writer: str,
+        level: str,
+        content: object,
+        idempotency_key: str | None = None,
+    ) -> Written | Rejected:
+        """Runs one level write through admission and, if admitted, the board.
+
+        ``idempotency_key`` names one write. A key already written answers
+        with what that write produced, marked ``repeated``, and changes
+        nothing: no audit event, no notification, and no push of the idle
+        deadline, because nothing happened. A key that named a different
+        region is refused with ``IDEMPOTENCY_KEY_REUSED``.
+        """
         refusal = self._refuse_region(writer, level, _RegionKind.LEVEL)
         if refusal is not None:
             return refusal
@@ -667,27 +684,48 @@ class Control:
                 if gate is not None:
                     result = gate
                 else:
-                    appended = self._store.append(self._board_id, level, content)
-                    sequence = appended.sequence
-                    self._last_sequence = sequence
+                    try:
+                        result = self._store.append(
+                            self._board_id, level, content, idempotency_key
+                        )
+                    except IdempotencyKeyError as reused:
+                        return self._reject_locked(
+                            writer,
+                            level,
+                            RejectionCause.IDEMPOTENCY_KEY_REUSED,
+                            str(reused),
+                        )
+                    if result.repeated:
+                        # Nothing reached the board, so nothing about the run
+                        # changed either.
+                        return result
+                    self._last_sequence = result.sequence
                     self._audit.append(
                         WriteAccepted(
                             at=self._clock.now(),
                             writer=writer,
                             region=level,
-                            sequence=sequence,
+                            sequence=result.sequence,
                         )
                     )
                     deliveries = self._note_region_change(level, writer)
-                    result = Written(sequence=sequence)
         self._deliver(deliveries)
         self._check_completion()
         return result
 
     def set_premise(
-        self, writer: str, premise: str, value: object, expected_version: int
+        self,
+        writer: str,
+        premise: str,
+        value: object,
+        expected_version: int,
+        idempotency_key: str | None = None,
     ) -> Written | Conflict | Rejected:
-        """Runs one premise write through admission and, if admitted, the board."""
+        """Runs one premise write through admission and, if admitted, the board.
+
+        ``idempotency_key`` works as it does for ``write``. A conflict stores
+        nothing, so it uses up no key.
+        """
         refusal = self._refuse_region(writer, premise, _RegionKind.PREMISE)
         if refusal is not None:
             return refusal
@@ -710,9 +748,23 @@ class Control:
                 if gate is not None:
                     result = gate
                 else:
-                    result = self._store.set(
-                        self._board_id, premise, value, expected_version
-                    )
+                    try:
+                        result = self._store.set(
+                            self._board_id,
+                            premise,
+                            value,
+                            expected_version,
+                            idempotency_key,
+                        )
+                    except IdempotencyKeyError as reused:
+                        return self._reject_locked(
+                            writer,
+                            premise,
+                            RejectionCause.IDEMPOTENCY_KEY_REUSED,
+                            str(reused),
+                        )
+                    if isinstance(result, Written) and result.repeated:
+                        return result
                     if isinstance(result, Written):
                         self._last_sequence = result.sequence
                         self._audit.append(

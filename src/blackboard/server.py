@@ -45,8 +45,8 @@ What the status codes mean
 ======  ==========================================================
 Status  Meaning
 ======  ==========================================================
-200     A read, answered
-201     A write reached the board
+200     A read, or a write this key had already made
+201     A write reached the board for the first time
 204     An acknowledgment was recorded
 400     The body or a query parameter could not be read
 404     No such board, region, notification, or path
@@ -301,7 +301,14 @@ class BoardService:
             return asked
         # The path names the level, so a body disagreeing with it changes
         # nothing: a caller cannot write somewhere it did not address.
-        return _outcome(control.write(asked.writer, variables["level"], asked.content))
+        return _outcome(
+            control.write(
+                asked.writer,
+                variables["level"],
+                asked.content,
+                asked.idempotency_key,
+            )
+        )
 
     def _set_premise(
         self, variables: dict[str, str], request: Request, control: Control
@@ -315,6 +322,7 @@ class BoardService:
                 variables["premise"],
                 setting.value,
                 setting.expected_version,
+                setting.idempotency_key,
             )
         )
 
@@ -396,9 +404,12 @@ def _decode(kind: Any, body: object) -> Any:
 
 def _outcome(result: Written | Conflict | Rejected) -> Response:
     if isinstance(result, Written):
-        return Response(
-            201, WrittenBody(sequence=result.sequence, version=result.version).to_json()
-        )
+        body = WrittenBody(
+            sequence=result.sequence, version=result.version, repeated=result.repeated
+        ).to_json()
+        # 201 says something was created. A repeat created nothing, so a
+        # client tells the two apart before it reads a body.
+        return Response(200 if result.repeated else 201, body)
     if isinstance(result, Conflict):
         return Response(
             409, ConflictBody(current_version=result.current_version).to_json()

@@ -199,12 +199,34 @@ The wait between attempts doubles and is drawn from the range between half of
 it and all of it, and a blackboard that sent `Retry-After` gets the delay it
 asked for.
 
-**A write is not attempted again.** A request that timed out may still have
-been received, and a contribution appended twice is not the same board. The
-write raises `Unreachable`, and what to do next is the agent's to decide,
-because only the agent knows whether writing the same thing twice matters. A
-later version deduplicates on a key the client sends, and writes will be
-retried then.
+**A write is attempted again only when it carries a key.** A request that
+timed out may still have been received, and a contribution appended twice is
+not the same board, so a write with nothing to identify it raises
+`Unreachable` and what to do next is the agent's to decide.
+
+Give the write a key and the blackboard writes it once, however many times it
+arrives:
+
+```python
+board.write("findings", conclusion, idempotency_key=f"{notification.notification_id}-1")
+```
+
+The client then retries that write like a read. If the first attempt landed
+and its answer was lost, the second comes back as the first one's result with
+`repeated` set, so the agent sees one write and the board holds one row.
+
+Name the key after work the agent can name again after a restart, rather than
+a fresh random string each time. The notification's id and a counter is
+usually enough, and a key that survives a restart deduplicates a restart.
+
+A key names one write on one board. Sending it for a different region is a
+mistake rather than a retry, and comes back as
+`Rejected` with the cause `idempotency_key_reused`. Sending it again for the
+region it does name returns the first write whatever content goes with it, so
+a retry sends what it sent before.
+
+Retrying a keyed write needs a blackboard at 0.9 or later. An older one takes
+the key and ignores it, and a retry against it writes twice.
 
 ### Reading a whole level
 
