@@ -38,6 +38,7 @@ nav:
       - Running as a service: concepts/service.md
   - Guides:
       - Write an agent: guides/writing-an-agent.md
+      - Notify agents over HTTP: guides/notifying-agents.md
       - Write an admission rule: guides/admission-rules.md
       - End a run: guides/ending-a-run.md
       - Test an application: guides/testing.md

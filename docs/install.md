@@ -14,6 +14,14 @@ It requires Python 3.11 or later, and the base install has no runtime dependenci
 
 ## Extras
 
+An extra names a third-party package the base install leaves out.
+
+| Extra | Installs | Gives you |
+| --- | --- | --- |
+| `postgres` | `psycopg[binary,pool]` | `PostgresStore` |
+| `mongodb` | `pymongo` | `MongoStore` |
+| `notifier` | `httpx` | `HttpxTransport`, which `HttpNotifier` uses by default |
+
 A deployment keeps the record in a database it already runs, and each adapter needs that database's driver:
 
 ```
@@ -21,31 +29,28 @@ pip install 'blackboardx[postgres]'
 pip install 'blackboardx[mongodb]'
 ```
 
-| Extra | Installs | Gives you |
-| --- | --- | --- |
-| `postgres` | `psycopg[binary,pool]` | `PostgresStore` |
-| `mongodb` | `pymongo` | `MongoStore` |
-
 Naming a board whose extra is not installed raises an `ImportError` saying which extra supplies it. [Storage](concepts/storage.md) covers the choice.
 
-Both at once is a comma, and needs no extra of its own:
+A blackboard that reaches its agents over HTTP adds the transport:
 
 ```
-pip install 'blackboardx[postgres,mongodb]'
+pip install 'blackboardx[postgres,notifier]'
 ```
 
-A deployment keeps its record in one database, so it wants one of them. Ask for both when you are testing a board of your own against the conformance suite, which runs against both servers, or when one service creates runs on either.
+[Notifying agents](guides/notifying-agents.md) covers what that gives you. Supplying your own `Transport` needs no extra, because the interface is in the base install and only the `httpx` implementation of it is not.
 
-There is no `all` extra. These two are alternative drivers for one slot rather than features that stack, so a name meaning every driver would invite a deployment to carry one it never uses.
+Several at once is a comma. There is no `all` extra: `postgres` and `mongodb` are alternative drivers for one slot, so a name meaning every driver would invite a deployment to carry one it never uses.
 
 ## What the package contains, and what it does not
 
 | Ships | Does not ship |
 | --- | --- |
-| `SqliteStore`, `PostgresStore`, `MongoStore` | Any transport to remote agents |
+| `SqliteStore`, `PostgresStore`, `MongoStore` | Any HTTP server, and any route it would serve |
 | The `BoardStore` protocol, for any other database | Any agent implementation |
 | The control component and model creation | Any process supervisor |
-| `SystemClock` and `ManualClock` | Any database server, credential, or migration tool |
+| `HttpNotifier`, which sends to agents over HTTP | Any database server, credential, or migration tool |
+| The wire bodies both halves encode and decode | Any queue that survives a restart |
+| `SystemClock` and `ManualClock` | |
 
 ## Supported versions
 
