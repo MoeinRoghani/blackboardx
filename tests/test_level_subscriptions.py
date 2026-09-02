@@ -51,7 +51,7 @@ def test_a_subscriber_is_woken_by_a_write_to_that_level() -> None:
     control = make_control(clock)
     received: list[Notification] = []
     control.register_agent(declaration("git", received, subscribes_to=["platform"]))
-    control.write("ocp", "platform", "a finding")
+    control.write("platform", "a finding", writer="ocp")
     (notification,) = received
     assert notification.regions == frozenset({"platform"})
 
@@ -61,7 +61,7 @@ def test_the_writer_is_not_woken_by_its_own_contribution() -> None:
     control = make_control(clock)
     writer: list[Notification] = []
     control.register_agent(declaration("ocp", writer, subscribes_to=["platform"]))
-    control.write("ocp", "platform", "a finding")
+    control.write("platform", "a finding", writer="ocp")
     assert writer == []
 
 
@@ -70,7 +70,7 @@ def test_an_agent_not_subscribed_to_that_level_is_unaffected() -> None:
     control = make_control(clock)
     received: list[Notification] = []
     control.register_agent(declaration("git", received, subscribes_to=["application"]))
-    control.write("ocp", "platform", "a finding")
+    control.write("platform", "a finding", writer="ocp")
     assert received == []
 
 
@@ -79,14 +79,14 @@ def test_omitting_the_declaration_subscribes_to_no_level() -> None:
     control = make_control(clock)
     received: list[Notification] = []
     control.register_agent(declaration("git", received))
-    control.write("ocp", "platform", "a finding")
+    control.write("platform", "a finding", writer="ocp")
     assert received == []
 
 
 def test_premiseing_notifies_for_a_level_that_already_holds_contributions() -> None:
     clock = ManualClock(start=START)
     control = make_control(clock)
-    control.write("ocp", "platform", "written before anyone registered")
+    control.write("platform", "written before anyone registered", writer="ocp")
     received: list[Notification] = []
     control.register_agent(declaration("late", received, subscribes_to=["platform"]))
     (notification,) = received

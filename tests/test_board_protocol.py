@@ -104,7 +104,9 @@ def test_the_control_component_drives_the_supplied_board() -> None:
         store=store,
         clock=ManualClock(start=START),
     )
-    assert model.control.write("ocp", "platform", "finding") == Written(sequence=2)
+    assert model.control.write("platform", "finding", writer="ocp") == Written(
+        sequence=2
+    )
     assert store.calls == [
         "declare:platform",
         "declare:window",
@@ -123,7 +125,9 @@ def test_without_one_the_in_memory_board_is_used() -> None:
         board_id="test-board",
         store=InMemoryStore(),
     )
-    assert model.control.write("ocp", "platform", "finding") == Written(sequence=1)
+    assert model.control.write("platform", "finding", writer="ocp") == Written(
+        sequence=1
+    )
     assert [c.content for c in model.reader.read_level("platform")] == ["finding"]
 
 

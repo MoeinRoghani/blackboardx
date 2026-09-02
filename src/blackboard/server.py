@@ -77,7 +77,6 @@ from blackboard._board import (
 )
 from blackboard._control import (
     Control,
-    NotificationId,
     Rejected,
     RejectionCause,
     RunClosedError,
@@ -303,10 +302,10 @@ class BoardService:
         # nothing: a caller cannot write somewhere it did not address.
         return _outcome(
             control.write(
-                asked.writer,
                 variables["level"],
                 asked.content,
                 asked.idempotency_key,
+                writer=asked.writer,
             )
         )
 
@@ -318,11 +317,11 @@ class BoardService:
             return setting
         return _outcome(
             control.set_premise(
-                setting.writer,
                 variables["premise"],
                 setting.value,
                 setting.expected_version,
                 setting.idempotency_key,
+                writer=setting.writer,
             )
         )
 
@@ -332,9 +331,7 @@ class BoardService:
         acknowledgment = _decode(AckRequest, request.body)
         if isinstance(acknowledgment, Response):
             return acknowledgment
-        control.ack(
-            acknowledgment.agent, NotificationId(acknowledgment.notification_id)
-        )
+        control.ack(acknowledgment.notification_id, agent=acknowledgment.agent)
         return Response(204)
 
 

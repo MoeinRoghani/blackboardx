@@ -63,8 +63,8 @@ model = create_model(
 
 (notification,) = notifications
 window = model.reader.read_premise("window").value
-model.control.write("ocp", "platform", {"window": window, "findings": ["oom"]})
-model.control.ack("ocp", notification.notification_id)
+model.control.write("platform", {"window": window, "findings": ["oom"]}, writer="ocp")
+model.control.ack(notification.notification_id, agent="ocp")
 
 assert model.control.wait_closed(timeout=timedelta(seconds=10)) == Settled()
 ```

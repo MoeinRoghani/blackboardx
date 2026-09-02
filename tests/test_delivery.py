@@ -346,7 +346,7 @@ def test_a_run_reaches_its_agents_through_the_notifier() -> None:
                 wall_clock=timedelta(minutes=1), idle=timedelta(minutes=1)
             ),
         )
-        model.control.write("source", "signals", {"n": 1})
+        model.control.write("signals", {"n": 1}, writer="source")
         assert recorder.arrived.wait(5)
     sent = [(url, body) for url, body in recorder.sent]
     assert [url for url, _ in sent] == ["https://triage.example/notify"]

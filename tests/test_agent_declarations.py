@@ -65,8 +65,8 @@ class TestSubscription:
         control = make_control(clock)
         received: list[Notification] = []
         control.register_agent(declaration("ocp", received))
-        control.set_premise("operator", "window", "w", expected_version=0)
-        control.set_premise("operator", "namespace", ("ns",), expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
+        control.set_premise("namespace", ("ns",), expected_version=0, writer="operator")
         assert [n.regions for n in received] == [
             frozenset({"window"}),
             frozenset({"namespace"}),
@@ -77,16 +77,16 @@ class TestSubscription:
         control = make_control(clock)
         received: list[Notification] = []
         control.register_agent(declaration("ocp", received, subscribes_to=["window"]))
-        control.set_premise("operator", "namespace", ("ns",), expected_version=0)
+        control.set_premise("namespace", ("ns",), expected_version=0, writer="operator")
         assert received == []
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         assert [n.regions for n in received] == [frozenset({"window"})]
 
     def test_the_opening_notification_names_only_subscribed_premises(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
-        control.set_premise("operator", "window", "w", expected_version=0)
-        control.set_premise("operator", "namespace", ("ns",), expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
+        control.set_premise("namespace", ("ns",), expected_version=0, writer="operator")
         received: list[Notification] = []
         control.register_agent(declaration("late", received, subscribes_to=["window"]))
         (notification,) = received
@@ -98,15 +98,15 @@ class TestWritePermission:
         clock = ManualClock(start=START)
         control = make_control(clock)
         control.register_agent(declaration("ocp", []))
-        assert control.write("ocp", "platform", "a") == Written(sequence=1)
-        assert control.write("ocp", "application", "b") == Written(sequence=2)
+        assert control.write("platform", "a", writer="ocp") == Written(sequence=1)
+        assert control.write("application", "b", writer="ocp") == Written(sequence=2)
 
     def test_a_level_outside_the_declaration_is_refused(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
         control.register_agent(declaration("ocp", [], writes_to=["platform"]))
-        assert control.write("ocp", "platform", "a") == Written(sequence=1)
-        result = control.write("ocp", "application", "b")
+        assert control.write("platform", "a", writer="ocp") == Written(sequence=1)
+        result = control.write("application", "b", writer="ocp")
         assert result == Rejected(
             cause=RejectionCause.NOT_PERMITTED,
             reason="'ocp' may not write to 'application'",
@@ -116,7 +116,7 @@ class TestWritePermission:
     def test_an_unpremiseed_writer_is_unrestricted(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
-        assert control.write("operator", "platform", "a") == Written(sequence=1)
+        assert control.write("platform", "a", writer="operator") == Written(sequence=1)
 
 
 class TestValidation:

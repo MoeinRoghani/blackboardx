@@ -78,7 +78,7 @@ class TestReading:
     def test_a_level_comes_back_as_a_page(
         self, service: BoardService, control: Control
     ) -> None:
-        control.write("triage", "signals", {"n": 1})
+        control.write("signals", {"n": 1}, writer="triage")
         answer = get(service, READ_LEVEL.path(board_id=BOARD, level="signals"))
         assert answer.status == 200
         page = LevelPage.from_json(answer.body)
@@ -89,7 +89,7 @@ class TestReading:
         self, service: BoardService, control: Control
     ) -> None:
         for n in range(5):
-            control.write("triage", "signals", {"n": n})
+            control.write("signals", {"n": n}, writer="triage")
         answer = get(
             service, READ_LEVEL.path(board_id=BOARD, level="signals"), limit="2"
         )
@@ -101,7 +101,7 @@ class TestReading:
         self, service: BoardService, control: Control
     ) -> None:
         for n in range(3):
-            control.write("triage", "signals", {"n": n})
+            control.write("signals", {"n": n}, writer="triage")
         first = LevelPage.from_json(
             get(
                 service, READ_LEVEL.path(board_id=BOARD, level="signals"), limit="1"
@@ -127,8 +127,8 @@ class TestReading:
     def test_the_board_comes_back_as_changes_in_order(
         self, service: BoardService, control: Control
     ) -> None:
-        control.write("triage", "signals", {"n": 1})
-        control.write("triage", "findings", {"n": 2})
+        control.write("signals", {"n": 1}, writer="triage")
+        control.write("findings", {"n": 2}, writer="triage")
         answer = get(service, READ_BOARD.path(board_id=BOARD))
         assert answer.status == 200
         changes = [c.region for c in _board_page(answer).changes]
@@ -326,7 +326,7 @@ class TestAcknowledging:
             ),
         )
         service = BoardService(control_for={BOARD: model.control}.get)
-        model.control.write("source", "signals", {"n": 1})
+        model.control.write("signals", {"n": 1}, writer="source")
         answer = service.handle(
             Request(
                 method="POST",
@@ -422,7 +422,7 @@ class TestAClosedRun:
 
     def test_reading_a_closed_run_still_works(self, control: Control) -> None:
         service = BoardService(control_for={BOARD: control}.get)
-        control.write("triage", "signals", {"n": 1})
+        control.write("signals", {"n": 1}, writer="triage")
         control.abort("the incident was stood down")
         answer = get(service, READ_LEVEL.path(board_id=BOARD, level="signals"))
         assert answer.status == 200

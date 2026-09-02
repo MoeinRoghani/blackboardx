@@ -75,7 +75,7 @@ class TestDeclarations:
         control = make_control(clock, agent("ocp", Recorder()))
         returning = Recorder()
         control.register_agent(agent("ocp", returning))
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         assert returning.received, "the replacement is the callback now reached"
 
 
@@ -84,7 +84,7 @@ class TestZeroWindowDispatch:
         clock = ManualClock(start=START)
         first, second = Recorder(), Recorder()
         control = make_control(clock, agent("ocp", first), agent("git", second))
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         expected = [
             Notification(
                 board_id="test-board",
@@ -103,14 +103,14 @@ class TestZeroWindowDispatch:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
-        control.write("git", "application", "content")
+        control.write("application", "content", writer="git")
         assert recorder.received == []
 
     def test_the_writer_is_not_notified_of_its_own_change(self) -> None:
         clock = ManualClock(start=START)
         writer, other = Recorder(), Recorder()
         control = make_control(clock, agent("ocp", writer), agent("git", other))
-        control.set_premise("ocp", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="ocp")
         assert writer.received == []
         assert len(other.received) == 1
 
@@ -135,7 +135,7 @@ class TestZeroWindowDispatch:
             ),
         )
         control_holder.append(control)
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         assert seen_during_callback == [True]
 
     def test_a_callback_may_run_its_whole_cycle_inline(self) -> None:
@@ -144,8 +144,8 @@ class TestZeroWindowDispatch:
 
         def full_cycle(notification: Notification) -> None:
             control = control_holder[0]
-            control.write("ocp", "application", "seen")
-            control.ack("ocp", notification.notification_id)
+            control.write("application", "seen", writer="ocp")
+            control.ack(notification.notification_id, agent="ocp")
 
         control = make_control(
             clock,
@@ -155,7 +155,7 @@ class TestZeroWindowDispatch:
             ),
         )
         control_holder.append(control)
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         (contribution,) = control.reader.read_level("application")
         assert contribution.content == "seen"
         assert any(
@@ -169,9 +169,11 @@ class TestBatchWindows:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
-        control.set_premise("operator", "namespace", ["ns1"], expected_version=0)
+        control.set_premise("namespace", ["ns1"], expected_version=0, writer="operator")
         clock.advance(timedelta(seconds=2))
-        control.set_premise("operator", "namespace", ["ns1", "ns2"], expected_version=1)
+        control.set_premise(
+            "namespace", ["ns1", "ns2"], expected_version=1, writer="operator"
+        )
         assert recorder.received == []
         clock.advance(timedelta(seconds=3))
         (notification,) = recorder.received
@@ -183,9 +185,9 @@ class TestBatchWindows:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
-        control.set_premise("operator", "namespace", ["ns1"], expected_version=0)
+        control.set_premise("namespace", ["ns1"], expected_version=0, writer="operator")
         assert recorder.received == []
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         (notification,) = recorder.received
         assert notification.regions == frozenset({"namespace", "window"})
         assert notification.from_sequence == 1
@@ -197,9 +199,11 @@ class TestBatchWindows:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
-        control.set_premise("operator", "namespace", ["ns1"], expected_version=0)
+        control.set_premise("namespace", ["ns1"], expected_version=0, writer="operator")
         clock.advance(timedelta(seconds=4))
-        control.set_premise("operator", "namespace", ["ns1", "ns2"], expected_version=1)
+        control.set_premise(
+            "namespace", ["ns1", "ns2"], expected_version=1, writer="operator"
+        )
         clock.advance(timedelta(seconds=1))
         assert len(recorder.received) == 1
 
@@ -209,27 +213,27 @@ class TestAcknowledgment:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
-        control.set_premise("operator", "window", "w1", expected_version=0)
-        control.ack("ocp", recorder.received[0].notification_id)
-        control.set_premise("operator", "window", "w2", expected_version=1)
+        control.set_premise("window", "w1", expected_version=0, writer="operator")
+        control.ack(recorder.received[0].notification_id, agent="ocp")
+        control.set_premise("window", "w2", expected_version=1, writer="operator")
         assert recorder.received[1].from_sequence == 2
 
     def test_an_unacknowledged_notification_leaves_the_cursor_in_place(self) -> None:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
-        control.set_premise("operator", "window", "w1", expected_version=0)
-        control.set_premise("operator", "window", "w2", expected_version=1)
+        control.set_premise("window", "w1", expected_version=0, writer="operator")
+        control.set_premise("window", "w2", expected_version=1, writer="operator")
         assert recorder.received[1].from_sequence == 1
 
     def test_acknowledging_twice_records_it_once(self) -> None:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         first = recorder.received[0].notification_id
-        control.ack("ocp", first)
-        control.ack("ocp", first)
+        control.ack(first, agent="ocp")
+        control.ack(first, agent="ocp")
         acknowledged = [
             e for e in control.read_audit() if isinstance(e, NotificationAcknowledged)
         ]
@@ -239,11 +243,11 @@ class TestAcknowledgment:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
-        control.set_premise("operator", "window", "w1", expected_version=0)
+        control.set_premise("window", "w1", expected_version=0, writer="operator")
         first = recorder.received[0].notification_id
-        control.ack("ocp", first)
-        control.ack("ocp", first)
-        control.set_premise("operator", "window", "w2", expected_version=1)
+        control.ack(first, agent="ocp")
+        control.ack(first, agent="ocp")
+        control.set_premise("window", "w2", expected_version=1, writer="operator")
         assert recorder.received[1].from_sequence == 2
 
     def test_a_fabricated_notification_id_raises(self) -> None:
@@ -251,7 +255,7 @@ class TestAcknowledgment:
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
         with pytest.raises(UnknownNotificationError):
-            control.ack("ocp", 99)  # type: ignore[arg-type]  # a raw int stands in for a fabricated id
+            control.ack(99, agent="ocp")
 
 
 class TestMidRunRegistration:
@@ -259,12 +263,12 @@ class TestMidRunRegistration:
         clock = ManualClock(start=START)
         early, late = Recorder(), Recorder()
         control = make_control(clock, agent("early", early))
-        control.set_premise("operator", "window", "w1", expected_version=0)
+        control.set_premise("window", "w1", expected_version=0, writer="operator")
         control.register_agent(agent("late", late))
         assert len(late.received) == 1
         assert late.received[0].from_sequence == 1
         assert late.received[0].to_sequence == 1
-        control.set_premise("operator", "window", "w2", expected_version=1)
+        control.set_premise("window", "w2", expected_version=1, writer="operator")
         assert len(late.received) == 2
         assert late.received[1].to_sequence == 2
 
@@ -273,7 +277,7 @@ class TestMidRunRegistration:
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))
         control.declare(Premise("trigger"))
-        control.set_premise("operator", "trigger", "alert", expected_version=0)
+        control.set_premise("trigger", "alert", expected_version=0, writer="operator")
         assert len(recorder.received) == 1
         assert recorder.received[0].regions == frozenset({"trigger"})
         assert recorder.received[0].from_sequence == 1
@@ -324,12 +328,14 @@ class TestStaleTimerCalls:
                 notify=recorder,
             )
         )
-        control.set_premise("operator", "namespace", ["ns1"], expected_version=0)
+        control.set_premise("namespace", ["ns1"], expected_version=0, writer="operator")
         clock.advance(timedelta(seconds=1))
-        control.set_premise("operator", "window", "w", expected_version=0)
+        control.set_premise("window", "w", expected_version=0, writer="operator")
         assert len(recorder.received) == 1
         clock.advance(timedelta(seconds=1))
-        control.set_premise("operator", "namespace", ["ns1", "ns2"], expected_version=1)
+        control.set_premise(
+            "namespace", ["ns1", "ns2"], expected_version=1, writer="operator"
+        )
         clock.advance(timedelta(seconds=3))
         assert len(recorder.received) == 1
         clock.advance(timedelta(seconds=2))
@@ -353,12 +359,16 @@ class TestDeliveryFailure:
             ),
             agent("ocp", delivered),
         )
-        result = control.set_premise("operator", "window", "w", expected_version=0)
+        result = control.set_premise(
+            "window", "w", expected_version=0, writer="operator"
+        )
         assert isinstance(result, Written)
         assert len(delivered.received) == 1
         # The raising agent never acknowledges, so it is still holding its
         # notification when the run is asked who did not finish.
-        assert control.write("ocp", "application", "unaffected") == Written(sequence=2)
+        assert control.write("application", "unaffected", writer="ocp") == Written(
+            sequence=2
+        )
 
 
 class TestChainedWakes:
@@ -380,9 +390,9 @@ class TestChainedWakes:
                     except UnsetPremiseError:
                         version = 0
                     control.set_premise(
-                        me, target, counts[me], expected_version=version
+                        target, counts[me], expected_version=version, writer=me
                     )
-                control.ack(me, notification.notification_id)
+                control.ack(notification.notification_id, agent=me)
 
             return notify
 
@@ -403,5 +413,5 @@ class TestChainedWakes:
                     notify=make_notify(name, target),  # type: ignore[arg-type]  # the factory returns the callback type
                 )
             )
-        control.set_premise("operator", "ra", 0, expected_version=0)
+        control.set_premise("ra", 0, expected_version=0, writer="operator")
         assert counts == {"a": 300, "b": 300}

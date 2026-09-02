@@ -65,7 +65,7 @@ class TestTheModelNamesItsBoard:
             limits=LIMITS,
             clock=ManualClock(start=START),
         )
-        model.control.write("ocp", "platform", "a finding")
+        model.control.write("platform", "a finding", writer="ocp")
         # The store, addressed directly, holds what the model wrote.
         assert [c.content for c in store.read_level("board-a", "platform")] == [
             "a finding"
@@ -81,7 +81,7 @@ class TestTheModelNamesItsBoard:
                 premises={},
                 limits=LIMITS,
                 clock=ManualClock(start=START),
-            ).control.write("ocp", "platform", f"written by {name}")
+            ).control.write("platform", f"written by {name}", writer="ocp")
         assert [c.content for c in store.read_level("board-a", "platform")] == [
             "written by board-a"
         ]

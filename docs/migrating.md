@@ -67,6 +67,30 @@ Only a store of your own needs work. Add the parameter to `append` and to `set`,
 
 Neither change can be deprecated. A method signature is not a name, and an alias pointing at a class whose methods take different arguments would break at the first call rather than warn.
 
+### The agent an operation acts as is named by keyword
+
+`Control.write`, `Control.set_premise` and `Control.ack` take the agent's name as a keyword, after the arguments that say what to do.
+
+```python
+# 0.7
+control.write("triage", "findings", body)
+control.set_premise("triage", "window", value, 3)
+control.ack("triage", notification_id)
+```
+
+```python
+# 0.8
+control.write("findings", body, writer="triage")
+control.set_premise("window", value, 3, writer="triage")
+control.ack(notification_id, agent="triage")
+```
+
+The old order was three strings, and `BoardClient.write` takes the same three in a different order. Pasting the client's line against a `Control` type-checked under `mypy --strict` and filed the contribution under an agent named after the level. A keyword cannot be pasted into the wrong position.
+
+`Control.ack` also accepts a plain `int`, so a notification identifier read off the wire needs no cast.
+
+`Control.as_agent(name)` is new, and returns the board as that agent sees it. It satisfies `AgentBoard`, which `BoardClient` satisfies too, so an agent body written against that protocol runs in process and over HTTP unchanged.
+
 ### Databases an earlier version wrote
 
 Your database needs no migration by hand. The store rename moved no rows, because they were already scoped by `board_id`, and the three stores that keep a record on disk add what a key needs to a database 0.7 wrote when they open it: `SqliteStore` and `PostgresStore` add two columns, `MongoStore` an index.
@@ -151,7 +175,7 @@ Each of these worked, with a warning, in 0.5 and 0.6. All of them were removed i
 `Control.write` returned `Accepted` and `Control.set_premise` returned `Written`. Both return `Written` now. A level holds no version, so `version` is `None` there.
 
 ```python
-result = model.control.write("ocp", "platform", {"findings": ["oom"]})
+result = model.control.write("platform", {"findings": ["oom"]}, writer="ocp")
 if isinstance(result, Written):
     print(result.sequence)
 ```
@@ -179,7 +203,7 @@ model = create_model(
     board=SqliteStore("incident.sqlite3"),
 )
 window = model.reader.read_premise("window").value
-model.control.set_premise("ocp", "window", ["21:00"], expected_version=1)
+model.control.set_premise("window", ["21:00"], expected_version=1, writer="ocp")
 ```
 
 ### Your database

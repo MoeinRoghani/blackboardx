@@ -56,7 +56,7 @@ class TestAdmission:
             return Reject("a duplicate of a contribution already on the board")
 
         control = make_control(rule)
-        result = control.write("dynatrace", "application", {"finding": "f1"})
+        result = control.write("application", {"finding": "f1"}, writer="dynatrace")
         assert result == Rejected(
             cause=RejectionCause.ADMISSION,
             reason="a duplicate of a contribution already on the board",
@@ -74,7 +74,7 @@ class TestAdmission:
 
     def test_an_accepted_write_is_sequenced_and_audited(self) -> None:
         control = make_control()
-        result = control.write("dynatrace", "application", {"finding": "f1"})
+        result = control.write("application", {"finding": "f1"}, writer="dynatrace")
         assert result == Written(sequence=1)
         (contribution,) = control.reader.read_level("application")
         assert contribution.content == {"finding": "f1"}
@@ -86,9 +86,9 @@ class TestAdmission:
 
     def test_no_admission_rule_accepts_every_write(self) -> None:
         control = make_control()
-        assert control.write("a", "application", "one") == Written(sequence=1)
+        assert control.write("application", "one", writer="a") == Written(sequence=1)
         assert isinstance(
-            control.set_premise("operator", "window", "w", expected_version=0),
+            control.set_premise("window", "w", expected_version=0, writer="operator"),
             Written,
         )
 
@@ -101,8 +101,8 @@ class TestAdmission:
             return Accept()
 
         control = make_control(rule)
-        assert control.write("a", "application", "one") == Written(sequence=1)
-        assert control.write("a", "application", "one") == Rejected(
+        assert control.write("application", "one", writer="a") == Written(sequence=1)
+        assert control.write("application", "one", writer="a") == Rejected(
             cause=RejectionCause.ADMISSION, reason="already on the board"
         )
 
@@ -114,7 +114,9 @@ class TestAdmission:
             return Reject("nothing enters")
 
         control = make_control(rule)
-        result = control.set_premise("operator", "window", "w", expected_version=0)
+        result = control.set_premise(
+            "window", "w", expected_version=0, writer="operator"
+        )
         assert result == Rejected(
             cause=RejectionCause.ADMISSION, reason="nothing enters"
         )
@@ -143,14 +145,16 @@ class TestAdmission:
             return Accept()
 
         control = make_control(rule)
-        control.write("a", "application", content)
+        control.write("application", content, writer="a")
         assert seen[0] is content
 
 
 class TestSetRegister:
     def test_an_accepted_premise_write_returns_written_and_is_audited(self) -> None:
         control = make_control()
-        result = control.set_premise("operator", "window", "w", expected_version=0)
+        result = control.set_premise(
+            "window", "w", expected_version=0, writer="operator"
+        )
         assert result == Written(sequence=1, version=1)
         assert control.reader.read_premise("window").value == "w"
         assert control.read_audit() == [
@@ -159,8 +163,8 @@ class TestSetRegister:
 
     def test_a_conflict_passes_through_without_an_audit_event(self) -> None:
         control = make_control()
-        control.set_premise("operator", "window", "w1", expected_version=0)
-        result = control.set_premise("late", "window", "w2", expected_version=0)
+        control.set_premise("window", "w1", expected_version=0, writer="operator")
+        result = control.set_premise("window", "w2", expected_version=0, writer="late")
         assert result == Conflict(current_version=1)
         assert control.read_audit() == [
             WriteAccepted(at=START, writer="operator", region="window", sequence=1)
@@ -170,7 +174,7 @@ class TestSetRegister:
 class TestRegionRefusals:
     def test_a_write_to_an_undeclared_region_is_rejected_and_recorded(self) -> None:
         control = make_control()
-        result = control.write("a", "missing", "x")
+        result = control.write("missing", "x", writer="a")
         assert result == Rejected(
             cause=RejectionCause.UNDECLARED_REGION,
             reason="no region is declared with the name 'missing'",
@@ -187,7 +191,7 @@ class TestRegionRefusals:
 
     def test_a_premise_write_to_an_undeclared_region_is_rejected(self) -> None:
         control = make_control()
-        result = control.set_premise("a", "missing", "x", expected_version=0)
+        result = control.set_premise("missing", "x", expected_version=0, writer="a")
         assert isinstance(result, Rejected)
         assert result.cause is RejectionCause.UNDECLARED_REGION
 
@@ -199,15 +203,15 @@ class TestRegionRefusals:
             return Accept()
 
         control = make_control(rule)
-        control.write("a", "missing", "x")
+        control.write("missing", "x", writer="a")
         assert seen == []
 
     def test_a_kind_mismatch_raises_and_is_not_audited(self) -> None:
         control = make_control()
         with pytest.raises(RegionKindError):
-            control.write("a", "window", "x")
+            control.write("window", "x", writer="a")
         with pytest.raises(RegionKindError):
-            control.set_premise("a", "application", "x", expected_version=0)
+            control.set_premise("application", "x", expected_version=0, writer="a")
         assert control.read_audit() == []
 
 
@@ -223,9 +227,9 @@ class TestAudit:
             board_id="test-board",
             store=InMemoryStore(),
         )
-        control.write("a", "application", "one")
+        control.write("application", "one", writer="a")
         clock.advance(timedelta(seconds=90))
-        control.write("a", "application", "two")
+        control.write("application", "two", writer="a")
         first, second = control.read_audit()
         assert isinstance(first, WriteAccepted)
         assert isinstance(second, WriteAccepted)
@@ -234,7 +238,7 @@ class TestAudit:
 
     def test_the_audit_is_a_snapshot(self) -> None:
         control = make_control()
-        control.write("a", "application", "one")
+        control.write("application", "one", writer="a")
         control.read_audit().clear()
         assert len(control.read_audit()) == 1
 
@@ -245,7 +249,7 @@ class TestAudit:
         def run() -> None:
             barrier.wait()
             for _ in range(50):
-                control.write("a", "application", "x")
+                control.write("application", "x", writer="a")
 
         threads = [threading.Thread(target=run) for _ in range(8)]
         for thread in threads:
@@ -266,7 +270,9 @@ class TestWhoWrites:
         control = make_control()
         # Nothing named this has registered. The parameter is a writer, not
         # an agent, and the audit records it under that name.
-        assert control.write("an-operator", "application", "x") == Written(sequence=1)
+        assert control.write("application", "x", writer="an-operator") == Written(
+            sequence=1
+        )
         (event,) = control.read_audit()
         assert isinstance(event, WriteAccepted)
         assert event.writer == "an-operator"
@@ -279,20 +285,20 @@ class TestWhoWrites:
             return Accept()
 
         control = make_control(rule)
-        control.write("ocp", "application", "one")
-        control.set_premise("ocp", "window", "w", expected_version=0)
+        control.write("application", "one", writer="ocp")
+        control.set_premise("window", "w", expected_version=0, writer="ocp")
         assert seen == ["ocp", "ocp"]
 
 
 class TestWhatAWriteThatLandedReports:
     def test_a_level_write_reports_written_with_no_version(self) -> None:
         control = make_control()
-        result = control.write("ocp", "application", "a finding")
+        result = control.write("application", "a finding", writer="ocp")
         assert result == Written(sequence=1)
         assert isinstance(result, Written)
         assert result.version is None
 
     def test_a_premise_write_reports_written_with_one(self) -> None:
         control = make_control()
-        result = control.set_premise("ocp", "window", "w", expected_version=0)
+        result = control.set_premise("window", "w", expected_version=0, writer="ocp")
         assert result == Written(sequence=1, version=1)
