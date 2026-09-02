@@ -30,7 +30,7 @@ A board adapter makes the **record** durable. It does not make the **run** durab
 
 A `Control` lives in one process. A second replica holding its own `Control` for the same board knows no agent the first registered, owes no notification the first dispatched, and measures silence from its own start. Losing the replica that holds one ends that run: the record survives and the run does not resume.
 
-So one board is served by one `Control` in one process at a time. The service is scaled by putting different boards on different replicas, and routed to by board identifier; it is not scaled by putting more replicas behind one board. A replica that dies is replaced, and the run it held is started again against the record it left.
+So one board is served by one `Control` in one process at a time. The service is scaled by putting different boards on different replicas, and routed to by board identifier; it is not scaled by putting more replicas behind one board. A replica that dies is replaced, and the run it held is started again with `attach_model`, which opens a run over the record the dead replica left rather than declaring a board that already exists.
 
 Making the run itself durable, so that a replacement resumes rather than restarts, means putting the registry, the outstanding notifications, and the deadlines in the database alongside the record. That is not in the library today, and `docs/design/durable-runs.md` in the repository sets out what it would take.
 

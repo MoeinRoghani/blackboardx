@@ -23,8 +23,14 @@ So one board is served by one `Control` in one process at a time. Scale by
 putting different boards on different replicas and routing by board
 identifier, not by putting more replicas behind one board.
 
+A replacement replica opens a run over the record with `attach_model`, which
+carries the record and not the run: the registry, the outstanding
+notifications, the audit, the cursors and the notification identifiers all
+start again. Work an agent had finished but not acknowledged is done twice
+unless the agent's writes carry idempotency keys.
+
 [Running as a service](concepts/service.md) covers the deployment that follows
-from this. A durable run is designed and not built.
+from this. A run that resumes rather than restarts is designed and not built.
 
 ## A queued notification does not survive a restart
 

@@ -39,7 +39,7 @@ store = SqliteStore("incidents.sqlite3")
 model = create_model(board_id="incident-4471", store=store, ...)
 ```
 
-The file is the record. The schema is created on construction, and reopening the same path reads the run back, sequence counter included. SQLite ships with Python, so this needs no extra dependency and no server.
+The file is the record. The schema is created on construction, and reopening the same path reads the record back, sequence counter included; `attach_model` opens a run over it. SQLite ships with Python, so this needs no extra dependency and no server.
 
 ## Deployed on Postgres
 
