@@ -129,6 +129,12 @@ Both fields of `RunLimits` are a `timedelta`, so a swapped pair was accepted and
 
 `SqliteStore` defaulted to holding the record in the process. A second store over that default in one process shares nothing with the first, so it reads an empty board and refuses every write against a region the first declared. Where the record is kept is stated rather than defaulted, which is the rule `create_model` already follows for `store`.
 
+### A reused idempotency key raises
+
+A key that names a region it did not name before raises `IdempotencyKeyError`, which is what the store below already did. `RejectionCause.IDEMPOTENCY_KEY_REUSED` is removed, and over HTTP the answer is 409 with `error: idempotency_key_reused` rather than 422.
+
+409 now carries two answers. A `ConflictBody` means the premise moved on and the caller reads it and decides again. An `ErrorBody` naming `idempotency_key_reused` means the key is wrong, and `BoardClient` raises it rather than returning a `Conflict`.
+
 ### Databases an earlier version wrote
 
 Your database needs no migration by hand. The store rename moved no rows, because they were already scoped by `board_id`, and the three stores that keep a record on disk add what a key needs to a database 0.7 wrote when they open it: `SqliteStore` and `PostgresStore` add two columns, `MongoStore` an index.

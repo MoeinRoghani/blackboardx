@@ -51,7 +51,7 @@ Status  Meaning
 400     The body or a query parameter could not be read
 404     No such board, region, notification, or path
 405     That path takes a different method
-409     A premise moved on; the answer names its current version
+409     A premise moved on, or a key named another region
 410     The run has closed and takes no more writes
 422     The write was refused; the answer names the cause
 ======  ==========================================================
@@ -70,6 +70,7 @@ from urllib.parse import unquote
 
 from blackboard._board import (
     Conflict,
+    IdempotencyKeyError,
     RegionKindError,
     UndeclaredRegionError,
     UnsetPremiseError,
@@ -217,6 +218,9 @@ class BoardService:
             return _error(404, "unset_premise", str(unset))
         except UnknownNotificationError as unknown:
             return _error(404, "unknown_notification", str(unknown))
+        except IdempotencyKeyError as reused:
+            # The key named another region. Sending it again cannot help.
+            return _error(409, "idempotency_key_reused", str(reused))
         except RunClosedError as closed:
             return _error(410, "run_closed", str(closed))
 

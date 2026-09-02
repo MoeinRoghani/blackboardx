@@ -113,7 +113,7 @@ the cursor because an offset shifts when a concurrent write lands.
 | 400 | The body or a query parameter could not be read | No |
 | 404 | No such board, region, notification, or path | No |
 | 405 | That path takes a different method | No |
-| 409 | A premise moved on; the body names its current version | Read the premise and decide again |
+| 409 | A premise moved on, or an idempotency key named another region | Read the premise and decide again, or fix the key |
 | 410 | The run has closed and takes no more writes | No |
 | 422 | The write was refused; the body names the cause | No |
 

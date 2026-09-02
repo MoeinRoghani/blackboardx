@@ -99,6 +99,10 @@ Acknowledgment is everything the control component learns about how an agent ran
 
 ## What acknowledging means
 
+Acknowledging a notification also acknowledges every notification you were sent whose range ends at or before that one's. The cursor is cumulative, so answering the widest range answered the narrower ones inside it, and an agent that reads to the board's end can acknowledge only the last identifier it holds.
+
+That also covers the notification you never received. A delivery that raised is suppressed, so that one agent's failure does not reach an unrelated writer, which means you cannot acknowledge it by name. Your next acknowledgment covers it.
+
 It means the agent has stopped working on that notification. It does not mean the agent found anything, and it does not mean the agent will not be woken again.
 
 When a run closes, it names every agent still holding a notification as unfinished.
