@@ -289,12 +289,13 @@ class TestWriting:
             cause=RejectionCause.ADMISSION, reason="not this one"
         )
 
-    def test_a_write_to_a_level_nobody_declared_is_a_rejection(
+    def test_a_write_to_a_level_nobody_declared_raises_what_a_read_raises(
         self, board: Any
     ) -> None:
-        outcome = board.write("rumours", {"n": 1})
-        assert isinstance(outcome, Rejected)
-        assert outcome.cause is RejectionCause.UNDECLARED_REGION
+        from blackboard import UndeclaredRegionError
+
+        with pytest.raises(UndeclaredRegionError):
+            board.write("rumours", {"n": 1})
 
     def test_a_write_to_a_closed_run_is_a_rejection_naming_that(
         self, board: Any, control: Control

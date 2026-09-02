@@ -12,6 +12,7 @@ from blackboard import (
     ManualClock,
     Notification,
     Premise,
+    RegionKindError,
     Rejected,
     RejectionCause,
     RunLimits,
@@ -128,8 +129,15 @@ class TestValidation:
         with pytest.raises(UndeclaredRegionError, match="missing"):
             control.register_agent(declaration("b", [], writes_to=["missing"]))
 
-    def test_a_level_named_as_a_subscription_is_refused_for_now(self) -> None:
+    def test_a_premise_named_as_a_write_permission_says_it_is_a_premise(self) -> None:
+        """It used to say the premise was undeclared, which was false."""
         clock = ManualClock(start=START)
         control = make_control(clock)
-        with pytest.raises(UndeclaredRegionError):
+        with pytest.raises(RegionKindError, match="names a premise"):
             control.register_agent(declaration("c", [], writes_to=["window"]))
+
+    def test_a_write_permission_naming_nothing_declared_says_so(self) -> None:
+        clock = ManualClock(start=START)
+        control = make_control(clock)
+        with pytest.raises(UndeclaredRegionError, match="nowhere"):
+            control.register_agent(declaration("c", [], writes_to=["nowhere"]))

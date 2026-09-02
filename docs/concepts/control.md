@@ -22,7 +22,7 @@ Refusals come back as values, because a refusal can race correct agent code. A c
 | `Written` | Sequenced, with its number |
 | `Rejected(ADMISSION)` | The rule refused, with its reason |
 | `Rejected(NOT_PERMITTED)` | The level is outside the agent's `writes_to` |
-| `Rejected(UNDECLARED_REGION)` | No region of that name |
+| raises `UndeclaredRegionError` | No region of that name |
 | `Rejected(RUN_CLOSED)` | The run has closed |
 | `RegionKindError` raised | A level operation named a premise, or the reverse |
 
