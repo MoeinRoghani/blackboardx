@@ -160,15 +160,19 @@ class SqliteStore:
             return Written(sequence=sequence, version=current + 1)
 
     def read_level(
-        self, board_id: str, level: str, from_sequence: int = 0
+        self,
+        board_id: str,
+        level: str,
+        from_sequence: int = 0,
+        limit: int | None = None,
     ) -> list[Contribution]:
         with self._lock:
             self._require(board_id, level, _LEVEL)
             rows = self._connection.execute(
                 "SELECT sequence, content FROM contributions "
                 "WHERE board_id = ? AND region = ? AND sequence >= ? "
-                "ORDER BY sequence",
-                (board_id, level, from_sequence),
+                "ORDER BY sequence LIMIT ?",
+                (board_id, level, from_sequence, -1 if limit is None else limit),
             ).fetchall()
         return [Contribution(sequence=r[0], content=json.loads(r[1])) for r in rows]
 
@@ -185,16 +189,29 @@ class SqliteStore:
             )
         return PremiseState(value=json.loads(row[0]), version=int(row[1]))
 
-    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(
+        self, board_id: str, from_sequence: int = 0, limit: int | None = None
+    ) -> list[BoardChange]:
         with self._lock:
             rows = self._connection.execute(
                 "SELECT sequence, region, content FROM contributions "
-                "WHERE board_id = ? AND sequence >= ? ORDER BY sequence",
-                (board_id, from_sequence),
+                "WHERE board_id = ? AND sequence >= ? ORDER BY sequence LIMIT ?",
+                (board_id, from_sequence, -1 if limit is None else limit),
             ).fetchall()
         return [
             BoardChange(sequence=r[0], region=r[1], content=json.loads(r[2]))
             for r in rows
+        ]
+
+    def read_regions(self, board_id: str) -> list[Level | Premise]:
+        """Returns the regions declared on one board, with their kinds."""
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT name, kind FROM regions WHERE board_id = ? ORDER BY name",
+                (board_id,),
+            ).fetchall()
+        return [
+            Level(str(r[0])) if r[1] == _LEVEL else Premise(str(r[0])) for r in rows
         ]
 
     def _kind_of(self, board_id: str, name: str) -> str | None:

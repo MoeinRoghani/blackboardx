@@ -49,15 +49,25 @@ class RecordingBoard:
         return self._inner.set(board_id, premise, value, expected_version)
 
     def read_level(
-        self, board_id: str, level: str, from_sequence: int = 0
+        self,
+        board_id: str,
+        level: str,
+        from_sequence: int = 0,
+        limit: int | None = None,
     ) -> list[Contribution]:
-        return self._inner.read_level(board_id, level, from_sequence)
+        return self._inner.read_level(board_id, level, from_sequence, limit)
+
+    def read_regions(self, board_id: str) -> list[Level | Premise]:
+        self.calls.append("read_regions")
+        return self._inner.read_regions(board_id)
 
     def read_premise(self, board_id: str, premise: str) -> PremiseState:
         return self._inner.read_premise(board_id, premise)
 
-    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
-        return self._inner.read_board(board_id, from_sequence)
+    def read_board(
+        self, board_id: str, from_sequence: int = 0, limit: int | None = None
+    ) -> list[BoardChange]:
+        return self._inner.read_board(board_id, from_sequence, limit)
 
 
 def test_a_substitute_board_satisfies_the_protocol() -> None:

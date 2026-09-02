@@ -237,7 +237,11 @@ class MongoStore:
         return losses[0] if written is None else written
 
     def read_level(
-        self, board_id: str, level: str, from_sequence: int = 0
+        self,
+        board_id: str,
+        level: str,
+        from_sequence: int = 0,
+        limit: int | None = None,
     ) -> list[Contribution]:
         self._require(board_id, level, _LEVEL, None)
         documents = (
@@ -251,6 +255,7 @@ class MongoStore:
             )
             .sort("sequence", ASCENDING)
         )
+        documents = _bounded(documents, limit)
         return [
             Contribution(
                 sequence=int(document["sequence"]), content=document["content"]
@@ -269,12 +274,15 @@ class MongoStore:
             )
         return PremiseState(value=document["value"], version=int(document["version"]))
 
-    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(
+        self, board_id: str, from_sequence: int = 0, limit: int | None = None
+    ) -> list[BoardChange]:
         documents = (
             self._database[_CONTRIBUTIONS]
             .find({"board_id": board_id, "sequence": {"$gte": from_sequence}})
             .sort("sequence", ASCENDING)
         )
+        documents = _bounded(documents, limit)
         return [
             BoardChange(
                 sequence=int(document["sequence"]),
@@ -282,6 +290,18 @@ class MongoStore:
                 content=document["content"],
             )
             for document in documents
+        ]
+
+    def read_regions(self, board_id: str) -> list[Level | Premise]:
+        """Returns the regions declared on one board, with their kinds."""
+        documents = (
+            self._database[_REGIONS]
+            .find({"board_id": board_id})
+            .sort("name", ASCENDING)
+        )
+        return [
+            Level(str(d["name"])) if d["kind"] == _LEVEL else Premise(str(d["name"]))
+            for d in documents
         ]
 
     def _in_a_transaction(self, work: Callable[[Any], _Result]) -> _Result:
@@ -348,6 +368,19 @@ class MongoStore:
             raise RegionKindError(
                 f"{name!r} names a level, and this operation takes a premise"
             )
+
+
+def _bounded(cursor: Any, limit: int | None) -> Any:
+    """Applies a maximum count, treating zero as none rather than as no bound.
+
+    ``Cursor.limit(0)`` means no limit in MongoDB, which is the opposite of
+    what a caller asking for nothing means.
+    """
+    if limit is None:
+        return cursor
+    if limit <= 0:
+        return []
+    return cursor.limit(limit)
 
 
 def _is_duplicate_key(error: Exception) -> bool:

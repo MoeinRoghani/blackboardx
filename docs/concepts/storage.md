@@ -162,11 +162,37 @@ Every store call names a board, and every row is scoped by it. Two boards under 
 
 ## An adapter of your own
 
-`BoardStore` is the protocol, and it has six methods: `declare`, `append`, and `set` write; `read_level`, `read_premise`, and `read_board` read. An implementation of those six is a board, and the control component names no concrete type.
+`BoardStore` is the protocol, and it has seven methods. `declare`, `append` and `set` write. `read_level`, `read_premise`, `read_board` and `read_regions` read. Every one names the board it acts on first.
+
+A store records a region's name and its kind and nothing else, so `read_regions` returns a premise without the batch window it was declared with. The window tells the control component when to notify and is no part of the record. An implementation of those six is a board, and the control component names no concrete type.
 
 Two rules hold every implementation together, and the conformance suite in `tests/conformance.py` checks both against each one, the deployment adapters against real servers:
 
 - **One counter.** Every write to any region takes the next number from a single sequence. The number is the position in the total order and the address of the write.
+- **Bounded reads.** Every collection read takes a maximum count, and a reader continues from one past the last sequence it received. A sequence number is the cursor rather than an offset, because an offset shifts when a concurrent write lands.
 - **Version-guarded premise writes.** A premise write names the version it expects to replace. If that is not the current version, the write returns `Conflict` carrying the current version, takes no sequence number, and changes nothing.
 
 Content crosses the protocol as JSON, because a deployed board crosses a process boundary. A tuple written comes back a list, and content JSON cannot carry raises `TypeError` before anything is stored. Every implementation behaves this way, including the in-memory one, so a test cannot pass against content a deployment would refuse.
+
+## Reading a board in pieces
+
+A read is bounded below by a sequence number and above by a count:
+
+```python
+cursor = 0
+while True:
+    page = store.read_level(board_id, "platform", from_sequence=cursor, limit=100)
+    if not page:
+        break
+    handle(page)
+    cursor = page[-1].sequence + 1
+```
+
+The sequence number is the cursor. An offset would shift when a concurrent write landed between two reads, and a sequence number does not, so a reader never skips a contribution or sees one twice.
+
+`read_regions` names what a board holds, which a process that did not create the board needs before it can read anything:
+
+```python
+for region in store.read_regions(board_id):
+    print(region.name, type(region).__name__)
+```
