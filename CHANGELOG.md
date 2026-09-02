@@ -12,6 +12,10 @@
 * **control:** a returning agent re-registers instead of being refused ([#151](https://github.com/MoeinRoghani/blackboardx/issues/151))
 * **board:** a store holds many boards, and every call names one ([#147](https://github.com/MoeinRoghani/blackboardx/issues/147))
 
+Every migration above is written out, with the before and after for each, under
+[0.7 to 0.8](https://moeinroghani.github.io/blackboardx/migrating/) in the migration guide.
+The six lines here name what changed; that page says what to write instead.
+
 ### Features
 
 * **agent:** a write carries its key from the agent to the row ([#163](https://github.com/MoeinRoghani/blackboardx/issues/163)) ([3a54004](https://github.com/MoeinRoghani/blackboardx/commit/3a540040a5bd587f615cb182bbacdb6d3d229089)), closes [#162](https://github.com/MoeinRoghani/blackboardx/issues/162)
