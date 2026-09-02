@@ -76,6 +76,33 @@ The audit records every event in the order it occurred, which is a fact about wh
 
 ## Testing your own adapter
 
-`tests/conformance.py` in the repository is the suite every board implementation owes. Subclass `BoardConformance`, give it a `board` fixture returning a fresh board, and the whole suite runs against your adapter. Where one store holds many boards, subclass `SharedStoreConformance` as well and give it a `two_boards` fixture.
+`blackboard.conformance` is the suite every store implementation owes, and it ships with the package:
 
-That is how `SqliteStore`, `PostgresStore`, and `MongoStore` are held to the same behaviour, the last two against real servers.
+```
+pip install 'blackboardx[conformance]'
+```
+
+Subclass `BoardConformance`, give it a `store` fixture returning a fresh store, and every case runs against yours. Subclass `SharedStoreConformance` as well, with a `store` fixture of its own, for the cases about one store holding many boards.
+
+```python
+import pytest
+from blackboard.conformance import BoardConformance, SharedStoreConformance
+
+from myapp.storage import CassandraStore
+
+
+class TestCassandraStore(BoardConformance):
+    @pytest.fixture
+    def store(self):
+        return CassandraStore(session)
+
+
+class TestCassandraHoldsManyBoards(SharedStoreConformance):
+    @pytest.fixture
+    def store(self):
+        return CassandraStore(session)
+```
+
+That is how `InMemoryStore`, `SqliteStore`, `PostgresStore`, and `MongoStore` are held to the same behaviour, the last two against real servers. They are held to that module rather than a copy of it, so what you run is what the library runs.
+
+Reading the rules and reimplementing them is not the same thing. A store that gives each region its own counter, which is the obvious reading, fails six cases here.

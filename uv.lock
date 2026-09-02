@@ -114,6 +114,9 @@ source = { editable = "." }
 agent = [
     { name = "httpx" },
 ]
+conformance = [
+    { name = "pytest" },
+]
 mongodb = [
     { name = "pymongo" },
 ]
@@ -143,8 +146,9 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'notifier'", specifier = ">=0.27" },
     { name = "psycopg", extras = ["binary", "pool"], marker = "extra == 'postgres'", specifier = ">=3.2" },
     { name = "pymongo", marker = "extra == 'mongodb'", specifier = ">=4.9" },
+    { name = "pytest", marker = "extra == 'conformance'", specifier = ">=8.3" },
 ]
-provides-extras = ["agent", "mongodb", "notifier", "postgres"]
+provides-extras = ["agent", "conformance", "mongodb", "notifier", "postgres"]
 
 [package.metadata.requires-dev]
 dev = [

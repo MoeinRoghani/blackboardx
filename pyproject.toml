@@ -25,6 +25,7 @@ dependencies = []
 
 [project.optional-dependencies]
 agent = ["httpx>=0.27"]
+conformance = ["pytest>=8.3"]
 mongodb = ["pymongo>=4.9"]
 notifier = ["httpx>=0.27"]
 postgres = ["psycopg[binary,pool]>=3.2"]

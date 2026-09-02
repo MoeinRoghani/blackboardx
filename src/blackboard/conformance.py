@@ -1,14 +1,50 @@
-"""The behaviour every board implementation owes, whatever it stores in.
+"""The suite every store implementation is held to.
 
-An adapter is correct when it passes this. Import ``BoardConformance`` in a
-test module, give it a ``board`` fixture, and the whole suite runs against
-that implementation.
+`BoardStore` is a protocol, so an application may keep its record in a
+database this library ships no adapter for. What that store has to guarantee
+is not obvious from the signatures: one counter across every region rather
+than one per region, a conflicting premise write taking no sequence number so
+a conflict leaves no gap, a key writing once, a bounded read continuing from
+a sequence rather than an offset. Each of those has a case here because each
+is a thing an implementation gets wrong.
+
+Subclass `BoardConformance` and `SharedStoreConformance`, supply a `store`
+fixture returning a fresh store, and run pytest:
+
+    from blackboard.conformance import BoardConformance, SharedStoreConformance
+    from myapp.storage import CassandraStore
+
+
+    class TestCassandraStore(BoardConformance):
+        @pytest.fixture
+        def store(self):
+            return CassandraStore(session)
+
+
+    class TestCassandraHoldsManyBoards(SharedStoreConformance):
+        @pytest.fixture
+        def store(self):
+            return CassandraStore(session)
+
+The four stores the library ships are held to this module rather than to a
+copy of it, so what an implementer runs is what the library runs.
+
+Running it needs pytest, which the library itself does not:
+``pip install blackboardx[conformance]``.
 """
+
+from __future__ import annotations
+
+try:
+    import pytest
+except ModuleNotFoundError as absent:  # pragma: no cover
+    raise ModuleNotFoundError(
+        "the conformance suite needs pytest: pip install blackboardx[conformance]"
+    ) from absent
+
 
 import threading
 from uuid import uuid4
-
-import pytest
 
 from blackboard import (
     BoardChange,

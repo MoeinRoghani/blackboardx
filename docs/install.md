@@ -22,6 +22,7 @@ An extra names a third-party package the base install leaves out.
 | `mongodb` | `pymongo` | `MongoStore` |
 | `notifier` | `httpx` | `HttpxTransport`, which `HttpNotifier` uses by default |
 | `agent` | `httpx` | `BoardClient` and `AsyncBoardClient`, for an agent calling a blackboard |
+| `conformance` | `pytest` | `blackboard.conformance`, for holding a store of your own to the suite |
 
 A deployment keeps the record in a database it already runs, and each adapter needs that database's driver:
 
@@ -50,6 +51,14 @@ That pulls no database driver. An agent reads and writes through the blackboard,
 
 Answering an agent's requests needs no extra at all. `blackboard.server` depends on nothing and is in the base install.
 
+Writing a store of your own adds the suite that decides whether it works:
+
+```
+pip install 'blackboardx[conformance]'
+```
+
+[An adapter of your own](concepts/storage.md#an-adapter-of-your-own) covers what to subclass.
+
 Several at once is a comma. There is no `all` extra: `postgres` and `mongodb` are alternative drivers for one slot, so a name meaning every driver would invite a deployment to carry one it never uses.
 
 ## What the package contains, and what it does not
@@ -62,6 +71,7 @@ Several at once is a comma. There is no `all` extra: `postgres` and `mongodb` ar
 | `HttpNotifier`, which sends to agents over HTTP | Any database server, credential, or migration tool |
 | `BoardService`, which answers an agent's requests | Any authentication or authorisation |
 | `BoardClient`, which an agent calls a blackboard with | |
+| The conformance suite, for a store of your own | |
 | The wire bodies both halves encode and decode | Any queue that survives a restart |
 | `SystemClock` and `ManualClock` | |
 
