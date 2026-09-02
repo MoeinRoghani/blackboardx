@@ -1,12 +1,14 @@
-"""The bodies that cross between a blackboard and an agent.
+"""What crosses between a blackboard and an agent.
 
-Both halves import these, so neither can spell a field differently from the
-other. Each team writes its own HTTP routes; this module says only what
-travels through them.
+The bodies, and the operations that carry them. Both halves import this
+module, so neither can spell a field differently from the other or send to a
+path the other does not answer on.
 
 Nothing here depends on a web framework or on an HTTP library. A body is a
 frozen dataclass with ``to_json`` and ``from_json``, so a route hands the
 result of one to its framework and passes what it received to the other.
+``blackboard.server`` answers these operations and ``blackboard.agent`` calls
+them; a service that would rather write its own routes still has the bodies.
 
 Decoding is tolerant, because the two halves are deployed separately and are
 therefore versioned separately. A field a decoder does not recognise is
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
 from typing import Any, ClassVar, TypeVar
+from urllib.parse import quote
 
 from blackboard._board import Level, Premise
 
@@ -282,3 +285,98 @@ class RegionList(_Body):
             raise WireError(f"a body is an object, not {type(body).__name__}")
         raw = body.get("regions") or []
         return cls(regions=[RegionBody.from_json(r) for r in raw])
+
+
+# What goes wrong
+
+
+@dataclass(frozen=True)
+class ErrorBody(_Body):
+    """What a blackboard answers with when it cannot do what was asked.
+
+    ``error`` is a stable name a client can branch on. ``detail`` is written
+    for a person reading a log and may change between versions.
+    """
+
+    _required: ClassVar[tuple[str, ...]] = ("error",)
+
+    error: str
+    detail: str = ""
+
+
+# The operations, and the paths they take
+
+
+@dataclass(frozen=True)
+class Operation:
+    """One thing an agent can ask a blackboard to do.
+
+    ``template`` names its variables in braces. Both halves build a path from
+    the same object, one to send and one to match, so a rename reaches the
+    two of them together.
+    """
+
+    name: str
+    method: str
+    template: str
+
+    def path(self, **variables: str) -> str:
+        """Returns the path for these variables, each percent-encoded."""
+        filled = self.template
+        for name, value in variables.items():
+            marker = "{" + name + "}"
+            if marker not in filled:
+                raise WireError(f"{self.name} takes no {name!r}")
+            filled = filled.replace(marker, quote(str(value), safe=""))
+        if "{" in filled:
+            missing = filled[filled.index("{") + 1 : filled.index("}")]
+            raise WireError(f"{self.name} needs {missing!r}")
+        return filled
+
+    @property
+    def variables(self) -> tuple[str, ...]:
+        """Returns the names this operation's template takes, in order."""
+        return tuple(
+            segment[1:-1]
+            for segment in self.template.split("/")
+            if segment.startswith("{")
+        )
+
+
+#: Every region declared on a board, with its kind. Answers a `RegionList`.
+READ_REGIONS = Operation("read_regions", "GET", "/boards/{board_id}/regions")
+
+#: One level, from a sequence bound. Answers a `LevelPage`.
+READ_LEVEL = Operation("read_level", "GET", "/boards/{board_id}/levels/{level}")
+
+#: One premise's current value and version. Answers a `PremiseBody`.
+READ_PREMISE = Operation("read_premise", "GET", "/boards/{board_id}/premises/{premise}")
+
+#: Every write to every region, in order, from a sequence bound. Answers a
+#: `BoardPage`.
+READ_BOARD = Operation("read_board", "GET", "/boards/{board_id}/changes")
+
+#: Appends to a level. Takes a `WriteRequest`, answers a `WrittenBody`.
+WRITE = Operation("write", "POST", "/boards/{board_id}/levels/{level}")
+
+#: Sets a premise under an expected version. Takes a `SetPremiseRequest`,
+#: answers a `WrittenBody` or a `ConflictBody`.
+SET_PREMISE = Operation("set_premise", "PUT", "/boards/{board_id}/premises/{premise}")
+
+#: Records that an agent finished with a notification. Takes an `AckRequest`.
+ACK = Operation("ack", "POST", "/boards/{board_id}/acknowledgements")
+
+#: Every operation, in the order the documentation lists them.
+OPERATIONS: tuple[Operation, ...] = (
+    READ_REGIONS,
+    READ_LEVEL,
+    READ_PREMISE,
+    READ_BOARD,
+    WRITE,
+    SET_PREMISE,
+    ACK,
+)
+
+#: The query parameters a bounded read takes.
+FROM_SEQUENCE = "from_sequence"
+LIMIT = "limit"

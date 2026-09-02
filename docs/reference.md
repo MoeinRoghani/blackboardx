@@ -7,6 +7,7 @@ internal, and a name outside these pages may change without a deprecation.
 | --- | --- | --- |
 | `blackboard` | The board, the control component, and model creation | The blackboard |
 | `blackboard.wire` | The request and response bodies that cross between the two halves | Both |
+| `blackboard.server` | Answering an agent's request, without a web framework | The blackboard |
 | `blackboard.delivery` | Sending notifications to agents over HTTP | The blackboard |
 
 ## `blackboard`
@@ -16,6 +17,10 @@ internal, and a name outside these pages may change without a deprecation.
 ## `blackboard.wire`
 
 ::: blackboard.wire
+
+## `blackboard.server`
+
+::: blackboard.server
 
 ## `blackboard.delivery`
 
