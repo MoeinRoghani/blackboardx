@@ -21,6 +21,7 @@ An extra names a third-party package the base install leaves out.
 | `postgres` | `psycopg[binary,pool]` | `PostgresStore` |
 | `mongodb` | `pymongo` | `MongoStore` |
 | `notifier` | `httpx` | `HttpxTransport`, which `HttpNotifier` uses by default |
+| `agent` | `httpx` | `BoardClient` and `AsyncBoardClient`, for an agent calling a blackboard |
 
 A deployment keeps the record in a database it already runs, and each adapter needs that database's driver:
 
@@ -39,6 +40,16 @@ pip install 'blackboardx[postgres,notifier]'
 
 [Notifying agents](guides/notifying-agents.md) covers what that gives you. Supplying your own `Transport` needs no extra, because the interface is in the base install and only the `httpx` implementation of it is not.
 
+An agent calling a blackboard installs the other half, and nothing else:
+
+```
+pip install 'blackboardx[agent]'
+```
+
+That pulls no database driver. An agent reads and writes through the blackboard, never through its database, so it has no use for one. [Write an agent](guides/writing-an-agent.md) covers the client.
+
+Answering an agent's requests needs no extra at all. `blackboard.server` depends on nothing and is in the base install.
+
 Several at once is a comma. There is no `all` extra: `postgres` and `mongodb` are alternative drivers for one slot, so a name meaning every driver would invite a deployment to carry one it never uses.
 
 ## What the package contains, and what it does not
@@ -49,6 +60,8 @@ Several at once is a comma. There is no `all` extra: `postgres` and `mongodb` ar
 | The `BoardStore` protocol, for any other database | Any agent implementation |
 | The control component and model creation | Any process supervisor |
 | `HttpNotifier`, which sends to agents over HTTP | Any database server, credential, or migration tool |
+| `BoardService`, which answers an agent's requests | Any authentication or authorisation |
+| `BoardClient`, which an agent calls a blackboard with | |
 | The wire bodies both halves encode and decode | Any queue that survives a restart |
 | `SystemClock` and `ManualClock` | |
 
