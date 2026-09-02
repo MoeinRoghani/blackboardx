@@ -5,7 +5,6 @@ import threading
 from collections.abc import Iterator
 
 import pytest
-from conformance import Bound
 
 from blackboard import (
     BoardChange,
@@ -21,6 +20,7 @@ from blackboard import (
     UnsetPremiseError,
     Written,
 )
+from blackboard.conformance import Bound
 
 
 def make_board() -> Bound:

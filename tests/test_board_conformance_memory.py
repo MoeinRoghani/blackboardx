@@ -1,9 +1,9 @@
 """The in-memory store is held to the conformance suite like any other."""
 
 import pytest
-from conformance import BoardConformance, SharedStoreConformance
 
 from blackboard import BoardStore, InMemoryStore
+from blackboard.conformance import BoardConformance, SharedStoreConformance
 
 
 class TestInMemoryStore(BoardConformance):

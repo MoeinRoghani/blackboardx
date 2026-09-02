@@ -166,12 +166,39 @@ Every store call names a board, and every row is scoped by it. Two boards under 
 
 A store records a region's name and its kind and nothing else, so `read_regions` returns a premise without the batch window it was declared with. The window tells the control component when to notify and is no part of the record. An implementation of those eight is a store, and the control component names no concrete type.
 
-Four rules hold every implementation together, and the conformance suite in `tests/conformance.py` checks each one against all of them, the deployment adapters against real servers:
+Four rules hold every implementation together, and the conformance suite checks each one against all of them, the deployment adapters against real servers:
 
 - **One counter.** Every write to any region takes the next number from a single sequence. The number is the position in the total order and the address of the write.
 - **Bounded reads.** Every collection read takes a maximum count, and a reader continues from one past the last sequence it received. A sequence number is the cursor rather than an offset, because an offset shifts when a concurrent write lands.
 - **Version-guarded premise writes.** A premise write names the version it expects to replace. If that is not the current version, the write returns `Conflict` carrying the current version, takes no sequence number, and changes nothing.
 - **A key writes once.** A write may carry an `idempotency_key`. A key the store has already written answers with what that write produced, marked `repeated`, and adds nothing. A key that named a different region raises `IdempotencyKeyError`. A conflicting premise write stores nothing, so it uses up no key. Keys belong to one board.
+
+The suite ships with the package, so it holds your store to the same cases it holds the library's four to:
+
+```
+pip install 'blackboardx[conformance]'
+```
+
+```python
+import pytest
+from blackboard.conformance import BoardConformance, SharedStoreConformance
+
+from myapp.storage import CassandraStore
+
+
+class TestCassandraStore(BoardConformance):
+    @pytest.fixture
+    def store(self):
+        return CassandraStore(session)
+
+
+class TestCassandraHoldsManyBoards(SharedStoreConformance):
+    @pytest.fixture
+    def store(self):
+        return CassandraStore(session)
+```
+
+The four stores the library ships are held to that module rather than to a copy of it, so what you run is what the library runs. Reading the rules above and reimplementing them is not the same thing: a store that gives each region its own counter passes a reading of the prose and fails six cases here.
 
 Content crosses the protocol as JSON, because a deployed board crosses a process boundary. A tuple written comes back a list, and content JSON cannot carry raises `TypeError` before anything is stored. Every implementation behaves this way, including the in-memory one, so a test cannot pass against content a deployment would refuse.
 

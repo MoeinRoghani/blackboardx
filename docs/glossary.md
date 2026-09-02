@@ -71,7 +71,7 @@ Every term this project uses, and what it means here. A term is defined once, in
 | **Delete** | Removing one board's regions, record, premise values, and counter from a store. The application calls it; nothing in the library does. |
 | **Schema stamp** | The number a store writes on a record saying which schema wrote it. A record stamped ahead of the library is refused when the store opens. |
 | **Adapter** | A store backed by a database the application already runs, constructed over a connection the application owns. `PostgresStore` and `MongoStore`. |
-| **Conformance suite** | The tests in `tests/conformance.py` that every store implementation must pass. |
+| **Conformance suite** | The cases in `blackboard.conformance` that every store implementation must pass. It ships with the package, so a store written outside this repository is held to the same ones. |
 | **Record** | What the board holds. Durable where the board is a database. |
 
 ## Words this project does not use

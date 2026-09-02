@@ -11,9 +11,9 @@ from collections.abc import Iterator
 from uuid import uuid4
 
 import pytest
-from conformance import BoardConformance, SharedStoreConformance
 
 from blackboard import BoardStore, PostgresStore
+from blackboard.conformance import BoardConformance, SharedStoreConformance
 
 DSN = os.environ.get("BLACKBOARD_TEST_POSTGRES_DSN")
 

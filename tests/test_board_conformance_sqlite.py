@@ -5,9 +5,9 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from conformance import BoardConformance, SharedStoreConformance
 
 from blackboard import BoardStore, Level, Premise, SqliteStore, Written
+from blackboard.conformance import BoardConformance, SharedStoreConformance
 
 
 class TestSqliteInProcess(BoardConformance):

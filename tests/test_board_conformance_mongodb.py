@@ -12,9 +12,9 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from conformance import BoardConformance, SharedStoreConformance
 
 from blackboard import BoardStore, Conflict, Level, MongoStore, Premise
+from blackboard.conformance import BoardConformance, SharedStoreConformance
 
 URI = os.environ.get("BLACKBOARD_TEST_MONGODB_URI")
 

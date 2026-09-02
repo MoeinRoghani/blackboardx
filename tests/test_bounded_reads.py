@@ -1,9 +1,9 @@
 """A collection read takes a maximum count, and a store can name its regions."""
 
 import pytest
-from conformance import Bound
 
 from blackboard import InMemoryStore, Level, Premise, SqliteStore
+from blackboard.conformance import Bound
 
 
 @pytest.fixture(params=["memory", "sqlite"])
