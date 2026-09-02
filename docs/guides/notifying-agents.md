@@ -41,8 +41,23 @@ with HttpNotifier() as notifier:
 ```
 
 Keep the notifier open for as long as the runs that use it. Closing it stops
-the workers, so a notifier closed while a run is live leaves that run's
+every worker, so a notifier closed while a run is live leaves that run's
 agents unreachable.
+
+Close each run's lanes when that run ends. `to` returns a `Lane`, which is the
+callable an `Agent` takes and can also be closed on its own:
+
+```python
+lanes = [notifier.to(url) for url in addresses]
+...
+for lane in lanes:
+    lane.close()
+```
+
+A notifier serving many runs over its life would otherwise hold a queue and a
+thread for every agent of every run it has ever served. Closing a lane reports
+whatever it still held, and returns once it has, so nothing is left queued
+behind a closed lane. Closing the notifier still closes any lane you did not.
 
 ## Why the writer does not wait
 
@@ -79,7 +94,7 @@ retrying.
 Everything the notifier gives up on is logged at `ERROR` on the
 `blackboard.delivery` logger, naming the agent, the notification, and how
 many attempts it took. Pass `on_failure` to receive the same thing as a
-`DeliveryFailure` object, for a counter or an alert:
+`Undelivered` object, for a counter or an alert:
 
 ```python
 notifier = HttpNotifier(on_failure=lambda failure: undelivered.inc())
@@ -126,8 +141,12 @@ notifier = HttpNotifier(transport=Recording())
 
 Raise `DeliveryRefused` from `send` for something the agent will refuse
 again, and `DeliveryFailed`, or any other exception, for something another
-attempt might land. `DeliveryFailed` takes `retry_after` when the far side
-named a delay.
+attempt might land. The two are siblings rather than one inheriting the
+other, because a refusal is not a failure worth repeating. `DeliveryFailed`
+takes `retry_after` when the far side named a delay.
+
+A transport you supply is yours to close. One the notifier built is closed
+with the notifier.
 
 The protocol is in the base install. Only `HttpxTransport`, the
 implementation that uses `httpx`, needs the `notifier` extra.

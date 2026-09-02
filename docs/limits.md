@@ -41,8 +41,9 @@ from this. A run that resumes rather than restarts is designed and not built.
 ## A queued notification does not survive a restart
 
 `HttpNotifier` holds its queue in memory. A process that stops loses whatever
-had not been sent, and `close` gives up on what is still queued after
-`close_timeout`, reporting each through `on_failure`.
+had not been sent. `close` waits up to `close_timeout` in total, then
+abandons what is left and reports each one through `on_failure` before it
+returns.
 
 That usually costs nothing, because a notification carries no values and the
 next one covers the range a lost one would have covered. It costs something
