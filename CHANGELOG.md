@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.8.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.7.0...v0.8.0) (2026-09-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** two constructors refuse what they used to accept silently ([#181](https://github.com/MoeinRoghani/blackboardx/issues/181))
+* **control:** a wrong region name answers the same way on every path ([#179](https://github.com/MoeinRoghani/blackboardx/issues/179))
+* **control:** an agent has one object in process, the way it has one over HTTP ([#177](https://github.com/MoeinRoghani/blackboardx/issues/177))
+* **storage:** a write carries a key, and a key writes once ([#161](https://github.com/MoeinRoghani/blackboardx/issues/161))
+* **control:** a returning agent re-registers instead of being refused ([#151](https://github.com/MoeinRoghani/blackboardx/issues/151))
+* **board:** a store holds many boards, and every call names one ([#147](https://github.com/MoeinRoghani/blackboardx/issues/147))
+
+Every migration above is written out, with the before and after for each, under
+[0.7 to 0.8](https://moeinroghani.github.io/blackboardx/migrating/) in the migration guide.
+The six lines here name what changed; that page says what to write instead.
+
+### Features
+
+* **agent:** a write carries its key from the agent to the row ([#163](https://github.com/MoeinRoghani/blackboardx/issues/163)) ([3a54004](https://github.com/MoeinRoghani/blackboardx/commit/3a540040a5bd587f615cb182bbacdb6d3d229089)), closes [#162](https://github.com/MoeinRoghani/blackboardx/issues/162)
+* **agent:** call a blackboard from an agent without writing HTTP ([#157](https://github.com/MoeinRoghani/blackboardx/issues/157)) ([108ea00](https://github.com/MoeinRoghani/blackboardx/commit/108ea002408a23aa0731c73d52e51fecf5f2c67b)), closes [#156](https://github.com/MoeinRoghani/blackboardx/issues/156)
+* answer reads without a run, and tell the caller a run opened and closed ([#187](https://github.com/MoeinRoghani/blackboardx/issues/187)) ([9ead31c](https://github.com/MoeinRoghani/blackboardx/commit/9ead31c48c220a4d6b5e1751f941e48200cc4815)), closes [#186](https://github.com/MoeinRoghani/blackboardx/issues/186)
+* **api:** two constructors refuse what they used to accept silently ([#181](https://github.com/MoeinRoghani/blackboardx/issues/181)) ([e196e0b](https://github.com/MoeinRoghani/blackboardx/commit/e196e0baf5c5d4a50ebea495d9e44f94df3370a7)), closes [#180](https://github.com/MoeinRoghani/blackboardx/issues/180)
+* **board:** a store holds many boards, and every call names one ([#147](https://github.com/MoeinRoghani/blackboardx/issues/147)) ([81b0c15](https://github.com/MoeinRoghani/blackboardx/commit/81b0c15be78395bf83f1c0a6cf471889e0279a59)), closes [#146](https://github.com/MoeinRoghani/blackboardx/issues/146)
+* **control:** a level carries a batch window, and the model names its board ([#193](https://github.com/MoeinRoghani/blackboardx/issues/193)) ([90e6007](https://github.com/MoeinRoghani/blackboardx/commit/90e60070468083ab7aedf7f2153afa747b6038ae)), closes [#192](https://github.com/MoeinRoghani/blackboardx/issues/192)
+* **control:** a returning agent re-registers instead of being refused ([#151](https://github.com/MoeinRoghani/blackboardx/issues/151)) ([7829d85](https://github.com/MoeinRoghani/blackboardx/commit/7829d85639dfd9d1fc350c78ac31599b265dca03)), closes [#150](https://github.com/MoeinRoghani/blackboardx/issues/150)
+* **control:** a wrong region name answers the same way on every path ([#179](https://github.com/MoeinRoghani/blackboardx/issues/179)) ([ced898e](https://github.com/MoeinRoghani/blackboardx/commit/ced898ebad22e30f5e2b73ba4abda74cbeb71e3d)), closes [#178](https://github.com/MoeinRoghani/blackboardx/issues/178)
+* **control:** an agent has one object in process, the way it has one over HTTP ([#177](https://github.com/MoeinRoghani/blackboardx/issues/177)) ([fe983a1](https://github.com/MoeinRoghani/blackboardx/commit/fe983a18bc7ea2cc1faf726c77c99c8e65b11f0d)), closes [#176](https://github.com/MoeinRoghani/blackboardx/issues/176)
+* **delivery:** send notifications to agents without the writer waiting ([#153](https://github.com/MoeinRoghani/blackboardx/issues/153)) ([36c5c22](https://github.com/MoeinRoghani/blackboardx/commit/36c5c22b390ff82225f6ee32a1b576472b774f9c))
+* **model:** a run opens over a board that already holds a record ([#185](https://github.com/MoeinRoghani/blackboardx/issues/185)) ([ae181e6](https://github.com/MoeinRoghani/blackboardx/commit/ae181e6a1b906e120f926bcdbf1d5f2eb6295e20)), closes [#184](https://github.com/MoeinRoghani/blackboardx/issues/184)
+* **server:** answer an agent's request without a web framework ([#155](https://github.com/MoeinRoghani/blackboardx/issues/155)) ([43a1c19](https://github.com/MoeinRoghani/blackboardx/commit/43a1c197a8f01a6bde9e5e2bf1a5842a5e2b4bd2)), closes [#154](https://github.com/MoeinRoghani/blackboardx/issues/154)
+* **storage:** a caller can delete one board's record ([#165](https://github.com/MoeinRoghani/blackboardx/issues/165)) ([b6fa12d](https://github.com/MoeinRoghani/blackboardx/commit/b6fa12d88151d1b1f279a9238cf2c54c05a35cff)), closes [#164](https://github.com/MoeinRoghani/blackboardx/issues/164)
+* **storage:** a store stamps what wrote a record and checks it ([#167](https://github.com/MoeinRoghani/blackboardx/issues/167)) ([51ee3c7](https://github.com/MoeinRoghani/blackboardx/commit/51ee3c76eda4b8ba04e227b00c8cb07258706b6c)), closes [#166](https://github.com/MoeinRoghani/blackboardx/issues/166)
+* **storage:** a write carries a key, and a key writes once ([#161](https://github.com/MoeinRoghani/blackboardx/issues/161)) ([39732c5](https://github.com/MoeinRoghani/blackboardx/commit/39732c5664ee55573ffb57bca9ae87255c7e3e89)), closes [#160](https://github.com/MoeinRoghani/blackboardx/issues/160)
+* **storage:** the conformance suite ships with the package ([#169](https://github.com/MoeinRoghani/blackboardx/issues/169)) ([4de1cf1](https://github.com/MoeinRoghani/blackboardx/commit/4de1cf101eb27f8c93358258317b21b404b04846)), closes [#168](https://github.com/MoeinRoghani/blackboardx/issues/168)
+* **wire:** one contract both halves import, with bounded reads ([#149](https://github.com/MoeinRoghani/blackboardx/issues/149)) ([e00ca8a](https://github.com/MoeinRoghani/blackboardx/commit/e00ca8a97fb77355aab74468719f440f366fbd5f)), closes [#148](https://github.com/MoeinRoghani/blackboardx/issues/148)
+
+
+### Bug Fixes
+
+* **control:** a reused key raises, and acknowledging covers what it supersedes ([#183](https://github.com/MoeinRoghani/blackboardx/issues/183)) ([c7f99af](https://github.com/MoeinRoghani/blackboardx/commit/c7f99af32e4d1bed5ac713776be673615e29dabe)), closes [#182](https://github.com/MoeinRoghani/blackboardx/issues/182)
+* **delivery:** closing is bounded once, reports what it drops, and frees a lane ([#191](https://github.com/MoeinRoghani/blackboardx/issues/191)) ([f332c70](https://github.com/MoeinRoghani/blackboardx/commit/f332c7044a3099e8defab12d706ea0202fece879)), closes [#190](https://github.com/MoeinRoghani/blackboardx/issues/190)
+* **model:** read the arguments once, and check them before opening the board ([#175](https://github.com/MoeinRoghani/blackboardx/issues/175)) ([83768a5](https://github.com/MoeinRoghani/blackboardx/commit/83768a5886986cb1155b3478478b9b43bbd57e47)), closes [#174](https://github.com/MoeinRoghani/blackboardx/issues/174)
+* **packaging:** the published author address is a personal one ([#141](https://github.com/MoeinRoghani/blackboardx/issues/141)) ([8c37ff9](https://github.com/MoeinRoghani/blackboardx/commit/8c37ff9c3faba1b87c21d9a84e03a49544852214)), closes [#140](https://github.com/MoeinRoghani/blackboardx/issues/140)
+* **wire:** a body carries what the path does not, and a page has a size ([#189](https://github.com/MoeinRoghani/blackboardx/issues/189)) ([b160904](https://github.com/MoeinRoghani/blackboardx/commit/b16090483ce175e1d395515d1967ec713f7040fb)), closes [#188](https://github.com/MoeinRoghani/blackboardx/issues/188)
+
+
+### Documentation
+
+* read every page against the code, and fix what it got wrong ([#195](https://github.com/MoeinRoghani/blackboardx/issues/195)) ([5ee70fb](https://github.com/MoeinRoghani/blackboardx/commit/5ee70fbf5df656125c73f8e3aaf0d5feefbc35d7)), closes [#194](https://github.com/MoeinRoghani/blackboardx/issues/194)
+* say what this version does not do ([#171](https://github.com/MoeinRoghani/blackboardx/issues/171)) ([1dfbe83](https://github.com/MoeinRoghani/blackboardx/commit/1dfbe83debbd122be6c309acfaf7ef42142f17fd)), closes [#170](https://github.com/MoeinRoghani/blackboardx/issues/170)
+* the install page never shows that extras combine ([#143](https://github.com/MoeinRoghani/blackboardx/issues/143)) ([bb87de2](https://github.com/MoeinRoghani/blackboardx/commit/bb87de2e3d2e997108eff2cc9b1ccd1d89cfacb9)), closes [#142](https://github.com/MoeinRoghani/blackboardx/issues/142)
+* the migration notes split one release into two ([#173](https://github.com/MoeinRoghani/blackboardx/issues/173)) ([435e3ab](https://github.com/MoeinRoghani/blackboardx/commit/435e3aba6f84174e96ed5fbc62db46d9dd718e20)), closes [#172](https://github.com/MoeinRoghani/blackboardx/issues/172)
+
 ## [0.7.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.6.0...v0.7.0) (2026-08-26)
 
 
