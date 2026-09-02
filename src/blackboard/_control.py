@@ -378,7 +378,7 @@ TerminationPredicate: TypeAlias = Callable[["BoardReader"], TerminationDecision]
 """The predicate the control component calls when no work is outstanding."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RunLimits:
     """The two limits on a run, both durations, both required.
 

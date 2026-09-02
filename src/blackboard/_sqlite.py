@@ -84,9 +84,12 @@ _PREMISE = "premise"
 class SqliteStore:
     """Keeps the board in SQLite. Satisfies ``BoardStore``.
 
-    ``path`` names the database file. The default, ``":memory:"``, keeps it
-    in the process, which suits a test; a path on disk suits local
-    development, where the record outlives the run that made it.
+    ``path`` names the database file and has no default, because where the
+    record is kept is stated rather than defaulted. A path on disk suits
+    local development, where the record outlives the run that made it.
+    ``":memory:"`` keeps it in the process, which suits a test and nothing
+    else: a second store over ``":memory:"`` in the same process shares
+    nothing with the first, so it reads an empty board.
 
     ``board_id`` names the board within that file. Two boards under
     different identifiers share the file and see none of each other's
@@ -96,7 +99,7 @@ class SqliteStore:
     migrate separately and the file is the application's own.
     """
 
-    def __init__(self, path: str = ":memory:") -> None:
+    def __init__(self, path: str) -> None:
         self._path = path
         self._lock = threading.Lock()
         self._connection = sqlite3.connect(path, check_same_thread=False)

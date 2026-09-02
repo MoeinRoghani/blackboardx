@@ -8,7 +8,7 @@ from blackboard.conformance import Bound
 
 @pytest.fixture(params=["memory", "sqlite"])
 def board(request: pytest.FixtureRequest) -> Bound:
-    store = InMemoryStore() if request.param == "memory" else SqliteStore()
+    store = InMemoryStore() if request.param == "memory" else SqliteStore(":memory:")
     board = Bound(store, "test-board")
     board.declare(Level("platform"))
     board.declare(Premise("window"))

@@ -50,7 +50,7 @@ class TestCreation:
             )
 
     def test_the_store_passed_is_the_store_written_to(self) -> None:
-        store = SqliteStore()
+        store = SqliteStore(":memory:")
         model = create_model(
             board_id="test-board",
             store=store,

@@ -13,7 +13,7 @@ from blackboard.conformance import BoardConformance, SharedStoreConformance
 class TestSqliteInProcess(BoardConformance):
     @pytest.fixture
     def store(self) -> Iterator[BoardStore]:
-        opened = SqliteStore()
+        opened = SqliteStore(":memory:")
         yield opened
         opened.close()
 

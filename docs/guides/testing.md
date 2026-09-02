@@ -7,7 +7,7 @@ Every timed behaviour is observable without waiting, because the clock is inject
 | Test | Board |
 | --- | --- |
 | A unit test of your agents, rules, or timing | `InMemoryStore()` |
-| A test that has to see the storage semantics a deployment has | `SqliteStore()` |
+| A test that has to see the storage semantics a deployment has | `SqliteStore(":memory:")` |
 | A test of your own `BoardStore` implementation | Your adapter, through the conformance suite |
 
 Content crosses every board as JSON, the in-memory one included, so a test cannot pass against content a deployment would refuse.
