@@ -48,6 +48,7 @@ from blackboard._board import (
     BoardChange,
     Conflict,
     Contribution,
+    Deleted,
     IdempotencyKeyError,
     Level,
     Premise,
@@ -135,6 +136,18 @@ class BoardStore(Protocol):
         self, board_id: str, from_sequence: int = 0, limit: int | None = None
     ) -> list[BoardChange]:
         """Returns every write to every region, in sequence order, from the bound."""
+        ...
+
+    def delete(self, board_id: str) -> Deleted:
+        """Removes one board's regions, record, premise values, and counter.
+
+        Everything or nothing: a caller that gets an answer got a board that
+        is gone. A board the store never held names nothing rather than
+        failing, so a delete that runs twice is safe.
+
+        Nothing in the library calls this. Deleting is a retention decision
+        and the control component makes none.
+        """
         ...
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:

@@ -13,9 +13,10 @@ Read [what is durable and what is not](#what-is-durable-and-what-is-not) before 
 | Blackboard service | A container importing the library, serving HTTP | the routing and the answers, not the server |
 | Agent client | What agents import to call it | `BoardClient` and `AsyncBoardClient` |
 | Database | One primary you already run | no |
+| Retention | Deciding when a finished run's record goes | `store.delete`, when you call it |
 | Agents | Independent deployments | no |
 
-The package ships `PostgresStore` and `MongoStore` for a deployment and `SqliteStore` for one machine, all satisfying the `BoardStore` protocol. Against any other database the six methods are yours to write: three read, three write, and both reconciliation rules map onto ordinary primitives. [Storage](storage.md) covers what each has to guarantee.
+The package ships `PostgresStore` and `MongoStore` for a deployment and `SqliteStore` for one machine, all satisfying the `BoardStore` protocol. Against any other database the eight methods are yours to write: four read, three write, one removes a board, and every rule they are held to maps onto ordinary primitives. [Storage](storage.md) covers what each has to guarantee.
 
 ## What is durable and what is not
 

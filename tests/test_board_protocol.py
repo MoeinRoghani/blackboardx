@@ -8,6 +8,7 @@ from blackboard import (
     BoardStore,
     Conflict,
     Contribution,
+    Deleted,
     InMemoryStore,
     Level,
     ManualClock,
@@ -74,6 +75,10 @@ class RecordingBoard:
         self.calls.append("read_regions")
         return self._inner.read_regions(board_id)
 
+    def delete(self, board_id: str) -> Deleted:
+        self.calls.append("delete")
+        return self._inner.delete(board_id)
+
     def read_premise(self, board_id: str, premise: str) -> PremiseState:
         return self._inner.read_premise(board_id, premise)
 
@@ -120,3 +125,23 @@ def test_without_one_the_in_memory_board_is_used() -> None:
     )
     assert model.control.write("ocp", "platform", "finding") == Written(sequence=1)
     assert [c.content for c in model.reader.read_level("platform")] == ["finding"]
+
+
+def test_the_protocol_is_eight_methods() -> None:
+    """The documentation counts them. A method added here updates that count.
+
+    `docs/concepts/storage.md`, `docs/glossary.md` and `docs/concepts/service.md`
+    each say how many `BoardStore` has, and a reader who counts wrong writes an
+    adapter that is missing one.
+    """
+    named = {name for name in dir(BoardStore) if not name.startswith("_")}
+    assert named == {
+        "declare",
+        "append",
+        "set",
+        "read_level",
+        "read_premise",
+        "read_board",
+        "read_regions",
+        "delete",
+    }

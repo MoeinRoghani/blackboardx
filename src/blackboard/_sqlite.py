@@ -25,6 +25,7 @@ from blackboard._board import (
     BoardChange,
     Conflict,
     Contribution,
+    Deleted,
     DuplicateRegionError,
     IdempotencyKeyError,
     Level,
@@ -268,6 +269,22 @@ class SqliteStore:
             BoardChange(sequence=r[0], region=r[1], content=json.loads(r[2]))
             for r in rows
         ]
+
+    def delete(self, board_id: str) -> Deleted:
+        with self._lock, self._connection:
+            regions = self._connection.execute(
+                "SELECT COUNT(*) FROM regions WHERE board_id = ?", (board_id,)
+            ).fetchone()
+            writes = self._connection.execute(
+                "SELECT COUNT(*) FROM contributions WHERE board_id = ?", (board_id,)
+            ).fetchone()
+            for table in ("contributions", "premises", "regions"):
+                self._connection.execute(
+                    f"DELETE FROM {table} WHERE board_id = ?", (board_id,)
+                )
+            return Deleted(
+                board_id=board_id, regions=int(regions[0]), writes=int(writes[0])
+            )
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         """Returns the regions declared on one board, with their kinds."""

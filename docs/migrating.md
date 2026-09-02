@@ -23,6 +23,7 @@ Only a store of your own needs work. Add the parameter to `append` and to `set`,
 | --- | --- |
 | `store.append(board_id, level, content) -> int` | `store.append(board_id, level, content, idempotency_key=None) -> Written` |
 | `store.set(board_id, premise, value, expected_version)` | the same, with `idempotency_key=None` after it |
+| seven methods on `BoardStore` | eight; `delete` removes one board |
 
 The four stores the library ships add what they need to a database an earlier version wrote. Nothing is migrated by hand.
 

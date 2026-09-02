@@ -59,7 +59,7 @@ Every term this project uses, and what it means here. A term is defined once, in
 
 | Term | Meaning |
 | --- | --- |
-| **`BoardStore`** | The protocol a store implements: seven methods, three that write and four that read. Every one names a board first. |
+| **`BoardStore`** | The protocol a store implements: eight methods, three that write, four that read, and one that removes a board. Every one names a board first. |
 | **Wire contract** | The request and response bodies that cross between a blackboard and an agent, in `blackboard.wire`. Both halves import them, so neither can spell a field differently from the other. |
 | **Client** | What an agent calls a blackboard with, in `blackboard.agent`. Bound to one board and one agent name, with the methods `Control` and `BoardReader` already have. |
 | **Operation** | One thing an agent can ask a blackboard to do, with the method and path that carry it. The seven in `blackboard.wire` are the operations `Control` already has. |
@@ -68,6 +68,7 @@ Every term this project uses, and what it means here. A term is defined once, in
 | **Refusal** | A delivery the agent will answer the same way next time, such as a 400. The notifier reports it rather than retrying. Distinct from a **failure**, which is worth another attempt. |
 | **Idempotency key** | A name the caller gives one write so a store writes it once. A key already written answers with what that write produced rather than producing another. |
 | **Repeat** | A write whose key the store had already written. `Written.repeated` says so, and nothing was added. |
+| **Delete** | Removing one board's regions, record, premise values, and counter from a store. The application calls it; nothing in the library does. |
 | **Adapter** | A store backed by a database the application already runs, constructed over a connection the application owns. `PostgresStore` and `MongoStore`. |
 | **Conformance suite** | The tests in `tests/conformance.py` that every store implementation must pass. |
 | **Record** | What the board holds. Durable where the board is a database. |

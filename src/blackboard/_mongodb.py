@@ -38,6 +38,7 @@ from blackboard._board import (
     BoardChange,
     Conflict,
     Contribution,
+    Deleted,
     DuplicateRegionError,
     IdempotencyKeyError,
     Level,
@@ -346,6 +347,21 @@ class MongoStore:
             )
             for document in documents
         ]
+
+    def delete(self, board_id: str) -> Deleted:
+        def work(session: Any) -> Deleted:
+            named = {"board_id": board_id}
+            regions = self._database[_REGIONS].count_documents(named, session=session)
+            writes = self._database[_CONTRIBUTIONS].count_documents(
+                named, session=session
+            )
+            for collection in (_CONTRIBUTIONS, _PREMISES, _REGIONS):
+                self._database[collection].delete_many(named, session=session)
+            # The counter is keyed by _id, so it is not named the same way.
+            self._database[_BOARDS].delete_one({"_id": board_id}, session=session)
+            return Deleted(board_id=board_id, regions=regions, writes=writes)
+
+        return self._in_a_transaction(work)
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         """Returns the regions declared on one board, with their kinds."""
