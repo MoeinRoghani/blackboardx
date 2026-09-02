@@ -116,6 +116,19 @@ Permitting an agent to write to a region that was declared as a premise now rais
 
 ADR 0016 in the repository records the axis: what the application's own configuration settles raises, and what the run's policy decides returns.
 
+### Two constructors refuse what they used to accept
+
+`RunLimits` is keyword only, and `SqliteStore` requires its path.
+
+| Was | Is |
+| --- | --- |
+| `RunLimits(wall, idle)` | `RunLimits(wall_clock=wall, idle=idle)` |
+| `SqliteStore()` | `SqliteStore(":memory:")` |
+
+Both fields of `RunLimits` are a `timedelta`, so a swapped pair was accepted and the run ended at the wrong time with the wrong outcome. Every call site in this repository already used keywords, so nothing else moved.
+
+`SqliteStore` defaulted to holding the record in the process. A second store over that default in one process shares nothing with the first, so it reads an empty board and refuses every write against a region the first declared. Where the record is kept is stated rather than defaulted, which is the rule `create_model` already follows for `store`.
+
 ### Databases an earlier version wrote
 
 Your database needs no migration by hand. The store rename moved no rows, because they were already scoped by `board_id`, and the three stores that keep a record on disk add what a key needs to a database 0.7 wrote when they open it: `SqliteStore` and `PostgresStore` add two columns, `MongoStore` an index.

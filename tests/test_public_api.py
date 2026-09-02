@@ -119,3 +119,17 @@ def test_the_wire_names_seven_operations() -> None:
         "set_premise",
         "ack",
     ]
+
+
+def test_run_limits_cannot_be_built_positionally() -> None:
+    """Two same-typed durations swapped silently ended a run at the wrong time."""
+    with pytest.raises(TypeError):
+        blackboard.RunLimits(  # type: ignore[call-arg]
+            timedelta(minutes=5), timedelta(minutes=30)
+        )
+
+
+def test_a_sqlite_store_names_where_it_writes() -> None:
+    """Defaulting it to process memory is the thing create_model refuses to do."""
+    with pytest.raises(TypeError):
+        blackboard.SqliteStore()  # type: ignore[call-arg]
