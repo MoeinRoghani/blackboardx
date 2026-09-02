@@ -70,7 +70,7 @@ first one's result with ``repeated`` set.
 Name the key after work the agent can name again after a restart, rather than
 a fresh random string each time, so that a restart deduplicates too.
 
-Retrying a keyed write needs a blackboard at 0.9 or later. An older one takes
+Retrying a keyed write needs a blackboard at 0.8 or later. An older one takes
 the key and ignores it.
 """
 

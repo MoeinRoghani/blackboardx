@@ -2,36 +2,13 @@
 
 Every name that moved, what replaced it, and the release its old form stops working in.
 
-## 0.8 to 0.9
-
-A write may carry an idempotency key, so `BoardStore.append` answers with `Written` rather than a sequence number. Nothing else in the protocol changed shape.
-
-```python
-# 0.8
-sequence = store.append("incident-4471", "findings", {"cause": "a bad deploy"})
-```
-
-```python
-# 0.9
-written = store.append("incident-4471", "findings", {"cause": "a bad deploy"})
-written.sequence
-```
-
-Only a store of your own needs work. Add the parameter to `append` and to `set`, return `Written` from `append`, and read [an adapter of your own](concepts/storage.md#an-adapter-of-your-own) for what a key has to guarantee. The conformance suite decides whether you got it right.
-
-| Was | Is |
-| --- | --- |
-| `store.append(board_id, level, content) -> int` | `store.append(board_id, level, content, idempotency_key=None) -> Written` |
-| `store.set(board_id, premise, value, expected_version)` | the same, with `idempotency_key=None` after it |
-| seven methods on `BoardStore` | eight; `delete` removes one board |
-
-The four stores the library ships add what they need to a database an earlier version wrote. Nothing is migrated by hand.
-
-The three that keep a record on disk now stamp it with a schema number and check that number when they open. A database written by 0.8 or earlier carries no stamp and is adopted rather than refused, because this version reads everything those wrote. From here on, a database written for a schema this library cannot read is refused when the store opens rather than at whichever query touches the change.
-
 ## 0.7 to 0.8
 
-A store holds many boards. A board object no longer stands for one run.
+Two things changed for anyone who wrote a store: a store holds many boards, and a write carries a key. Everything else in the release adds to the public surface without moving anything.
+
+### A store holds many boards
+
+A board object no longer stands for one run.
 
 ```python
 # 0.7
@@ -65,9 +42,36 @@ store.read_premise("incident-4471", "window")
 
 `Notification` gains `board_id`, so an agent serving several boards can tell which one woke it.
 
-None of this can be deprecated. A method signature is not a name, and an alias pointing at a class whose methods take different arguments would break at the first call rather than warn.
+### A write carries a key
 
-Your database needs no migration. The rows were already scoped by `board_id`; only the code that reaches them changed.
+`BoardStore.append` answers with `Written` rather than a sequence number, so it can say a write was one this key had already made.
+
+```python
+# 0.7
+sequence = store.append("incident-4471", "findings", {"cause": "a bad deploy"})
+```
+
+```python
+# 0.8
+written = store.append("incident-4471", "findings", {"cause": "a bad deploy"})
+written.sequence
+```
+
+| Was | Is |
+| --- | --- |
+| `store.append(board_id, level, content) -> int` | `store.append(board_id, level, content, idempotency_key=None) -> Written` |
+| `store.set(board_id, premise, value, expected_version)` | the same, with `idempotency_key=None` after it |
+| seven methods on `BoardStore` | eight; `delete` removes one board |
+
+Only a store of your own needs work. Add the parameter to `append` and to `set`, return `Written` from `append`, and read [an adapter of your own](concepts/storage.md#an-adapter-of-your-own) for what a key has to guarantee. The conformance suite, which now ships with the package, decides whether you got it right.
+
+Neither change can be deprecated. A method signature is not a name, and an alias pointing at a class whose methods take different arguments would break at the first call rather than warn.
+
+### Databases an earlier version wrote
+
+Your database needs no migration by hand. The store rename moved no rows, because they were already scoped by `board_id`, and the three stores that keep a record on disk add what a key needs to a database 0.7 wrote when they open it: `SqliteStore` and `PostgresStore` add two columns, `MongoStore` an index.
+
+Those three now stamp a record with a schema number and check that number when they open. A database written by 0.7 or earlier carries no stamp and is adopted rather than refused, because 0.8 reads everything those wrote. From here on, a database written for a schema the library cannot read is refused when the store opens rather than at whichever query touches the change.
 
 ## 0.6 to 0.7
 
