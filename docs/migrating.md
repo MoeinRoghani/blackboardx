@@ -91,6 +91,31 @@ The old order was three strings, and `BoardClient.write` takes the same three in
 
 `Control.as_agent(name)` is new, and returns the board as that agent sees it. It satisfies `AgentBoard`, which `BoardClient` satisfies too, so an agent body written against that protocol runs in process and over HTTP unchanged.
 
+### A wrong region name raises on every path
+
+Writing to a region nobody declared raises `UndeclaredRegionError` instead of returning `Rejected`, which is what reading one has always done.
+
+```python
+# 0.7
+outcome = control.write("rumours", body, writer="triage")
+if isinstance(outcome, Rejected) and outcome.cause is RejectionCause.UNDECLARED_REGION:
+    ...
+```
+
+```python
+# 0.8
+try:
+    outcome = control.write("rumours", body, writer="triage")
+except UndeclaredRegionError:
+    ...
+```
+
+`RejectionCause.UNDECLARED_REGION` is removed. Over HTTP the same request answers 404 with `error: unknown_region` rather than 422 with `cause: undeclared_region`, and `BoardClient` raises `UndeclaredRegionError` for it, so an agent using the client needs no change.
+
+Permitting an agent to write to a region that was declared as a premise now raises `RegionKindError` saying it is a premise, rather than `UndeclaredRegionError` naming a region that is declared.
+
+ADR 0016 in the repository records the axis: what the application's own configuration settles raises, and what the run's policy decides returns.
+
 ### Databases an earlier version wrote
 
 Your database needs no migration by hand. The store rename moved no rows, because they were already scoped by `board_id`, and the three stores that keep a record on disk add what a key needs to a database 0.7 wrote when they open it: `SqliteStore` and `PostgresStore` add two columns, `MongoStore` an index.

@@ -23,6 +23,7 @@ from blackboard import (
     RejectionCause,
     RunLimits,
     TerminationDecision,
+    UndeclaredRegionError,
     WriteAccepted,
     WriteRejected,
     Written,
@@ -172,28 +173,18 @@ class TestSetRegister:
 
 
 class TestRegionRefusals:
-    def test_a_write_to_an_undeclared_region_is_rejected_and_recorded(self) -> None:
+    def test_a_write_to_an_undeclared_region_raises_and_is_not_audited(self) -> None:
+        """The application declared the regions, so a name outside them is
+        its own defect rather than a decision this run made."""
         control = make_control()
-        result = control.write("missing", "x", writer="a")
-        assert result == Rejected(
-            cause=RejectionCause.UNDECLARED_REGION,
-            reason="no region is declared with the name 'missing'",
-        )
-        assert control.read_audit() == [
-            WriteRejected(
-                at=START,
-                writer="a",
-                region="missing",
-                cause=RejectionCause.UNDECLARED_REGION,
-                reason="no region is declared with the name 'missing'",
-            )
-        ]
+        with pytest.raises(UndeclaredRegionError, match="missing"):
+            control.write("missing", "x", writer="a")
+        assert control.read_audit() == []
 
-    def test_a_premise_write_to_an_undeclared_region_is_rejected(self) -> None:
+    def test_a_premise_write_to_an_undeclared_region_raises(self) -> None:
         control = make_control()
-        result = control.set_premise("missing", "x", expected_version=0, writer="a")
-        assert isinstance(result, Rejected)
-        assert result.cause is RejectionCause.UNDECLARED_REGION
+        with pytest.raises(UndeclaredRegionError, match="missing"):
+            control.set_premise("missing", "x", expected_version=0, writer="a")
 
     def test_the_admission_rule_never_sees_an_undeclared_region_write(self) -> None:
         seen: list[ProposedWrite] = []
@@ -203,7 +194,8 @@ class TestRegionRefusals:
             return Accept()
 
         control = make_control(rule)
-        control.write("missing", "x", writer="a")
+        with pytest.raises(UndeclaredRegionError):
+            control.write("missing", "x", writer="a")
         assert seen == []
 
     def test_a_kind_mismatch_raises_and_is_not_audited(self) -> None:

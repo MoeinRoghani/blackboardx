@@ -121,7 +121,10 @@ Every one of those is an answer rather than a fault, so a client that sends
 the same request again gets the same answer. Only a 5xx and a failure to
 connect are worth another attempt.
 
-A 4xx body is an `ErrorBody`: `error` is a stable name to branch on, and
+Three of those carry a body of their own rather than an `ErrorBody`: 409 is a
+`ConflictBody` naming the premise's current version, 422 is a `RejectedBody`
+naming the cause, and 201 and 200 are a `WrittenBody`. The rest, 400, 404 and
+405, are an `ErrorBody`, where `error` is a stable name to branch on and
 `detail` is written for a person reading a log.
 
 ## Writing once
@@ -148,8 +151,8 @@ against the path holds.
 
 The library has none. The service is behind your gateway, the gateway
 authenticates the caller, and each operation has a path and a method for a
-policy to be written against. A read-only agent is given the three `GET`
-paths and nothing else.
+policy to be written against. A read-only agent is given the four `GET` paths
+and nothing else.
 
 `handle` does not check that the `writer` in a body is the caller. Do that in
 the route, before calling in, from whatever the gateway put on the request.

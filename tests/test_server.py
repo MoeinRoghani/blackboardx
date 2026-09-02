@@ -189,9 +189,10 @@ class TestWriting:
         assert control.reader.read_level("signals") != []
         assert control.reader.read_level("findings") == []
 
-    def test_a_write_to_a_level_nobody_declared_is_refused_not_crashed(
+    def test_a_write_to_a_level_nobody_declared_is_not_found(
         self, service: BoardService
     ) -> None:
+        """A level nobody declared is missing, the way a read of one is."""
         answer = service.handle(
             Request(
                 method="POST",
@@ -199,9 +200,8 @@ class TestWriting:
                 body={"writer": "triage", "level": "rumours", "content": {}},
             )
         )
-        assert answer.status == 422
-        assert answer.body is not None
-        assert answer.body["cause"] == "undeclared_region"
+        assert answer.status == 404
+        assert ErrorBody.from_json(answer.body).error == "unknown_region"
 
     def test_a_write_the_admission_rule_refused_is_unprocessable(self) -> None:
         model = create_model(

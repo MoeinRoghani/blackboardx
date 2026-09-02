@@ -230,16 +230,18 @@ AdmissionRule: TypeAlias = Callable[[ProposedWrite, "BoardReader"], Accept | Rej
 class RejectionCause(Enum):
     """Why the control component refused a write.
 
+    Every cause is a decision the run made about a write it understood. What
+    the application's own configuration settles, such as a region nobody
+    declared, raises instead.
+
     ``ADMISSION``: the admission rule rejected it. ``NOT_PERMITTED``: the
-    writing agent did not declare that level. ``UNDECLARED_REGION``: the
-    named region was never declared. ``RUN_CLOSED``: the run has closed.
-    ``IDEMPOTENCY_KEY_REUSED``: the key names a write to a different region,
-    which is a mistake rather than a retry.
+    writing agent did not declare that level. ``RUN_CLOSED``: the run has
+    closed. ``IDEMPOTENCY_KEY_REUSED``: the key names a write to a different
+    region, which is a mistake rather than a retry.
     """
 
     ADMISSION = "admission"
     NOT_PERMITTED = "not_permitted"
-    UNDECLARED_REGION = "undeclared_region"
     RUN_CLOSED = "run_closed"
     IDEMPOTENCY_KEY_REUSED = "idempotency_key_reused"
 
@@ -747,10 +749,15 @@ class Control:
                         "cannot subscribe to it"
                     )
             for named in agent.writes_to or ():
-                if self._kinds.get(named) is not _RegionKind.LEVEL:
+                if named not in self._kinds:
                     raise UndeclaredRegionError(
-                        f"{named!r} is not a declared level, so {agent.name!r} "
+                        f"{named!r} is not a declared region, so {agent.name!r} "
                         "cannot write to it"
+                    )
+                if self._kinds[named] is not _RegionKind.LEVEL:
+                    raise RegionKindError(
+                        f"{named!r} names a premise, and {agent.name!r} can only "
+                        "be permitted to write to a level"
                     )
             returning = self._agents.get(agent.name)
             if returning is not None:
@@ -1259,13 +1266,17 @@ class Control:
                 return self._reject_locked(
                     writer, region, RejectionCause.RUN_CLOSED, "the run has closed"
                 )
+            if not isinstance(region, str):
+                raise TypeError(
+                    f"a region is named by a string, not {type(region).__name__}"
+                )
             kind = self._kinds.get(region)
             if kind is None:
-                return self._reject_locked(
-                    writer,
-                    region,
-                    RejectionCause.UNDECLARED_REGION,
-                    f"no region is declared with the name {region!r}",
+                # The application declared the regions, so a name that is not
+                # among them is a defect in the application rather than a
+                # decision the run made about this write.
+                raise UndeclaredRegionError(
+                    f"no region is declared with the name {region!r}"
                 )
             if kind is not expected:
                 if expected is _RegionKind.LEVEL:
