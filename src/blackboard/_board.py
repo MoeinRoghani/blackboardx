@@ -209,13 +209,18 @@ class InMemoryStore:
             return Written(sequence=board.sequence, version=current_version + 1)
 
     def read_level(
-        self, board_id: str, level: str, from_sequence: int = 0
+        self,
+        board_id: str,
+        level: str,
+        from_sequence: int = 0,
+        limit: int | None = None,
     ) -> list[Contribution]:
         """Returns a level's contributions from the sequence bound, inclusive."""
         with self._lock:
             board = self._board(board_id)
             contributions = self._level_contributions(board, level)
-            return [c for c in contributions if c.sequence >= from_sequence]
+            found = [c for c in contributions if c.sequence >= from_sequence]
+            return found if limit is None else found[:limit]
 
     def read_premise(self, board_id: str, premise: str) -> PremiseState:
         """Returns a premise's current value and version."""
@@ -228,11 +233,22 @@ class InMemoryStore:
                 )
             return state
 
-    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(
+        self, board_id: str, from_sequence: int = 0, limit: int | None = None
+    ) -> list[BoardChange]:
         """Returns every write to every region, in sequence order, from the bound."""
         with self._lock:
             board = self._board(board_id)
-            return [c for c in board.changes if c.sequence >= from_sequence]
+            found = [c for c in board.changes if c.sequence >= from_sequence]
+            return found if limit is None else found[:limit]
+
+    def read_regions(self, board_id: str) -> list[Level | Premise]:
+        """Returns the regions declared on one board, with their kinds."""
+        with self._lock:
+            board = self._board(board_id)
+            regions: list[Level | Premise] = [Level(n) for n in board.levels]
+            regions.extend(Premise(n) for n in board.premises)
+            return sorted(regions, key=lambda r: r.name)
 
     def _board(self, board_id: str) -> _BoardState:
         # Callers hold self._lock. A board nobody declared a region on holds

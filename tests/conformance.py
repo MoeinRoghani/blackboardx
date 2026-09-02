@@ -46,14 +46,21 @@ class Bound:
     def set(self, premise: str, value: object, expected_version: int) -> object:
         return self.store.set(self.board_id, premise, value, expected_version)
 
-    def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
-        return self.store.read_level(self.board_id, level, from_sequence)
+    def read_level(
+        self, level: str, from_sequence: int = 0, limit: int | None = None
+    ) -> list[Contribution]:
+        return self.store.read_level(self.board_id, level, from_sequence, limit)
 
     def read_premise(self, premise: str) -> PremiseState:
         return self.store.read_premise(self.board_id, premise)
 
-    def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
-        return self.store.read_board(self.board_id, from_sequence)
+    def read_board(
+        self, from_sequence: int = 0, limit: int | None = None
+    ) -> list[BoardChange]:
+        return self.store.read_board(self.board_id, from_sequence, limit)
+
+    def read_regions(self) -> list[Level | Premise]:
+        return self.store.read_regions(self.board_id)
 
 
 class BoardConformance:
@@ -301,6 +308,57 @@ class BoardConformance:
         assert isinstance(state.value, list)
         assert sorted(state.value) == list(range(4))
         assert state.version == 5
+
+    # Bounded reads
+
+    def test_a_level_read_returns_at_most_the_limit(self, ready: Bound) -> None:
+        for i in range(10):
+            ready.append("application", i)
+        assert len(ready.read_level("application", limit=3)) == 3
+
+    def test_a_level_read_with_no_limit_returns_everything(self, ready: Bound) -> None:
+        for i in range(10):
+            ready.append("application", i)
+        assert len(ready.read_level("application")) == 10
+
+    def test_a_limit_of_zero_returns_nothing(self, ready: Bound) -> None:
+        ready.append("application", "one")
+        assert ready.read_level("application", limit=0) == []
+
+    def test_the_sequence_number_continues_a_bounded_read(self, ready: Bound) -> None:
+        for i in range(10):
+            ready.append("application", i)
+        seen: list[object] = []
+        cursor = 0
+        while True:
+            page = ready.read_level("application", from_sequence=cursor, limit=4)
+            if not page:
+                break
+            seen.extend(c.content for c in page)
+            cursor = page[-1].sequence + 1
+        assert seen == list(range(10))
+
+    def test_a_whole_board_read_takes_a_limit(self, ready: Bound) -> None:
+        for i in range(6):
+            ready.append("application", i)
+        assert len(ready.read_board(limit=2)) == 2
+
+    # Naming the regions
+
+    def test_a_store_names_the_regions_of_one_board(self, ready: Bound) -> None:
+        assert sorted(r.name for r in ready.read_regions()) == [
+            "application",
+            "platform",
+            "window",
+        ]
+
+    def test_each_region_says_which_kind_it_is(self, ready: Bound) -> None:
+        by_name = {r.name: r for r in ready.read_regions()}
+        assert isinstance(by_name["platform"], Level)
+        assert isinstance(by_name["window"], Premise)
+
+    def test_a_board_with_no_regions_names_none(self, board: Bound) -> None:
+        assert board.read_regions() == []
 
 
 class SharedStoreConformance:

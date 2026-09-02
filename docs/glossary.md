@@ -59,7 +59,8 @@ Every term this project uses, and what it means here. A term is defined once, in
 
 | Term | Meaning |
 | --- | --- |
-| **`BoardStore`** | The protocol a store implements: six methods, three that write and three that read. Every one names a board first. |
+| **`BoardStore`** | The protocol a store implements: seven methods, three that write and four that read. Every one names a board first. |
+| **Wire contract** | The request and response bodies that cross between a blackboard and an agent, in `blackboard.wire`. Both halves import them, so neither can spell a field differently from the other. |
 | **Adapter** | A store backed by a database the application already runs, constructed over a connection the application owns. `PostgresStore` and `MongoStore`. |
 | **Conformance suite** | The tests in `tests/conformance.py` that every store implementation must pass. |
 | **Record** | What the board holds. Durable where the board is a database. |

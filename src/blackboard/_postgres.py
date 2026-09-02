@@ -226,15 +226,19 @@ class PostgresStore:
         return outcome
 
     def read_level(
-        self, board_id: str, level: str, from_sequence: int = 0
+        self,
+        board_id: str,
+        level: str,
+        from_sequence: int = 0,
+        limit: int | None = None,
     ) -> list[Contribution]:
         with self._pool.connection() as connection:
             self._require(connection, board_id, level, _LEVEL)
             rows = connection.execute(
                 "SELECT sequence, content FROM blackboard_contributions "
                 "WHERE board_id = %s AND region = %s AND sequence >= %s "
-                "ORDER BY sequence",
-                (board_id, level, from_sequence),
+                "ORDER BY sequence LIMIT %s",
+                (board_id, level, from_sequence, limit),
             ).fetchall()
         return [Contribution(sequence=int(r[0]), content=r[1]) for r in rows]
 
@@ -252,15 +256,29 @@ class PostgresStore:
             )
         return PremiseState(value=row[0], version=int(row[1]))
 
-    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(
+        self, board_id: str, from_sequence: int = 0, limit: int | None = None
+    ) -> list[BoardChange]:
         with self._pool.connection() as connection:
             rows = connection.execute(
                 "SELECT sequence, region, content FROM blackboard_contributions "
-                "WHERE board_id = %s AND sequence >= %s ORDER BY sequence",
-                (board_id, from_sequence),
+                "WHERE board_id = %s AND sequence >= %s ORDER BY sequence LIMIT %s",
+                (board_id, from_sequence, limit),
             ).fetchall()
         return [
             BoardChange(sequence=int(r[0]), region=r[1], content=r[2]) for r in rows
+        ]
+
+    def read_regions(self, board_id: str) -> list[Level | Premise]:
+        """Returns the regions declared on one board, with their kinds."""
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT name, kind FROM blackboard_regions "
+                "WHERE board_id = %s ORDER BY name",
+                (board_id,),
+            ).fetchall()
+        return [
+            Level(str(r[0])) if r[1] == _LEVEL else Premise(str(r[0])) for r in rows
         ]
 
     def _open_board(self, connection: Any, board_id: str) -> None:

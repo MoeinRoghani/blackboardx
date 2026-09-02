@@ -89,24 +89,51 @@ class BoardStore(Protocol):
         ...
 
     def read_level(
-        self, board_id: str, level: str, from_sequence: int = 0
+        self,
+        board_id: str,
+        level: str,
+        from_sequence: int = 0,
+        limit: int | None = None,
     ) -> list[Contribution]:
-        """Returns a level's contributions from the sequence bound, inclusive."""
+        """Returns a level's contributions from the sequence bound, inclusive.
+
+        ``limit`` caps how many come back. A caller continues from one past
+        the last sequence it received, which an offset could not do, because
+        an offset shifts when a concurrent write lands and a sequence number
+        does not.
+        """
         ...
 
     def read_premise(self, board_id: str, premise: str) -> PremiseState:
         """Returns a premise's current value and version."""
         ...
 
-    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(
+        self, board_id: str, from_sequence: int = 0, limit: int | None = None
+    ) -> list[BoardChange]:
         """Returns every write to every region, in sequence order, from the bound."""
+        ...
+
+    def read_regions(self, board_id: str) -> list[Level | Premise]:
+        """Returns the regions declared on one board, with their kinds.
+
+        A store records a region's name and its kind, and nothing else. A
+        premise comes back with the default batch window whatever window it
+        was declared with, because the window tells the control component
+        when to notify and is no part of the record.
+
+        A board nobody declared a region on returns nothing rather than
+        refusing, because a board comes into being by being written to.
+        """
         ...
 
 
 class BoardReader(Protocol):
     """The three read operations, the handle the admission rule receives."""
 
-    def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
+    def read_level(
+        self, level: str, from_sequence: int = 0, limit: int | None = None
+    ) -> list[Contribution]:
         """Returns a level's contributions from the sequence bound, inclusive."""
         ...
 
@@ -114,8 +141,14 @@ class BoardReader(Protocol):
         """Returns a premise's current value and version."""
         ...
 
-    def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(
+        self, from_sequence: int = 0, limit: int | None = None
+    ) -> list[BoardChange]:
         """Returns every write to every region, in sequence order, from the bound."""
+        ...
+
+    def read_regions(self) -> list[Level | Premise]:
+        """Returns the regions declared on this board, with their kinds."""
         ...
 
 
@@ -424,17 +457,25 @@ class _BoundReader:
         self._store = store
         self._board_id = board_id
 
-    def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
+    def read_level(
+        self, level: str, from_sequence: int = 0, limit: int | None = None
+    ) -> list[Contribution]:
         """Returns a level's contributions from the sequence bound, inclusive."""
-        return self._store.read_level(self._board_id, level, from_sequence)
+        return self._store.read_level(self._board_id, level, from_sequence, limit)
 
     def read_premise(self, premise: str) -> PremiseState:
         """Returns a premise's current value and version."""
         return self._store.read_premise(self._board_id, premise)
 
-    def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(
+        self, from_sequence: int = 0, limit: int | None = None
+    ) -> list[BoardChange]:
         """Returns every write to every region, in sequence order, from the bound."""
-        return self._store.read_board(self._board_id, from_sequence)
+        return self._store.read_board(self._board_id, from_sequence, limit)
+
+    def read_regions(self) -> list[Level | Premise]:
+        """Returns the regions declared on this board, with their kinds."""
+        return self._store.read_regions(self._board_id)
 
 
 class Control:
