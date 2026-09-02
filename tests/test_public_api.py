@@ -71,3 +71,51 @@ def test_a_proposed_contribution_has_no_agent_field() -> None:
         writer="ocp", level="platform", content="a"
     )
     assert not hasattr(proposed, "agent")
+
+
+def test_the_public_modules_are_the_six_the_reference_lists() -> None:
+    """`docs/reference.md` and `docs/index.md` both name them."""
+    import pkgutil
+
+    import blackboard as package
+
+    public = {
+        name
+        for _, name, _ in pkgutil.iter_modules(package.__path__)
+        if not name.startswith("_")
+    }
+    assert public == {"agent", "conformance", "delivery", "server", "wire"}
+
+
+def test_postgres_creates_the_five_tables_the_storage_page_names() -> None:
+    """`docs/concepts/storage.md` says how many, and a reader counts them."""
+    import re
+    from pathlib import Path
+
+    source = Path("src/blackboard/_postgres.py").read_text()
+    # Only what create_schema runs. The lazy check creates the stamp table
+    # again on its own, for a store pointed at a database it did not make.
+    schema = source[source.index("_SCHEMA = ") : source.index("_LEVEL = ")]
+    created = re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", schema)
+    assert created == [
+        "blackboard_schema",
+        "blackboard_boards",
+        "blackboard_regions",
+        "blackboard_contributions",
+        "blackboard_premises",
+    ]
+
+
+def test_the_wire_names_seven_operations() -> None:
+    """`docs/guides/serving-a-blackboard.md` tabulates all of them."""
+    from blackboard.wire import OPERATIONS
+
+    assert [operation.name for operation in OPERATIONS] == [
+        "read_regions",
+        "read_level",
+        "read_premise",
+        "read_board",
+        "write",
+        "set_premise",
+        "ack",
+    ]

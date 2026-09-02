@@ -56,6 +56,6 @@ Reads return snapshots, so mutating the returned list changes nothing. Content c
 
 ## Substituting the board
 
-`Control` takes a `BoardStore`, the protocol covering the six operations it performs. There is no default: a run has to be told where its record goes.
+`Control` takes a `BoardStore`, the protocol covering the seven operations it performs. The eighth, `delete`, is the application's to call and the control component never does. There is no default: a run has to be told where its record goes.
 
 `SqliteStore` keeps it in a file, and an adapter you write keeps it in your own database. The two reconciliation rules map onto ordinary primitives: the total order is a sequence, and a premise write is an update guarded by a version. [Storage](storage.md) covers the choice and what an implementation has to guarantee.

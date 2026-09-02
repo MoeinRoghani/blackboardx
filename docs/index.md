@@ -22,6 +22,19 @@ H. Penny Nii set that separation out in a survey of blackboard systems published
 
 Everything belonging to a particular problem stays with the application: the agents, the content they write, the regions the board holds, and the rules the control component applies. The library never interprets a contribution, because interpreting one takes the expertise of the agent that produced it.
 
+It also carries both halves of the conversation between a blackboard and agents deployed as their own services, because that conversation belongs to the arrangement rather than to any one problem.
+
+| Module | What it is for |
+| --- | --- |
+| `blackboard` | The board, the control component, and the four stores |
+| `blackboard.wire` | The bodies and operations both halves speak |
+| `blackboard.server` | Answering an agent's request, without a web framework |
+| `blackboard.delivery` | Sending a notification to an agent, without the writer waiting |
+| `blackboard.agent` | Reading and writing a board from an agent |
+| `blackboard.conformance` | The suite a store of your own is held to |
+
+Your service keeps its own HTTP server, its routes, its authentication, and its database. Neither half writes the protocol between them.
+
 ## What the arrangement leaves open
 
 Agents that share a record still need four questions answered before any of them can run.
@@ -44,3 +57,5 @@ Agents that share a record still need four questions answered before any of them
 | Check what a term means | [Glossary](glossary.md) |
 | Choose where the record is kept | [Storage](concepts/storage.md) |
 | Deploy it behind a service | [Running as a service](concepts/service.md) |
+| Serve agents that run elsewhere | [Serve a blackboard over HTTP](guides/serving-a-blackboard.md) |
+| Know what it will not do | [What this version does not do](limits.md) |

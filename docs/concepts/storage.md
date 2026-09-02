@@ -65,7 +65,7 @@ with PostgresStore.from_dsn("postgresql://...") as store:
     ...
 ```
 
-`create_schema` creates four tables, all named `blackboard_*` and all `IF NOT EXISTS`, in whatever schema the connection's search path points at. An application that runs its own migrations can issue the same DDL there instead and never call it.
+`create_schema` creates five tables, all named `blackboard_*` and all `IF NOT EXISTS`, in whatever schema the connection's search path points at. An application that runs its own migrations can issue the same DDL there instead and never call it.
 
 Agents deployed as separate services each hold their own connection to the same database, and the board is what they share. A board adapter makes the record durable; it does not make the run durable, because the control component holds the agent registry, the outstanding notifications, and the deadlines in the process. [Running as a service](service.md) states which part is which and what that means for how many replicas hold one board.
 
