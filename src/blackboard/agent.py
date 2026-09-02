@@ -59,10 +59,19 @@ A read and an acknowledgment are attempted again when the blackboard cannot
 be reached or answers 5xx. Reading twice returns the same thing, and an
 acknowledgment of a notification no longer outstanding changes nothing.
 
-A write is not. A request that timed out may still have been received, and a
-contribution appended twice is not the same board. The write raises
-:class:`Unreachable` and the agent decides, which is the only honest answer
-until the blackboard deduplicates on a key the client sends.
+A write is attempted again only when it carries an ``idempotency_key``. A
+request that timed out may still have been received, and a contribution
+appended twice is not the same board, so a write with nothing to identify it
+raises :class:`Unreachable` and the agent decides what to do. Given a key the
+blackboard writes it once however many times it arrives, so the client sends
+it again like a read, and an attempt whose answer was lost comes back as the
+first one's result with ``repeated`` set.
+
+Name the key after work the agent can name again after a restart, rather than
+a fresh random string each time, so that a restart deduplicates too.
+
+Retrying a keyed write needs a blackboard at 0.9 or later. An older one takes
+the key and ignores it.
 """
 
 from __future__ import annotations
@@ -210,19 +219,34 @@ def _read_board_call(
 
 
 def _write_call(
-    board_id: str, agent: str, level: str, content: object
+    board_id: str,
+    agent: str,
+    level: str,
+    content: object,
+    idempotency_key: str | None,
 ) -> _Call[Written | Rejected]:
     return _Call(
         method=WRITE.method,
         path=WRITE.path(board_id=board_id, level=level),
-        body=WriteRequest(writer=agent, level=level, content=content).to_json(),
+        body=WriteRequest(
+            writer=agent,
+            level=level,
+            content=content,
+            idempotency_key=idempotency_key,
+        ).to_json(),
         read=_write_outcome,
-        repeatable=False,
+        # A key is what makes sending it again safe, so a key is the opt in.
+        repeatable=idempotency_key is not None,
     )
 
 
 def _set_premise_call(
-    board_id: str, agent: str, premise: str, value: object, expected_version: int
+    board_id: str,
+    agent: str,
+    premise: str,
+    value: object,
+    expected_version: int,
+    idempotency_key: str | None,
 ) -> _Call[Written | Conflict | Rejected]:
     return _Call(
         method=SET_PREMISE.method,
@@ -232,9 +256,10 @@ def _set_premise_call(
             premise=premise,
             value=value,
             expected_version=expected_version,
+            idempotency_key=idempotency_key,
         ).to_json(),
         read=_premise_outcome,
-        repeatable=False,
+        repeatable=idempotency_key is not None,
     )
 
 
@@ -272,9 +297,15 @@ def _premise(status: int, body: object) -> PremiseState:
 
 
 def _write_outcome(status: int, body: object) -> Written | Rejected:
-    if status == 201:
+    if status in (200, 201):
         written = _decode(WrittenBody, body)
-        return Written(sequence=written.sequence, version=written.version)
+        return Written(
+            sequence=written.sequence,
+            version=written.version,
+            # An older blackboard answers 200 without saying why, and 200 to
+            # a write is only ever a repeat.
+            repeated=written.repeated or status == 200,
+        )
     if status == 422:
         return _rejection(body)
     if status == 410:
@@ -500,14 +531,29 @@ class BoardClient:
             start = _next_page([c.sequence for c in page.changes], page.has_more)
         return found
 
-    def write(self, level: str, content: object) -> Written | Rejected:
+    def write(
+        self,
+        level: str,
+        content: object,
+        idempotency_key: str | None = None,
+    ) -> Written | Rejected:
         """Proposes a contribution to a level, as this client's agent."""
         return self._send(
-            _write_call(self._bound.board_id, self._bound.agent, level, content)
+            _write_call(
+                self._bound.board_id,
+                self._bound.agent,
+                level,
+                content,
+                idempotency_key,
+            )
         )
 
     def set_premise(
-        self, premise: str, value: object, expected_version: int
+        self,
+        premise: str,
+        value: object,
+        expected_version: int,
+        idempotency_key: str | None = None,
     ) -> Written | Conflict | Rejected:
         """Sets a premise, provided it is still at ``expected_version``."""
         return self._send(
@@ -517,6 +563,7 @@ class BoardClient:
                 premise,
                 value,
                 expected_version,
+                idempotency_key,
             )
         )
 
@@ -646,14 +693,29 @@ class AsyncBoardClient:
             start = _next_page([c.sequence for c in page.changes], page.has_more)
         return found
 
-    async def write(self, level: str, content: object) -> Written | Rejected:
+    async def write(
+        self,
+        level: str,
+        content: object,
+        idempotency_key: str | None = None,
+    ) -> Written | Rejected:
         """Proposes a contribution to a level, as this client's agent."""
         return await self._send(
-            _write_call(self._bound.board_id, self._bound.agent, level, content)
+            _write_call(
+                self._bound.board_id,
+                self._bound.agent,
+                level,
+                content,
+                idempotency_key,
+            )
         )
 
     async def set_premise(
-        self, premise: str, value: object, expected_version: int
+        self,
+        premise: str,
+        value: object,
+        expected_version: int,
+        idempotency_key: str | None = None,
     ) -> Written | Conflict | Rejected:
         """Sets a premise, provided it is still at ``expected_version``."""
         return await self._send(
@@ -663,6 +725,7 @@ class AsyncBoardClient:
                 premise,
                 value,
                 expected_version,
+                idempotency_key,
             )
         )
 

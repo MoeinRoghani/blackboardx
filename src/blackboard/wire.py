@@ -139,6 +139,7 @@ class WrittenBody(_Body):
 
     sequence: int
     version: int | None = None
+    repeated: bool = False
 
 
 @dataclass(frozen=True)

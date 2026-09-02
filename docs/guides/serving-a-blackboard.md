@@ -107,8 +107,8 @@ the cursor because an offset shifts when a concurrent write lands.
 
 | Status | Meaning | Send it again? |
 | --- | --- | --- |
-| 200 | A read, answered | |
-| 201 | A write reached the board | |
+| 200 | A read, or a write this key had already made | |
+| 201 | A write reached the board for the first time | |
 | 204 | An acknowledgment was recorded | |
 | 400 | The body or a query parameter could not be read | No |
 | 404 | No such board, region, notification, or path | No |
@@ -123,6 +123,19 @@ connect are worth another attempt.
 
 A 4xx body is an `ErrorBody`: `error` is a stable name to branch on, and
 `detail` is written for a person reading a log.
+
+## Writing once
+
+A write body may carry an `idempotency_key`. The blackboard writes one key
+once: a key it has already written answers 200 with the first write's
+sequence and `repeated`, and adds nothing, where a first write answers 201. A
+key sent for a region it did not name before is refused 422 with the cause
+`idempotency_key_reused`.
+
+Nothing in the service does that work. The key goes to the control component
+and from there to the store, where the row and its key are written together.
+[Storage](../concepts/storage.md#writing-once-over-a-network-that-may-repeat)
+covers what a store guarantees.
 
 ## The path names the region
 
