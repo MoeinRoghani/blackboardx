@@ -50,6 +50,7 @@ from blackboard._board import (
     Written,
     _as_json,
 )
+from blackboard._schema import stamp_to_write
 
 if TYPE_CHECKING:
     from pymongo.database import Database
@@ -58,6 +59,7 @@ _BOARDS = "blackboard_boards"
 _REGIONS = "blackboard_regions"
 _CONTRIBUTIONS = "blackboard_contributions"
 _PREMISES = "blackboard_premises"
+_SCHEMA = "blackboard_schema"
 
 _LEVEL = "level"
 _PREMISE = "premise"
@@ -93,6 +95,7 @@ class MongoStore:
 
     def __init__(self, database: Database[Any]) -> None:
         self._database = database
+        self._stamped = False
 
     @classmethod
     @contextmanager
@@ -135,8 +138,10 @@ class MongoStore:
             unique=True,
             partialFilterExpression={"idempotency_key": {"$type": "string"}},
         )
+        self._stamp()
 
     def declare(self, board_id: str, region: Level | Premise) -> None:
+        self._checked()
         if not isinstance(region, Level | Premise):
             raise TypeError(
                 "a region declaration is a Level or a Premise, "
@@ -179,6 +184,25 @@ class MongoStore:
 
         self._in_a_transaction(work)
 
+    def _stamp(self) -> None:
+        """Records the schema this version writes, or refuses one it cannot read."""
+        found = self._database[_SCHEMA].find_one({"_id": "schema"})
+        writing = stamp_to_write(
+            None if found is None else int(found["version"]), where="this database"
+        )
+        if writing is not None:
+            self._database[_SCHEMA].update_one(
+                {"_id": "schema"}, {"$set": {"version": writing}}, upsert=True
+            )
+        self._stamped = True
+
+    def _checked(self) -> None:
+        # Once per store. An application that points this at a database it
+        # did not create never calls create_indexes, and the check has to
+        # happen anyway.
+        if not self._stamped:
+            self._stamp()
+
     def _already_written(
         self,
         board_id: str,
@@ -212,6 +236,7 @@ class MongoStore:
         content: object,
         idempotency_key: str | None = None,
     ) -> Written:
+        self._checked()
         carried = _as_json(content)
 
         def work(session: Any) -> Written:
@@ -243,6 +268,7 @@ class MongoStore:
         expected_version: int,
         idempotency_key: str | None = None,
     ) -> Written | Conflict:
+        self._checked()
         carried = _as_json(value)
         losses: list[Conflict] = []
 
@@ -299,6 +325,7 @@ class MongoStore:
         from_sequence: int = 0,
         limit: int | None = None,
     ) -> list[Contribution]:
+        self._checked()
         self._require(board_id, level, _LEVEL, None)
         documents = (
             self._database[_CONTRIBUTIONS]
@@ -320,6 +347,7 @@ class MongoStore:
         ]
 
     def read_premise(self, board_id: str, premise: str) -> PremiseState:
+        self._checked()
         self._require(board_id, premise, _PREMISE, None)
         document = self._database[_PREMISES].find_one(
             {"board_id": board_id, "name": premise}
@@ -333,6 +361,7 @@ class MongoStore:
     def read_board(
         self, board_id: str, from_sequence: int = 0, limit: int | None = None
     ) -> list[BoardChange]:
+        self._checked()
         documents = (
             self._database[_CONTRIBUTIONS]
             .find({"board_id": board_id, "sequence": {"$gte": from_sequence}})
@@ -349,6 +378,8 @@ class MongoStore:
         ]
 
     def delete(self, board_id: str) -> Deleted:
+        self._checked()
+
         def work(session: Any) -> Deleted:
             named = {"board_id": board_id}
             regions = self._database[_REGIONS].count_documents(named, session=session)
@@ -364,6 +395,7 @@ class MongoStore:
         return self._in_a_transaction(work)
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
+        self._checked()
         """Returns the regions declared on one board, with their kinds."""
         documents = (
             self._database[_REGIONS]
