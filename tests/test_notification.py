@@ -70,7 +70,7 @@ def make_control(clock: ManualClock, *agents: Agent) -> Control:
 
 
 class TestDeclarations:
-    def test_registering_a_name_again_replaces_that_agent(self) -> None:
+    def test_premiseing_a_name_again_replaces_that_agent(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock, agent("ocp", Recorder()))
         returning = Recorder()
@@ -80,7 +80,7 @@ class TestDeclarations:
 
 
 class TestZeroWindowDispatch:
-    def test_a_register_write_notifies_every_agent_at_once(self) -> None:
+    def test_a_premise_write_notifies_every_agent_at_once(self) -> None:
         clock = ManualClock(start=START)
         first, second = Recorder(), Recorder()
         control = make_control(clock, agent("ocp", first), agent("git", second))
@@ -268,7 +268,7 @@ class TestMidRunRegistration:
         assert len(late.received) == 2
         assert late.received[1].to_sequence == 2
 
-    def test_a_register_declared_mid_run_notifies_from_declaration(self) -> None:
+    def test_a_premise_declared_mid_run_notifies_from_declaration(self) -> None:
         clock = ManualClock(start=START)
         recorder = Recorder()
         control = make_control(clock, agent("ocp", recorder))

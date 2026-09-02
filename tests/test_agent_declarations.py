@@ -60,7 +60,7 @@ def declaration(
 
 
 class TestSubscription:
-    def test_omitting_it_subscribes_to_every_register(self) -> None:
+    def test_omitting_it_subscribes_to_every_premise(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
         received: list[Notification] = []
@@ -72,7 +72,7 @@ class TestSubscription:
             frozenset({"namespace"}),
         ]
 
-    def test_a_register_outside_the_declaration_does_not_wake_the_agent(self) -> None:
+    def test_a_premise_outside_the_declaration_does_not_wake_the_agent(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
         received: list[Notification] = []
@@ -82,7 +82,7 @@ class TestSubscription:
         control.set_premise("operator", "window", "w", expected_version=0)
         assert [n.regions for n in received] == [frozenset({"window"})]
 
-    def test_the_opening_notification_names_only_subscribed_registers(self) -> None:
+    def test_the_opening_notification_names_only_subscribed_premises(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
         control.set_premise("operator", "window", "w", expected_version=0)
@@ -113,7 +113,7 @@ class TestWritePermission:
         )
         assert control.reader.read_level("application") == []
 
-    def test_an_unregistered_writer_is_unrestricted(self) -> None:
+    def test_an_unpremiseed_writer_is_unrestricted(self) -> None:
         clock = ManualClock(start=START)
         control = make_control(clock)
         assert control.write("operator", "platform", "a") == Written(sequence=1)

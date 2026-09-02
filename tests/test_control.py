@@ -106,7 +106,7 @@ class TestAdmission:
             cause=RejectionCause.ADMISSION, reason="already on the board"
         )
 
-    def test_the_rule_judges_register_writes(self) -> None:
+    def test_the_rule_judges_premise_writes(self) -> None:
         seen: list[ProposedWrite] = []
 
         def rule(proposed: ProposedWrite, reader: BoardReader) -> Accept | Reject:
@@ -148,7 +148,7 @@ class TestAdmission:
 
 
 class TestSetRegister:
-    def test_an_accepted_register_write_returns_written_and_is_audited(self) -> None:
+    def test_an_accepted_premise_write_returns_written_and_is_audited(self) -> None:
         control = make_control()
         result = control.set_premise("operator", "window", "w", expected_version=0)
         assert result == Written(sequence=1, version=1)
@@ -185,7 +185,7 @@ class TestRegionRefusals:
             )
         ]
 
-    def test_a_register_write_to_an_undeclared_region_is_rejected(self) -> None:
+    def test_a_premise_write_to_an_undeclared_region_is_rejected(self) -> None:
         control = make_control()
         result = control.set_premise("a", "missing", "x", expected_version=0)
         assert isinstance(result, Rejected)
@@ -262,7 +262,7 @@ class TestAudit:
 
 
 class TestWhoWrites:
-    def test_a_writer_that_never_registered_may_still_write(self) -> None:
+    def test_a_writer_that_never_premiseed_may_still_write(self) -> None:
         control = make_control()
         # Nothing named this has registered. The parameter is a writer, not
         # an agent, and the audit records it under that name.

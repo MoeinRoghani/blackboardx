@@ -110,7 +110,7 @@ class BoardConformance:
         ready.declare(Level("change"))
         assert ready.read_level("change") == []
 
-    def test_a_register_declared_later_holds_no_value(self, ready: Bound) -> None:
+    def test_a_premise_declared_later_holds_no_value(self, ready: Bound) -> None:
         ready.declare(Premise("trigger"))
         with pytest.raises(UnsetPremiseError):
             ready.read_premise("trigger")
@@ -147,7 +147,7 @@ class BoardConformance:
             Contribution(sequence=2, content="b")
         ]
 
-    def test_appending_to_a_register_is_refused(self, ready: Bound) -> None:
+    def test_appending_to_a_premise_is_refused(self, ready: Bound) -> None:
         with pytest.raises(RegionKindError):
             ready.append("window", "a")
 
@@ -192,7 +192,7 @@ class BoardConformance:
         with pytest.raises(RegionKindError):
             ready.set("application", "a", expected_version=0)
 
-    def test_a_register_may_hold_none(self, ready: Bound) -> None:
+    def test_a_premise_may_hold_none(self, ready: Bound) -> None:
         ready.set("window", None, expected_version=0)
         assert ready.read_premise("window") == PremiseState(value=None, version=1)
 
@@ -283,7 +283,7 @@ class BoardConformance:
             thread.join()
         assert sorted(results) == list(range(1, 101))
 
-    def test_concurrent_register_writers_lose_no_update(self, ready: Bound) -> None:
+    def test_concurrent_premise_writers_lose_no_update(self, ready: Bound) -> None:
         ready.set("window", [], expected_version=0)
         barrier = threading.Barrier(4)
 
@@ -416,7 +416,7 @@ class SharedStoreConformance:
         assert first.append("application", "b") == 2
         assert second.append("application", "a") == 1
 
-    def test_registers_of_the_same_name_hold_separate_values(
+    def test_premises_of_the_same_name_hold_separate_values(
         self, two_boards: tuple[Bound, Bound]
     ) -> None:
         first, second = two_boards

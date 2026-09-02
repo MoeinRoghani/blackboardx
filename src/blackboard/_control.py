@@ -965,9 +965,9 @@ class Control:
         """Records that something happened, which pushes the idle deadline out.
 
         A run does not close because nothing is outstanding at some instant.
-        Agents are idle between notifications and they register at
-        different times, so an instant of quiet is the gap before the work
-        rather than the end of it. A run closes when the quiet lasts long
+        Agents are idle between notifications and they finish at different
+        times, so an instant of quiet is the gap before the work rather than
+        the end of it. A run closes when the quiet lasts long
         enough, and the idle timer measures it.
         """
         with self._lock:

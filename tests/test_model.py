@@ -115,7 +115,7 @@ class TestCreation:
 
 
 class TestRegistration:
-    def test_registering_wakes_the_agent_once(self) -> None:
+    def test_premiseing_wakes_the_agent_once(self) -> None:
         notifications: list[Notification] = []
         model = create_model(
             regions=[Premise("window"), Premise("service")],
@@ -131,7 +131,7 @@ class TestRegistration:
         assert notification.agent == "ocp"
         assert notification.regions == frozenset({"window", "service"})
 
-    def test_each_agent_is_woken_when_it_registers(self) -> None:
+    def test_each_agent_is_woken_when_it_premises(self) -> None:
         first: list[Notification] = []
         second: list[Notification] = []
         model = create_model(
@@ -150,7 +150,7 @@ class TestRegistration:
         assert len(first) == 1
         assert len(second) == 1
 
-    def test_a_register_with_no_value_is_not_named_in_the_opening_notification(
+    def test_a_premise_with_no_value_is_not_named_in_the_opening_notification(
         self,
     ) -> None:
         notifications: list[Notification] = []
@@ -168,7 +168,7 @@ class TestRegistration:
         (notification,) = notifications
         assert notification.regions == frozenset({"window"})
 
-    def test_registering_a_name_again_replaces_that_agent(self) -> None:
+    def test_premiseing_a_name_again_replaces_that_agent(self) -> None:
         returning: list[Notification] = []
         model = create_model(
             regions=[Premise("window")],
@@ -184,7 +184,7 @@ class TestRegistration:
         model.control.set_premise("operator", "window", "w2", expected_version=1)
         assert returning, "the replacement is the callback now reached"
 
-    def test_registering_into_a_closed_run_is_refused(self) -> None:
+    def test_premiseing_into_a_closed_run_is_refused(self) -> None:
         model = create_model(
             regions=[Premise("window")],
             premises={"window": "w"},
