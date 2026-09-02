@@ -64,6 +64,7 @@ from blackboard._control import (
     WallClockExpired,
     WriteAccepted,
     WriteRejected,
+    reader_for,
 )
 from blackboard._model import Model, attach_model, create_model
 from blackboard._schema import SCHEMA_VERSION, SchemaVersionError
@@ -134,6 +135,7 @@ __all__ = [
     "Written",
     "attach_model",
     "create_model",
+    "reader_for",
 ]
 
 

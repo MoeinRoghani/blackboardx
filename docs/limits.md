@@ -19,9 +19,15 @@ the first registered, owes no notification the first dispatched, and measures
 silence from its own start. Losing the replica that holds a run ends that run:
 the record survives and the run does not resume.
 
-So one board is served by one `Control` in one process at a time. Scale by
-putting different boards on different replicas and routing by board
-identifier, not by putting more replicas behind one board.
+So one board is served by one `Control` in one process at a time for
+**writing**. Scale by putting different boards on different replicas and
+routing writes by board identifier, not by putting more replicas behind one
+board.
+
+Reads are exempt. Give `BoardService` the store and any replica answers a
+read for any board in it, run or no run, because a read needs the record
+rather than the run. The audit is the one read that is not exempt: it lives
+in the process and no operation on the wire exposes it.
 
 A replacement replica opens a run over the record with `attach_model`, which
 carries the record and not the run: the registry, the outstanding

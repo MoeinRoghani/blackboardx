@@ -77,11 +77,14 @@ from blackboard._board import (
     Written,
 )
 from blackboard._control import (
+    BoardReader,
+    BoardStore,
     Control,
     Rejected,
     RejectionCause,
     RunClosedError,
     UnknownNotificationError,
+    reader_for,
 )
 from blackboard.wire import (
     ACK,
@@ -113,8 +116,23 @@ from blackboard.wire import (
 
 __all__ = ["BoardService", "Request", "Response"]
 
+
 #: How one operation is answered, once its path has been matched.
-_Answer = Callable[[dict[str, str], "Request", Control], "Response"]
+@dataclass(frozen=True)
+class _Serving:
+    """What answering one request needs: always a reader, sometimes a run."""
+
+    reader: BoardReader
+    control: Control | None
+
+    def run(self) -> Control:
+        # Only a write reaches this, and a write without a run answered 404
+        # before it got here.
+        assert self.control is not None
+        return self.control
+
+
+_Answer = Callable[[dict[str, str], "Request", _Serving], "Response"]
 
 
 @dataclass(frozen=True)
@@ -157,9 +175,11 @@ class BoardService:
         self,
         control_for: Callable[[str], Control | None],
         *,
+        store: BoardStore | None = None,
         prefix: str = "",
     ) -> None:
         self._control_for = control_for
+        self._store = store
         self._prefix = prefix.rstrip("/")
         # Named rather than ordered, so an operation the wire adds and this
         # service has not answered raises instead of falling into another.
@@ -206,10 +226,13 @@ class BoardService:
     ) -> Response:
         board_id = variables["board_id"]
         control = self._control_for(board_id)
+        reader: BoardReader | None = None
         if control is None:
-            return _error(404, "unknown_board", f"this service holds no {board_id}")
+            reader = self._reader_for(board_id, operation)
+            if reader is None:
+                return _error(404, "unknown_board", f"this service holds no {board_id}")
         try:
-            return self._act(operation, variables, request, control)
+            return self._act(operation, variables, request, control, reader)
         except UndeclaredRegionError as absent:
             return _error(404, "unknown_region", str(absent))
         except RegionKindError as wrong:
@@ -224,34 +247,52 @@ class BoardService:
         except RunClosedError as closed:
             return _error(410, "run_closed", str(closed))
 
+    def _reader_for(self, board_id: str, operation: Operation) -> BoardReader | None:
+        """Returns a reader over the record, for a board no run is held for.
+
+        A read needs the record and not the run, so any replica holding the
+        store can answer one. A write needs the run. A board the store never
+        held returns nothing, so a mistyped identifier is not answered with an
+        empty list.
+        """
+        if self._store is None or operation.method != "GET":
+            return None
+        if not self._store.read_regions(board_id):
+            return None
+        return reader_for(self._store, board_id)
+
     def _act(
         self,
         operation: Operation,
         variables: dict[str, str],
         request: Request,
-        control: Control,
+        control: Control | None,
+        reader: BoardReader | None,
     ) -> Response:
         answer = self._answering.get(operation.name)
         if answer is None:
             raise NotImplementedError(
                 f"{operation.name} is on the wire and this service does not answer it"
             )
-        return answer(variables, request, control)
+        bound = control.reader if control is not None else reader
+        assert bound is not None
+        serving = _Serving(reader=bound, control=control)
+        return answer(variables, request, serving)
 
     def _read_regions(
-        self, variables: dict[str, str], request: Request, control: Control
+        self, variables: dict[str, str], request: Request, serving: _Serving
     ) -> Response:
-        regions = control.reader.read_regions()
+        regions = serving.reader.read_regions()
         return Response(200, RegionList([RegionBody.of(r) for r in regions]).to_json())
 
     def _read_level(
-        self, variables: dict[str, str], request: Request, control: Control
+        self, variables: dict[str, str], request: Request, serving: _Serving
     ) -> Response:
         bounds = _bounds(request.query)
         if isinstance(bounds, Response):
             return bounds
         from_sequence, limit = bounds
-        found = control.reader.read_level(
+        found = serving.reader.read_level(
             variables["level"], from_sequence, _one_more(limit)
         )
         page, more = _trim(found, limit)
@@ -267,21 +308,21 @@ class BoardService:
         )
 
     def _read_premise(
-        self, variables: dict[str, str], request: Request, control: Control
+        self, variables: dict[str, str], request: Request, serving: _Serving
     ) -> Response:
-        state = control.reader.read_premise(variables["premise"])
+        state = serving.reader.read_premise(variables["premise"])
         return Response(
             200, PremiseBody(version=state.version, value=state.value).to_json()
         )
 
     def _read_board(
-        self, variables: dict[str, str], request: Request, control: Control
+        self, variables: dict[str, str], request: Request, serving: _Serving
     ) -> Response:
         bounds = _bounds(request.query)
         if isinstance(bounds, Response):
             return bounds
         from_sequence, limit = bounds
-        changes = control.reader.read_board(from_sequence, _one_more(limit))
+        changes = serving.reader.read_board(from_sequence, _one_more(limit))
         page, more = _trim(changes, limit)
         return Response(
             200,
@@ -297,7 +338,7 @@ class BoardService:
         )
 
     def _write(
-        self, variables: dict[str, str], request: Request, control: Control
+        self, variables: dict[str, str], request: Request, serving: _Serving
     ) -> Response:
         asked = _decode(WriteRequest, request.body)
         if isinstance(asked, Response):
@@ -305,7 +346,7 @@ class BoardService:
         # The path names the level, so a body disagreeing with it changes
         # nothing: a caller cannot write somewhere it did not address.
         return _outcome(
-            control.write(
+            serving.run().write(
                 variables["level"],
                 asked.content,
                 asked.idempotency_key,
@@ -314,13 +355,13 @@ class BoardService:
         )
 
     def _set_premise(
-        self, variables: dict[str, str], request: Request, control: Control
+        self, variables: dict[str, str], request: Request, serving: _Serving
     ) -> Response:
         setting = _decode(SetPremiseRequest, request.body)
         if isinstance(setting, Response):
             return setting
         return _outcome(
-            control.set_premise(
+            serving.run().set_premise(
                 variables["premise"],
                 setting.value,
                 setting.expected_version,
@@ -330,12 +371,12 @@ class BoardService:
         )
 
     def _ack(
-        self, variables: dict[str, str], request: Request, control: Control
+        self, variables: dict[str, str], request: Request, serving: _Serving
     ) -> Response:
         acknowledgment = _decode(AckRequest, request.body)
         if isinstance(acknowledgment, Response):
             return acknowledgment
-        control.ack(acknowledgment.notification_id, agent=acknowledgment.agent)
+        serving.run().ack(acknowledgment.notification_id, agent=acknowledgment.agent)
         return Response(204)
 
 
