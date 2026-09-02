@@ -14,11 +14,11 @@ The distribution name is `blackboardx`; the import name is `blackboard`. The doc
 
 ```
 pip install blackboardx
-pip install 'blackboardx[postgres]'    # PostgresBoard
-pip install 'blackboardx[mongodb]'     # MongoBoard
+pip install 'blackboardx[postgres]'    # PostgresStore
+pip install 'blackboardx[mongodb]'     # MongoStore
 ```
 
-The base install has no runtime dependency: the board it ships, `SqliteBoard`, is backed by SQLite, which comes with Python. A deployment keeps the record in the database it already runs, and the adapter for one needs its driver.
+The base install has no runtime dependency: the board it ships, `SqliteStore`, is backed by SQLite, which comes with Python. A deployment keeps the record in the database it already runs, and the adapter for one needs its driver.
 
 ## Documentation
 
@@ -41,18 +41,19 @@ from blackboard import (
     Premise,
     RunLimits,
     Settled,
-    SqliteBoard,
+    SqliteStore,
     create_model,
 )
 
 notifications = []
 
 model = create_model(
+    board_id="incident-4471",
+    store=SqliteStore("incidents.sqlite3"),
     regions=[Level("platform"), Premise("window")],
     premises={"window": ["2026-08-16T20:00", "2026-08-16T22:00"]},
     agents=[Agent(name="ocp", notify=notifications.append)],
     limits=RunLimits(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
-    board=SqliteBoard("incident.sqlite3"),
 )
 
 (notification,) = notifications

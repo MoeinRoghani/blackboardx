@@ -41,7 +41,7 @@ def test_a_name_0_6_said_it_removed_is_gone(name: str) -> None:
 
 
 def test_the_renamed_methods_are_gone() -> None:
-    board = blackboard.InMemoryBoard()
+    board = blackboard.InMemoryStore()
     assert not hasattr(board, "read_register")
     assert not hasattr(blackboard.Control, "set_register")
 
@@ -55,14 +55,14 @@ def test_the_renamed_keywords_are_gone() -> None:
             regions=[blackboard.Premise("window")],
             seed={"window": "w"},
             limits=limits,
-            board=blackboard.InMemoryBoard(),
+            board=blackboard.InMemoryStore(),
         )
     with pytest.raises(TypeError):
         blackboard.create_model(  # type: ignore[call-arg]  # the removal is the subject
             regions=[blackboard.Premise("window")],
             premises={"window": "w"},
             budgets=limits,
-            board=blackboard.InMemoryBoard(),
+            board=blackboard.InMemoryStore(),
         )
 
 

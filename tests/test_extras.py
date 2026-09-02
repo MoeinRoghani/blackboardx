@@ -17,8 +17,8 @@ def test_an_unknown_name_is_an_attribute_error() -> None:
 @pytest.mark.parametrize(
     ("name", "module", "driver", "extra"),
     [
-        ("PostgresBoard", "blackboard._postgres", "psycopg", "postgres"),
-        ("MongoBoard", "blackboard._mongodb", "pymongo", "mongodb"),
+        ("PostgresStore", "blackboard._postgres", "psycopg", "postgres"),
+        ("MongoStore", "blackboard._mongodb", "pymongo", "mongodb"),
     ],
 )
 def test_a_missing_driver_names_the_extra_that_supplies_it(

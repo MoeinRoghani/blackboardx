@@ -9,7 +9,7 @@ from blackboard import (
     Agent,
     BoardReader,
     DuplicateAgentError,
-    InMemoryBoard,
+    InMemoryStore,
     Level,
     ManualClock,
     Notification,
@@ -19,7 +19,7 @@ from blackboard import (
     RunClosedError,
     RunLimits,
     Settled,
-    SqliteBoard,
+    SqliteStore,
     TerminationDecision,
     Written,
     create_model,
@@ -50,20 +50,23 @@ class TestCreation:
                 clock=ManualClock(start=START),
             )
 
-    def test_the_board_passed_is_the_board_written_to(self) -> None:
-        board = SqliteBoard()
+    def test_the_store_passed_is_the_store_written_to(self) -> None:
+        store = SqliteStore()
         model = create_model(
+            board_id="test-board",
+            store=store,
             regions=[Level("platform"), Premise("window")],
             premises={"window": "w"},
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
-            board=board,
         )
         model.control.write("ocp", "platform", "a finding")
-        assert [c.content for c in board.read_level("platform")] == ["a finding"]
-        assert board.read_premise("window").value == "w"
-        board.close()
+        assert [c.content for c in store.read_level("test-board", "platform")] == [
+            "a finding"
+        ]
+        assert store.read_premise("test-board", "window").value == "w"
+        store.close()
 
     def test_creation_takes_no_agents_and_wakes_nobody(self) -> None:
         model = create_model(
@@ -72,7 +75,8 @@ class TestCreation:
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         opened = [e for e in model.control.read_audit() if isinstance(e, PremiseOpened)]
         assert [e.premise for e in opened] == ["window"]
@@ -85,7 +89,8 @@ class TestCreation:
                 premises={"window": "w"},
                 limits=LIMITS,
                 clock=ManualClock(start=START),
-                board=InMemoryBoard(),
+                board_id="test-board",
+                store=InMemoryStore(),
             )
         with pytest.raises(PremiseError, match="undeclared"):
             create_model(
@@ -93,7 +98,8 @@ class TestCreation:
                 premises={"window": "w", "unknown": "x"},
                 limits=LIMITS,
                 clock=ManualClock(start=START),
-                board=InMemoryBoard(),
+                board_id="test-board",
+                store=InMemoryStore(),
             )
 
     def test_opening_writes_bypass_admission(self) -> None:
@@ -103,7 +109,8 @@ class TestCreation:
             termination_predicate=keep_open,
             limits=RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=30)),
             clock=ManualClock(start=START),
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         assert model.control.write("ocp", "platform", "fits") == Written(sequence=3)
 
@@ -117,7 +124,8 @@ class TestRegistration:
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         model.control.register_agent(declaration("ocp", notifications.append))
         (notification,) = notifications
@@ -133,7 +141,8 @@ class TestRegistration:
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         model.control.register_agent(declaration("ocp", first.append))
         assert len(first) == 1
@@ -152,7 +161,8 @@ class TestRegistration:
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         model.control.declare(Premise("trigger"))
         model.control.register_agent(declaration("ocp", notifications.append))
@@ -167,7 +177,8 @@ class TestRegistration:
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=ManualClock(start=START),
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         model.control.register_agent(declaration("ocp", notifications.append))
         with pytest.raises(DuplicateAgentError):
@@ -179,7 +190,8 @@ class TestRegistration:
             premises={"window": "w"},
             limits=LIMITS,
             clock=ManualClock(start=START),
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         model.control.abort("stopped")
         with pytest.raises(RunClosedError):
@@ -195,7 +207,8 @@ class TestFullCycle:
             premises={"window": ["t1", "t2"]},
             limits=LIMITS,
             clock=clock,
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         model.control.register_agent(declaration("ocp", notifications.append))
 
@@ -228,7 +241,8 @@ class TestSystemClockIntegration:
             limits=RunLimits(
                 wall_clock=timedelta(minutes=1), idle=timedelta(seconds=1)
             ),
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         holder.append(model)
         model.control.register_agent(

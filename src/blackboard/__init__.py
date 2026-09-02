@@ -18,7 +18,7 @@ from blackboard._board import (
     Conflict,
     Contribution,
     DuplicateRegionError,
-    InMemoryBoard,
+    InMemoryStore,
     Level,
     Premise,
     PremiseState,
@@ -63,11 +63,11 @@ from blackboard._control import (
     WriteRejected,
 )
 from blackboard._model import Model, create_model
-from blackboard._sqlite import SqliteBoard
+from blackboard._sqlite import SqliteStore
 
 if TYPE_CHECKING:
-    from blackboard._mongodb import MongoBoard
-    from blackboard._postgres import PostgresBoard
+    from blackboard._mongodb import MongoStore
+    from blackboard._postgres import PostgresStore
 
 __all__ = [
     "Aborted",
@@ -85,16 +85,16 @@ __all__ = [
     "Control",
     "DuplicateAgentError",
     "DuplicateRegionError",
-    "InMemoryBoard",
+    "InMemoryStore",
     "Level",
     "ManualClock",
     "Model",
-    "MongoBoard",
+    "MongoStore",
     "Notification",
     "NotificationAcknowledged",
     "NotificationDispatched",
     "NotificationId",
-    "PostgresBoard",
+    "PostgresStore",
     "Premise",
     "PremiseError",
     "PremiseOpened",
@@ -112,7 +112,7 @@ __all__ = [
     "RunOutcome",
     "ScheduledCall",
     "Settled",
-    "SqliteBoard",
+    "SqliteStore",
     "SystemClock",
     "TerminationDecision",
     "TerminationPredicate",
@@ -128,8 +128,8 @@ __all__ = [
 
 
 _EXTRAS = {
-    "MongoBoard": ("blackboard._mongodb", "mongodb"),
-    "PostgresBoard": ("blackboard._postgres", "postgres"),
+    "MongoStore": ("blackboard._mongodb", "mongodb"),
+    "PostgresStore": ("blackboard._postgres", "postgres"),
 }
 
 

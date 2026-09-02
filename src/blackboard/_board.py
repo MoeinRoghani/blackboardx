@@ -1,17 +1,21 @@
-"""The board stores contributions and decides nothing about them.
+"""A board stores contributions and decides nothing about them.
 
 Writes go to declared regions of two kinds. A level accumulates contributions
 in arrival order. A premise holds one current value under a version number,
 and a write naming a version other than the current one fails. One counter
-orders every write across all regions, and reads are open to any caller.
+orders every write across all regions of one board, and reads are open to any
+caller.
+
+A store holds many boards. Every call names the board it acts on, so one
+connection to a database serves every board an application runs rather than
+one. The board identifier is opaque to the library.
 """
 
 from __future__ import annotations
 
 import json
 import threading
-from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
@@ -115,125 +119,141 @@ class BoardChange:
     content: object
 
 
-class InMemoryBoard:
-    """A board held in process memory. A test double, not a way to run anything.
+@dataclass
+class _BoardState:
+    """One board's contents inside a store."""
+
+    sequence: int = 0
+    levels: dict[str, list[Contribution]] = field(default_factory=dict)
+    premises: dict[str, PremiseState | None] = field(default_factory=dict)
+    changes: list[BoardChange] = field(default_factory=list)
+
+
+class InMemoryStore:
+    """A store held in process memory. A test double, not a way to run anything.
 
     Nothing it holds outlives the process, and two processes running the same
     code share nothing. An application keeps its record in a database through
     an adapter; a test that wants no file uses this.
 
-    Content is carried as JSON, as it is in every implementation that
-    crosses a process boundary. Holding a Python object as it stands would
-    make this board accept what a deployment then refuses, and preserve
-    types, such as a tuple, that no other implementation returns. Content
-    that JSON cannot carry raises ``TypeError`` before anything is stored.
+    Content is carried as JSON, as it is in every store that crosses a process
+    boundary. Holding a Python object as it stands would make this store accept
+    what a deployment then refuses, and preserve types, such as a tuple, that no
+    other store returns. Content that JSON cannot carry raises ``TypeError``
+    before anything is stored.
 
-    Sequence assignment is the only point where two writes wait on each
-    other, so writes from concurrent threads all succeed with distinct
+    Sequence assignment is the only point where two writes to one board wait on
+    each other, so writes from concurrent threads all succeed with distinct
     sequence numbers.
     """
 
-    def __init__(self, regions: Iterable[Level | Premise] = ()) -> None:
+    def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._sequence = 0
-        self._levels: dict[str, list[Contribution]] = {}
-        self._premises: dict[str, PremiseState | None] = {}
-        self._changes: list[BoardChange] = []
-        for region in regions:
-            self.declare(region)
+        self._boards: dict[str, _BoardState] = {}
 
-    def declare(self, region: Level | Premise) -> None:
-        """Creates a region. A name already declared, of either kind, is refused."""
+    def declare(self, board_id: str, region: Level | Premise) -> None:
+        """Creates a region on one board. A name already declared is refused."""
         if not isinstance(region, Level | Premise):
             raise TypeError(
                 "a region declaration is a Level or a Premise, "
                 f"not {type(region).__name__}"
             )
         with self._lock:
-            if region.name in self._levels or region.name in self._premises:
+            board = self._boards.setdefault(board_id, _BoardState())
+            if region.name in board.levels or region.name in board.premises:
                 raise DuplicateRegionError(
                     f"a region named {region.name!r} is already declared"
                 )
             if isinstance(region, Level):
-                self._levels[region.name] = []
+                board.levels[region.name] = []
             else:
-                self._premises[region.name] = None
+                board.premises[region.name] = None
 
-    def append(self, level: str, content: object) -> int:
+    def append(self, board_id: str, level: str, content: object) -> int:
         """Adds one contribution to a level and returns its sequence number."""
+        carried = _as_json(content)
         with self._lock:
-            contributions = self._level_contributions(level)
-            carried = _as_json(content)
-            self._sequence += 1
-            contributions.append(Contribution(sequence=self._sequence, content=carried))
-            self._changes.append(
-                BoardChange(sequence=self._sequence, region=level, content=carried)
+            board = self._board(board_id)
+            contributions = self._level_contributions(board, level)
+            board.sequence += 1
+            contributions.append(Contribution(sequence=board.sequence, content=carried))
+            board.changes.append(
+                BoardChange(sequence=board.sequence, region=level, content=carried)
             )
-            return self._sequence
+            return board.sequence
 
     def set(
-        self, premise: str, value: object, expected_version: int
+        self, board_id: str, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
         """Replaces a premise's value under the version the caller expects.
 
-        A write naming any version other than the premise's current one
-        fails: it returns a conflict carrying the current version, takes no
-        sequence number, and leaves the premise unchanged. A premise never
-        written has version 0.
+        A write naming any version other than the premise's current one fails:
+        it returns a conflict carrying the current version, takes no sequence
+        number, and leaves the premise unchanged. A premise never written has
+        version 0.
         """
+        carried = _as_json(value)
         with self._lock:
-            state = self._premise_state(premise)
+            board = self._board(board_id)
+            state = self._premise_state(board, premise)
             current_version = 0 if state is None else state.version
-            carried = _as_json(value)
             if expected_version != current_version:
                 return Conflict(current_version=current_version)
-            self._sequence += 1
-            self._premises[premise] = PremiseState(
+            board.sequence += 1
+            board.premises[premise] = PremiseState(
                 value=carried, version=current_version + 1
             )
-            self._changes.append(
-                BoardChange(sequence=self._sequence, region=premise, content=carried)
+            board.changes.append(
+                BoardChange(sequence=board.sequence, region=premise, content=carried)
             )
-            return Written(sequence=self._sequence, version=current_version + 1)
+            return Written(sequence=board.sequence, version=current_version + 1)
 
-    def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
+    def read_level(
+        self, board_id: str, level: str, from_sequence: int = 0
+    ) -> list[Contribution]:
         """Returns a level's contributions from the sequence bound, inclusive."""
         with self._lock:
-            contributions = self._level_contributions(level)
+            board = self._board(board_id)
+            contributions = self._level_contributions(board, level)
             return [c for c in contributions if c.sequence >= from_sequence]
 
-    def read_premise(self, premise: str) -> PremiseState:
+    def read_premise(self, board_id: str, premise: str) -> PremiseState:
         """Returns a premise's current value and version."""
         with self._lock:
-            state = self._premise_state(premise)
+            board = self._board(board_id)
+            state = self._premise_state(board, premise)
             if state is None:
                 raise UnsetPremiseError(
                     f"the premise {premise!r} has no value until one is written"
                 )
             return state
 
-    def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
         """Returns every write to every region, in sequence order, from the bound."""
         with self._lock:
-            return [
-                change for change in self._changes if change.sequence >= from_sequence
-            ]
+            board = self._board(board_id)
+            return [c for c in board.changes if c.sequence >= from_sequence]
 
-    def _level_contributions(self, name: str) -> list[Contribution]:
+    def _board(self, board_id: str) -> _BoardState:
+        # Callers hold self._lock. A board nobody declared a region on holds
+        # nothing, and every read of it refuses for the region it names.
+        return self._boards.setdefault(board_id, _BoardState())
+
+    def _level_contributions(self, board: _BoardState, name: str) -> list[Contribution]:
         # Callers hold self._lock.
-        if name in self._levels:
-            return self._levels[name]
-        if name in self._premises:
+        if name in board.levels:
+            return board.levels[name]
+        if name in board.premises:
             raise RegionKindError(
                 f"{name!r} names a premise, and this operation takes a level"
             )
         raise UndeclaredRegionError(f"no region is declared with the name {name!r}")
 
-    def _premise_state(self, name: str) -> PremiseState | None:
+    def _premise_state(self, board: _BoardState, name: str) -> PremiseState | None:
         # Callers hold self._lock.
-        if name in self._premises:
-            return self._premises[name]
-        if name in self._levels:
+        if name in board.premises:
+            return board.premises[name]
+        if name in board.levels:
             raise RegionKindError(
                 f"{name!r} names a level, and this operation takes a premise"
             )

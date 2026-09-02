@@ -14,7 +14,7 @@ from uuid import uuid4
 import pytest
 from conformance import BoardConformance, SharedStoreConformance
 
-from blackboard import BoardStore, Conflict, Level, MongoBoard, Premise
+from blackboard import BoardStore, Conflict, Level, MongoStore, Premise
 
 URI = os.environ.get("BLACKBOARD_TEST_MONGODB_URI")
 
@@ -31,74 +31,68 @@ def database() -> Iterator[Any]:
     client: MongoClient[Any] = MongoClient(URI)
     try:
         opened = client["blackboard_test"]
-        MongoBoard(opened).create_indexes()
+        MongoStore(opened).create_indexes()
         yield opened
     finally:
         client.close()
 
 
-class TestMongoBoard(BoardConformance):
+class TestMongoStore(BoardConformance):
     @pytest.fixture
-    def board(self, database: Any) -> BoardStore:
-        return MongoBoard(database, board_id=str(uuid4()))
+    def store(self, database: Any) -> BoardStore:
+        return MongoStore(database)
 
 
 class TestMongoHoldsManyBoards(SharedStoreConformance):
     @pytest.fixture
-    def two_boards(self, database: Any) -> tuple[BoardStore, BoardStore]:
-        return (
-            MongoBoard(database, board_id=str(uuid4())),
-            MongoBoard(database, board_id=str(uuid4())),
-        )
-
-    @pytest.fixture
-    def same_board_twice(self, database: Any) -> tuple[BoardStore, BoardStore]:
-        board_id = str(uuid4())
-        return (
-            MongoBoard(database, board_id=board_id),
-            MongoBoard(database, board_id=board_id),
-        )
+    def store(self, database: Any) -> BoardStore:
+        return MongoStore(database)
 
 
 def test_create_indexes_runs_against_a_database_that_already_has_them(
     database: Any,
 ) -> None:
-    MongoBoard(database).create_indexes()
+    MongoStore(database).create_indexes()
 
 
 def test_a_run_survives_the_process_that_made_it(database: Any) -> None:
-    board_id = str(uuid4())
-    first = MongoBoard(database, board_id=board_id)
-    first.declare(Level("platform"))
-    first.declare(Premise("window"))
-    first.set("window", ["t1", "t2"], expected_version=0)
-    first.append("platform", {"findings": ["oom"]})
+    board = str(uuid4())
+    first = MongoStore(database)
+    first.declare(board, Level("platform"))
+    first.declare(board, Premise("window"))
+    first.set(board, "window", ["t1", "t2"], expected_version=0)
+    first.append(board, "platform", {"findings": ["oom"]})
 
-    # A second adapter over the same database is what another pod holds.
-    second = MongoBoard(database, board_id=board_id)
-    assert second.read_premise("window").value == ["t1", "t2"]
-    assert [c.content for c in second.read_level("platform")] == [{"findings": ["oom"]}]
-    assert second.append("platform", "later") == 3
+    # A second store over the same database is what another pod holds.
+    second = MongoStore(database)
+    assert second.read_premise(board, "window").value == ["t1", "t2"]
+    assert [c.content for c in second.read_level(board, "platform")] == [
+        {"findings": ["oom"]}
+    ]
+    assert second.append(board, "platform", "later") == 3
 
 
 def test_a_conflict_takes_no_sequence_number(database: Any) -> None:
-    board = MongoBoard(database, board_id=str(uuid4()))
-    board.declare(Level("platform"))
-    board.declare(Premise("window"))
-    board.set("window", "w1", expected_version=0)
-    assert board.set("window", "w2", expected_version=0) == Conflict(current_version=1)
+    board = str(uuid4())
+    store = MongoStore(database)
+    store.declare(board, Level("platform"))
+    store.declare(board, Premise("window"))
+    store.set(board, "window", "w1", expected_version=0)
+    assert store.set(board, "window", "w2", expected_version=0) == Conflict(
+        current_version=1
+    )
     # The number the conflicting write took went back, so the next write
     # takes 2 rather than 3 and the record has no hole in it.
-    assert board.append("platform", "next") == 2
+    assert store.append(board, "platform", "next") == 2
 
 
 def test_the_record_is_stored_as_a_document_the_database_can_query(
     database: Any,
 ) -> None:
     board_id = str(uuid4())
-    board = MongoBoard(database, board_id=board_id)
-    board.declare(Level("platform"))
-    board.append("platform", {"finding": "oom", "host": "node-7"})
+    store = MongoStore(database)
+    store.declare(board_id, Level("platform"))
+    store.append(board_id, "platform", {"finding": "oom", "host": "node-7"})
     found = database["blackboard_contributions"].find_one(
         {"board_id": board_id, "content.finding": "oom"}
     )

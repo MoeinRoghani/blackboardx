@@ -1,17 +1,24 @@
 # Storage
 
-The board is a record, and a record has to be somewhere a reader can find it. Which database holds it is the application's decision, so `create_model` takes the board as a required argument and supplies no default.
+A board is a record, and a record has to be somewhere a reader can find it. A **store** is where records are kept, and it holds many boards. Which database backs the store is the application's decision, so `create_model` takes the store as a required argument and supplies no default.
+
+Every store operation names the board it acts on, so one connection serves every board an application runs:
+
+```python
+store = PostgresStore(pool)
+store.read_premise("incident-4471", "window")
+```
 
 ## What to pass
 
-| Board | Where the record lives | Use it for |
+| Store | Where records live | Use it for |
 | --- | --- | --- |
-| `SqliteBoard` | A file, or the process when the path is `":memory:"` | One machine: local development, a demonstration, an integration test |
-| `PostgresBoard` | A Postgres server the application already runs | Deployment |
-| `MongoBoard` | A MongoDB replica set the application already runs | Deployment |
-| `InMemoryBoard` | Process memory | A unit test, and nothing else |
+| `SqliteStore` | A file, or the process when the path is `":memory:"` | One machine: local development, a demonstration, an integration test |
+| `PostgresStore` | A Postgres server the application already runs | Deployment |
+| `MongoStore` | A MongoDB replica set the application already runs | Deployment |
+| `InMemoryStore` | Process memory | A unit test, and nothing else |
 
-`SqliteBoard` is in the base distribution, because SQLite ships with Python. The deployment adapters need their drivers, so each is an extra:
+`SqliteStore` is in the base distribution, because SQLite ships with Python. The deployment adapters need their drivers, so each is an extra:
 
 ```console
 pip install 'blackboardx[postgres]'
@@ -26,9 +33,10 @@ Naming a board whose extra is not installed raises an `ImportError` saying which
 ## Local
 
 ```python
-from blackboard import SqliteBoard, create_model
+from blackboard import SqliteStore, create_model
 
-model = create_model(..., board=SqliteBoard("incident.sqlite3"))
+store = SqliteStore("incidents.sqlite3")
+model = create_model(board_id="incident-4471", store=store, ...)
 ```
 
 The file is the record. The schema is created on construction, and reopening the same path reads the run back, sequence counter included. SQLite ships with Python, so this needs no extra dependency and no server.
@@ -38,22 +46,22 @@ The file is the record. The schema is created on construction, and reopening the
 ```python
 from psycopg_pool import ConnectionPool
 
-from blackboard import PostgresBoard, create_model
+from blackboard import PostgresStore, create_model
 
 # The pool is the application's own, and the adapter neither opens nor closes it.
 pool = ConnectionPool("postgresql://...")
-board = PostgresBoard(pool, board_id="incident-4471")
+store = PostgresStore(pool)
 
 # Once, against a database that has no tables yet.
-board.create_schema()
+store.create_schema()
 
-model = create_model(..., board=board)
+model = create_model(board_id="incident-4471", store=store, ...)
 ```
 
 Pooling, credentials, failover, and migrations stay where an operator configures them. A script with no pool to pass can open one for the duration of a block:
 
 ```python
-with PostgresBoard.from_dsn("postgresql://...", board_id="incident-4471") as board:
+with PostgresStore.from_dsn("postgresql://...") as store:
     ...
 ```
 
@@ -66,17 +74,17 @@ Agents deployed as separate services each hold their own connection to the same 
 ```python
 from pymongo import MongoClient
 
-from blackboard import MongoBoard, create_model
+from blackboard import MongoStore, create_model
 
 # The client is the application's own, and the adapter neither opens nor
 # closes it.
 client = MongoClient("mongodb://...")
-board = MongoBoard(client["incidents"], board_id="incident-4471")
+store = MongoStore(client["incidents"])
 
 # Once, against a database that has no indexes yet.
-board.create_indexes()
+store.create_indexes()
 
-model = create_model(..., board=board)
+model = create_model(board_id="incident-4471", store=store, ...)
 ```
 
 Content is stored as a document rather than as encoded text, so the record is queryable in the database that was chosen for querying it:
@@ -88,11 +96,11 @@ db.blackboard_contributions.find({board_id: "incident-4471", "content.finding": 
 A script with no client to pass can open one for the duration of a block, as on Postgres:
 
 ```python
-with MongoBoard.from_uri("mongodb://...", "incidents") as board:
+with MongoStore.from_uri("mongodb://...", "incidents") as store:
     ...
 ```
 
-`MongoBoard` requires a replica set or a sharded cluster. Every write spans two documents, which on MongoDB is a session transaction, and only a replica set runs one. Production MongoDB is a replica set and Atlas is always one. Against a standalone server the first write raises and says why, rather than running the record under weaker rules than it needs.
+`MongoStore` requires a replica set or a sharded cluster. Every write spans two documents, which on MongoDB is a session transaction, and only a replica set runs one. Production MongoDB is a replica set and Atlas is always one. Against a standalone server the first write raises and says why, rather than running the record under weaker rules than it needs.
 
 ## What holds across processes
 
@@ -146,11 +154,11 @@ ALTER TABLE regions_migrated RENAME TO regions;
 
 ## Many boards, one database
 
-Every persistent board carries a `board_id`, and every row is scoped by it. Two boards under different identifiers share the tables and see none of each other's writes, sequence numbers included, so one database serving many concurrent runs is the ordinary case rather than a workaround. `SqliteBoard` takes the same argument, so moving from a file to a server changes the board that is constructed and nothing else.
+Every store call names a board, and every row is scoped by it. Two boards under different identifiers share the tables and see none of each other's writes, sequence numbers included, so one database serving many concurrent runs is the ordinary case rather than a workaround. Moving from a file to a server changes the store that is constructed and nothing else.
 
 ## In memory
 
-`InMemoryBoard` is a test double. Nothing it holds outlives the process, and two processes running the same code share nothing, so it cannot back a deployment or a run whose result must survive a restart. It exists so a unit test needs no file.
+`InMemoryStore` is a test double. Nothing it holds outlives the process, and two processes running the same code share nothing, so it cannot back a deployment or a run whose result must survive a restart. It exists so a unit test needs no file.
 
 ## An adapter of your own
 

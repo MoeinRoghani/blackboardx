@@ -100,7 +100,7 @@ class ConnectionPool(Protocol):
         ...
 
 
-class PostgresBoard:
+class PostgresStore:
     """Keeps the board in Postgres. Satisfies ``BoardStore``.
 
     ``pool`` is the application's own connection pool, and this adapter
@@ -117,22 +117,19 @@ class PostgresBoard:
     already uses.
     """
 
-    def __init__(self, pool: ConnectionPool, *, board_id: str = "default") -> None:
+    def __init__(self, pool: ConnectionPool) -> None:
         self._pool = pool
-        self._board_id = board_id
 
     @classmethod
     @contextmanager
-    def from_dsn(
-        cls, dsn: str, *, board_id: str = "default", **pool_kwargs: Any
-    ) -> Iterator[PostgresBoard]:
+    def from_dsn(cls, dsn: str, **pool_kwargs: Any) -> Iterator[PostgresStore]:
         """Opens a pool for the duration of a ``with`` block, for a script or test.
 
         An application that already runs a pool passes it to the constructor
         instead. This is for the cases that have none to pass.
         """
         with _PsycopgPool(dsn, **pool_kwargs) as pool:
-            yield cls(pool, board_id=board_id)
+            yield cls(pool)
 
     def create_schema(self) -> None:
         """Creates the tables this adapter reads, if they are not there.
@@ -143,7 +140,7 @@ class PostgresBoard:
         with self._pool.connection() as connection:
             connection.execute(_SCHEMA)
 
-    def declare(self, region: Level | Premise) -> None:
+    def declare(self, board_id: str, region: Level | Premise) -> None:
         if not isinstance(region, Level | Premise):
             raise TypeError(
                 "a region declaration is a Level or a Premise, "
@@ -151,8 +148,8 @@ class PostgresBoard:
             )
         kind = _LEVEL if isinstance(region, Level) else _PREMISE
         with self._pool.connection() as connection, connection.transaction():
-            self._open_board(connection)
-            if self._kind_of(connection, region.name) is not None:
+            self._open_board(connection, board_id)
+            if self._kind_of(connection, board_id, region.name) is not None:
                 raise DuplicateRegionError(
                     f"a region named {region.name!r} is already declared"
                 )
@@ -160,7 +157,7 @@ class PostgresBoard:
                 connection.execute(
                     "INSERT INTO blackboard_regions (board_id, name, kind) "
                     "VALUES (%s, %s, %s)",
-                    (self._board_id, region.name, kind),
+                    (board_id, region.name, kind),
                 )
             except UniqueViolation as clash:
                 # Another process declared the name between the read above and
@@ -172,44 +169,46 @@ class PostgresBoard:
                 connection.execute(
                     "INSERT INTO blackboard_premises (board_id, name, value, version) "
                     "VALUES (%s, %s, NULL, 0)",
-                    (self._board_id, region.name),
+                    (board_id, region.name),
                 )
 
-    def append(self, level: str, content: object) -> int:
+    def append(self, board_id: str, level: str, content: object) -> int:
         carried = json.dumps(content)
         with self._pool.connection() as connection, connection.transaction():
-            self._require(connection, level, _LEVEL)
-            sequence = self._take_sequence(connection)
+            self._require(connection, board_id, level, _LEVEL)
+            sequence = self._take_sequence(connection, board_id)
             connection.execute(
                 "INSERT INTO blackboard_contributions "
                 "(board_id, sequence, region, content) VALUES (%s, %s, %s, %s::jsonb)",
-                (self._board_id, sequence, level, carried),
+                (board_id, sequence, level, carried),
             )
             return sequence
 
     def set(
-        self, premise: str, value: object, expected_version: int
+        self, board_id: str, premise: str, value: object, expected_version: int
     ) -> Written | Conflict:
         carried = json.dumps(value)
         outcome: Written | Conflict
         with self._pool.connection() as connection:
             try:
                 with connection.transaction():
-                    self._require(connection, premise, _PREMISE)
+                    self._require(connection, board_id, premise, _PREMISE)
                     # Taking the sequence first locks the board row, so no
                     # concurrent write to this board can interleave with the
                     # conditional update below.
-                    sequence = self._take_sequence(connection)
+                    sequence = self._take_sequence(connection, board_id)
                     updated = connection.execute(
                         "UPDATE blackboard_premises SET value = %s::jsonb, "
                         "version = version + 1 "
                         "WHERE board_id = %s AND name = %s AND version = %s "
                         "RETURNING version",
-                        (carried, self._board_id, premise, expected_version),
+                        (carried, board_id, premise, expected_version),
                     ).fetchone()
                     if updated is None:
                         outcome = Conflict(
-                            current_version=self._current_version(connection, premise)
+                            current_version=self._current_version(
+                                connection, board_id, premise
+                            )
                         )
                         # Leaving by an exception is what undoes the
                         # sequence this write took, so a conflict skips no
@@ -219,31 +218,33 @@ class PostgresBoard:
                         "INSERT INTO blackboard_contributions "
                         "(board_id, sequence, region, content) "
                         "VALUES (%s, %s, %s, %s::jsonb)",
-                        (self._board_id, sequence, premise, carried),
+                        (board_id, sequence, premise, carried),
                     )
                     outcome = Written(sequence=sequence, version=int(updated[0]))
             except _RollBack:
                 pass
         return outcome
 
-    def read_level(self, level: str, from_sequence: int = 0) -> list[Contribution]:
+    def read_level(
+        self, board_id: str, level: str, from_sequence: int = 0
+    ) -> list[Contribution]:
         with self._pool.connection() as connection:
-            self._require(connection, level, _LEVEL)
+            self._require(connection, board_id, level, _LEVEL)
             rows = connection.execute(
                 "SELECT sequence, content FROM blackboard_contributions "
                 "WHERE board_id = %s AND region = %s AND sequence >= %s "
                 "ORDER BY sequence",
-                (self._board_id, level, from_sequence),
+                (board_id, level, from_sequence),
             ).fetchall()
         return [Contribution(sequence=int(r[0]), content=r[1]) for r in rows]
 
-    def read_premise(self, premise: str) -> PremiseState:
+    def read_premise(self, board_id: str, premise: str) -> PremiseState:
         with self._pool.connection() as connection:
-            self._require(connection, premise, _PREMISE)
+            self._require(connection, board_id, premise, _PREMISE)
             row = connection.execute(
                 "SELECT value, version FROM blackboard_premises "
                 "WHERE board_id = %s AND name = %s",
-                (self._board_id, premise),
+                (board_id, premise),
             ).fetchone()
         if row is None or int(row[1]) == 0:
             raise UnsetPremiseError(
@@ -251,54 +252,54 @@ class PostgresBoard:
             )
         return PremiseState(value=row[0], version=int(row[1]))
 
-    def read_board(self, from_sequence: int = 0) -> list[BoardChange]:
+    def read_board(self, board_id: str, from_sequence: int = 0) -> list[BoardChange]:
         with self._pool.connection() as connection:
             rows = connection.execute(
                 "SELECT sequence, region, content FROM blackboard_contributions "
                 "WHERE board_id = %s AND sequence >= %s ORDER BY sequence",
-                (self._board_id, from_sequence),
+                (board_id, from_sequence),
             ).fetchall()
         return [
             BoardChange(sequence=int(r[0]), region=r[1], content=r[2]) for r in rows
         ]
 
-    def _open_board(self, connection: Any) -> None:
+    def _open_board(self, connection: Any, board_id: str) -> None:
         connection.execute(
             "INSERT INTO blackboard_boards (board_id) VALUES (%s) "
             "ON CONFLICT (board_id) DO NOTHING",
-            (self._board_id,),
+            (board_id,),
         )
 
-    def _take_sequence(self, connection: Any) -> int:
+    def _take_sequence(self, connection: Any, board_id: str) -> int:
         row = connection.execute(
             "UPDATE blackboard_boards SET next_sequence = next_sequence + 1 "
             "WHERE board_id = %s RETURNING next_sequence - 1",
-            (self._board_id,),
+            (board_id,),
         ).fetchone()
         if row is None:
             # A write can only reach here through a declared region, and
             # declaring one opens the board.
             raise UndeclaredRegionError(
-                f"no board is open under the identifier {self._board_id!r}"
+                f"no board is open under the identifier {board_id!r}"
             )
         return int(row[0])
 
-    def _kind_of(self, connection: Any, name: str) -> str | None:
+    def _kind_of(self, connection: Any, board_id: str, name: str) -> str | None:
         row = connection.execute(
             "SELECT kind FROM blackboard_regions WHERE board_id = %s AND name = %s",
-            (self._board_id, name),
+            (board_id, name),
         ).fetchone()
         return None if row is None else str(row[0])
 
-    def _current_version(self, connection: Any, premise: str) -> int:
+    def _current_version(self, connection: Any, board_id: str, premise: str) -> int:
         row = connection.execute(
             "SELECT version FROM blackboard_premises WHERE board_id = %s AND name = %s",
-            (self._board_id, premise),
+            (board_id, premise),
         ).fetchone()
         return 0 if row is None else int(row[0])
 
-    def _require(self, connection: Any, name: str, kind: str) -> None:
-        found = self._kind_of(connection, name)
+    def _require(self, connection: Any, board_id: str, name: str, kind: str) -> None:
+        found = self._kind_of(connection, board_id, name)
         if found is None:
             raise UndeclaredRegionError(f"no region is declared with the name {name!r}")
         if found != kind:

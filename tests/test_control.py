@@ -10,7 +10,7 @@ from blackboard import (
     AdmissionRule,
     BoardReader,
     Conflict,
-    InMemoryBoard,
+    InMemoryStore,
     Level,
     ManualClock,
     Premise,
@@ -45,7 +45,8 @@ def make_control(rule: AdmissionRule | None = None) -> Control:
         termination_predicate=keep_open,
         limits=LIMITS,
         clock=ManualClock(start=START),
-        board=InMemoryBoard(),
+        board_id="test-board",
+        store=InMemoryStore(),
     )
 
 
@@ -219,7 +220,8 @@ class TestAudit:
             termination_predicate=keep_open,
             limits=LIMITS,
             clock=clock,
-            board=InMemoryBoard(),
+            board_id="test-board",
+            store=InMemoryStore(),
         )
         control.write("a", "application", "one")
         clock.advance(timedelta(seconds=90))

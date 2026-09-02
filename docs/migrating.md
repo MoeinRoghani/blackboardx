@@ -2,6 +2,46 @@
 
 Every name that moved, what replaced it, and the release its old form stops working in.
 
+## 0.7 to 0.8
+
+A store holds many boards. A board object no longer stands for one run.
+
+```python
+# 0.7
+board = PostgresBoard(pool, board_id="incident-4471")
+model = create_model(regions=[...], premises={...}, limits=..., board=board)
+board.read_premise("window")
+```
+
+```python
+# 0.8
+store = PostgresStore(pool)
+model = create_model(
+    board_id="incident-4471",
+    store=store,
+    regions=[...],
+    premises={...},
+    limits=...,
+)
+store.read_premise("incident-4471", "window")
+```
+
+| Was | Is |
+| --- | --- |
+| `InMemoryBoard`, `SqliteBoard`, `PostgresBoard`, `MongoBoard` | `InMemoryStore`, `SqliteStore`, `PostgresStore`, `MongoStore` |
+| `PostgresBoard(pool, board_id=x)` | `PostgresStore(pool)`, and every call names the board |
+| `create_model(board=...)` | `create_model(board_id=..., store=...)` |
+| `store.append(level, content)` and the other five | each takes the board id first |
+| `board_id` defaulting to `"default"` | no default; the caller names the board on every call |
+
+`model.reader` is unchanged. It is bound to its own board, so `read_premise("window")` still takes only the region.
+
+`Notification` gains `board_id`, so an agent serving several boards can tell which one woke it.
+
+None of this can be deprecated. A method signature is not a name, and an alias pointing at a class whose methods take different arguments would break at the first call rather than warn.
+
+Your database needs no migration. The rows were already scoped by `board_id`; only the code that reaches them changed.
+
 ## 0.6 to 0.7
 
 Every name 0.5 deprecated is gone. 0.6 said it removed them and did not, so 0.7 does.
@@ -93,7 +133,7 @@ model = create_model(
     regions=[Level("platform"), Register("window")],
     seed={"window": ["20:00", "22:00"]},
     budgets=RunBudgets(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
-    board=SqliteBoard("incident.sqlite3"),
+    board=SqliteStore("incident.sqlite3"),
 )
 window = model.reader.read_register("window").value
 model.control.set_register("ocp", "window", ["21:00"], expected_version=1)
@@ -105,7 +145,7 @@ model = create_model(
     regions=[Level("platform"), Premise("window")],
     premises={"window": ["20:00", "22:00"]},
     limits=RunLimits(wall_clock=timedelta(minutes=10), idle=timedelta(seconds=1)),
-    board=SqliteBoard("incident.sqlite3"),
+    board=SqliteStore("incident.sqlite3"),
 )
 window = model.reader.read_premise("window").value
 model.control.set_premise("ocp", "window", ["21:00"], expected_version=1)
@@ -119,7 +159,7 @@ The storage identifiers changed with the names, so a database a 0.4 run wrote ne
 
 | Was | Is | Note |
 | --- | --- | --- |
-| `Board` | `InMemoryBoard` | It is a test double, and it is named as one |
+| `Board` | `InMemoryStore` | It is a test double, and it is named as one |
 | `create_model` with no board | `create_model(board=...)` | Required, because a run whose record no second process can read is not a shared solution model |
 
 Content crosses every board as JSON from 0.4 onwards. A tuple written reads back as a list, and content JSON cannot carry raises `TypeError` at the write rather than at the first process boundary.

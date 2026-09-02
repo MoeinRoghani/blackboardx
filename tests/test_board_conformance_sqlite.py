@@ -1,4 +1,4 @@
-"""The SQLite board is held to the same conformance suite, in memory and on disk."""
+"""The SQLite store is held to the same conformance suite, in memory and on disk."""
 
 from collections.abc import Iterator
 from pathlib import Path
@@ -6,63 +6,50 @@ from pathlib import Path
 import pytest
 from conformance import BoardConformance, SharedStoreConformance
 
-from blackboard import BoardStore, Level, Premise, SqliteBoard
+from blackboard import BoardStore, Level, Premise, SqliteStore
 
 
 class TestSqliteInProcess(BoardConformance):
     @pytest.fixture
-    def board(self) -> Iterator[BoardStore]:
-        store = SqliteBoard()
-        yield store
-        store.close()
+    def store(self) -> Iterator[BoardStore]:
+        opened = SqliteStore()
+        yield opened
+        opened.close()
 
 
 class TestSqliteOnDisk(BoardConformance):
     @pytest.fixture
-    def board(self, tmp_path: Path) -> Iterator[BoardStore]:
-        store = SqliteBoard(str(tmp_path / "board.sqlite3"))
-        yield store
-        store.close()
-
-
-def test_the_record_survives_the_process_that_made_it(tmp_path: Path) -> None:
-    path = str(tmp_path / "board.sqlite3")
-
-    first = SqliteBoard(path)
-    first.declare(Level("platform"))
-    first.declare(Premise("window"))
-    first.set("window", ["t1", "t2"], expected_version=0)
-    first.append("platform", {"findings": ["oom"]})
-    first.close()
-
-    reopened = SqliteBoard(path)
-    assert reopened.read_premise("window").value == ["t1", "t2"]
-    assert [c.content for c in reopened.read_level("platform")] == [
-        {"findings": ["oom"]}
-    ]
-    # The counter continues rather than restarting, so a later write cannot
-    # take a sequence number an earlier one already holds.
-    assert reopened.append("platform", "later") == 3
-    reopened.close()
+    def store(self, tmp_path: Path) -> Iterator[BoardStore]:
+        opened = SqliteStore(str(tmp_path / "board.sqlite3"))
+        yield opened
+        opened.close()
 
 
 class TestSqliteHoldsManyBoards(SharedStoreConformance):
     @pytest.fixture
-    def two_boards(self, tmp_path: Path) -> Iterator[tuple[BoardStore, BoardStore]]:
-        path = str(tmp_path / "board.sqlite3")
-        first = SqliteBoard(path, board_id="incident-1")
-        second = SqliteBoard(path, board_id="incident-2")
-        yield first, second
-        first.close()
-        second.close()
+    def store(self, tmp_path: Path) -> Iterator[BoardStore]:
+        opened = SqliteStore(str(tmp_path / "board.sqlite3"))
+        yield opened
+        opened.close()
 
-    @pytest.fixture
-    def same_board_twice(
-        self, tmp_path: Path
-    ) -> Iterator[tuple[BoardStore, BoardStore]]:
-        path = str(tmp_path / "board.sqlite3")
-        first = SqliteBoard(path, board_id="incident-1")
-        second = SqliteBoard(path, board_id="incident-1")
-        yield first, second
-        first.close()
-        second.close()
+
+def test_the_record_survives_the_process_that_made_it(tmp_path: Path) -> None:
+    path = str(tmp_path / "board.sqlite3")
+    board = "incident-1"
+
+    first = SqliteStore(path)
+    first.declare(board, Level("platform"))
+    first.declare(board, Premise("window"))
+    first.set(board, "window", ["t1", "t2"], expected_version=0)
+    first.append(board, "platform", {"findings": ["oom"]})
+    first.close()
+
+    reopened = SqliteStore(path)
+    assert reopened.read_premise(board, "window").value == ["t1", "t2"]
+    assert [c.content for c in reopened.read_level(board, "platform")] == [
+        {"findings": ["oom"]}
+    ]
+    # The counter continues rather than restarting, so a later write cannot
+    # take a sequence number an earlier one already holds.
+    assert reopened.append(board, "platform", "later") == 3
+    reopened.close()

@@ -22,11 +22,11 @@ Three implementations ship, and every one of them is a database.
 
 | Board | Where the record lives | For |
 | --- | --- | --- |
-| `SqliteBoard` | A file, or the process when the path is `":memory:"` | One machine |
-| `PostgresBoard` | A Postgres server the application runs | Deployment |
-| `MongoBoard` | A MongoDB replica set the application runs | Deployment |
+| `SqliteStore` | A file, or the process when the path is `":memory:"` | One machine |
+| `PostgresStore` | A Postgres server the application runs | Deployment |
+| `MongoStore` | A MongoDB replica set the application runs | Deployment |
 
-`InMemoryBoard` is what the old `Board` is now called, and it is documented as a test double.
+`InMemoryStore` is what the old `Board` is now called, and it is documented as a test double.
 
 An adapter is handed the connection pool or database handle the application already configures, and neither opens nor closes it. The library owns no server, no credential, and no migration tool.
 
@@ -43,7 +43,7 @@ The deployment drivers are extras, `blackboardx[postgres]` and `blackboardx[mong
 - ADR 0007 says `create_model` takes five things. It now takes those five and the board, which is not configuration but a statement of where the five are recorded.
 - A tuple written to any board reads back as a list, and content JSON cannot carry raises `TypeError` at the write rather than at the first process boundary.
 - A conformance suite defines what an implementation owes, and the deployment adapters are held to it against real servers in CI. A skip in that job fails it, because a skip means a server did not come up.
-- `MongoBoard` requires a replica set, because both guarantees span documents and that is a session transaction. A standalone server raises and says so.
+- `MongoStore` requires a replica set, because both guarantees span documents and that is a session transaction. A standalone server raises and says so.
 - The record is durable and the run is not. The control component still holds the agent registry, the outstanding notifications, and the deadlines in the process, so one board is served by one `Control` at a time and a replacement restarts rather than resumes. Making the run durable is a further decision.
 
 ## Alternatives rejected

@@ -6,7 +6,8 @@ Every term this project uses, and what it means here. A term is defined once, in
 
 | Term | Meaning |
 | --- | --- |
-| **Board** | The shared record. It stores contributions, orders them, and reads none of them. Any implementation of `BoardStore` is a board. |
+| **Board** | The shared record of one run. It stores contributions, orders them, and reads none of them. |
+| **Store** | Where records are kept. One store holds many boards, and every operation on it names the board it acts on. Any implementation of `BoardStore` is a store. |
 | **Control component** | Everything that decides: which agents are notified, whether a write is admitted, and when the run closes. `Control` in the code. |
 | **Application** | The system built on this library. It supplies the agents, the content, the region declarations, and the rules. |
 | **Agent** | A participant that reads the board, decides whether it has anything to add, writes, and acknowledges. The creator names the agents a run starts with, and one that joins a run already under way registers itself. The library never creates one. |
@@ -25,7 +26,7 @@ Every term this project uses, and what it means here. A term is defined once, in
 | **Conclusion** | What a level holds. Something an agent drew from evidence, which stays beside the evidence it rests on rather than replacing it. A premise is what a conclusion is drawn from; the two are the ends of one axis, given against concluded. |
 | **Sequence number** | A write's position in the board's total order, and its address. One counter serves every region of one board. There is no separate identifier. |
 | **Version** | A premise's revision count. A premise write names the version it expects to replace and fails if the premise has moved past it. |
-| **Board identifier** | Which board a row or document belongs to, where one database holds many. `board_id`. |
+| **Board identifier** | Which board a call acts on, and which board a row belongs to. The caller supplies it and the library never reads it. `board_id`. |
 
 ## The write path
 
@@ -58,9 +59,9 @@ Every term this project uses, and what it means here. A term is defined once, in
 
 | Term | Meaning |
 | --- | --- |
-| **`BoardStore`** | The protocol a board implements: six methods, three that write and three that read. |
-| **Adapter** | A board backed by a database the application already runs, constructed over a connection the application owns. `PostgresBoard` and `MongoBoard`. |
-| **Conformance suite** | The tests in `tests/conformance.py` that every board implementation must pass. |
+| **`BoardStore`** | The protocol a store implements: six methods, three that write and three that read. Every one names a board first. |
+| **Adapter** | A store backed by a database the application already runs, constructed over a connection the application owns. `PostgresStore` and `MongoStore`. |
+| **Conformance suite** | The tests in `tests/conformance.py` that every store implementation must pass. |
 | **Record** | What the board holds. Durable where the board is a database. |
 
 ## Words this project does not use

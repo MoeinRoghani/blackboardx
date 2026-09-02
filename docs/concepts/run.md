@@ -14,7 +14,7 @@ model = create_model(
     admission_rule=rule,  # 4. optional; none accepts every write
     termination_predicate=done,  # 5. optional; none lets silence close the run
     limits=RunLimits(...),  # 6. the two limits
-    board=SqliteBoard(...),  # where the record is kept
+    board=SqliteStore(...),  # where the record is kept
 )
 ```
 

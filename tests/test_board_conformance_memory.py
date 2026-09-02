@@ -1,12 +1,18 @@
-"""The in-memory board is held to the conformance suite like any other."""
+"""The in-memory store is held to the conformance suite like any other."""
 
 import pytest
-from conformance import BoardConformance
+from conformance import BoardConformance, SharedStoreConformance
 
-from blackboard import BoardStore, InMemoryBoard
+from blackboard import BoardStore, InMemoryStore
 
 
-class TestInMemoryBoard(BoardConformance):
+class TestInMemoryStore(BoardConformance):
     @pytest.fixture
-    def board(self) -> BoardStore:
-        return InMemoryBoard()
+    def store(self) -> BoardStore:
+        return InMemoryStore()
+
+
+class TestInMemoryStoreHoldsManyBoards(SharedStoreConformance):
+    @pytest.fixture
+    def store(self) -> BoardStore:
+        return InMemoryStore()

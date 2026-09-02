@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from blackboard import (
     Agent,
     BoardReader,
-    InMemoryBoard,
+    InMemoryStore,
     Level,
     ManualClock,
     Notification,
@@ -29,7 +29,8 @@ def make_control(clock: ManualClock) -> Control:
         termination_predicate=keep_open,
         limits=LIMITS,
         clock=clock,
-        board=InMemoryBoard(),
+        board_id="test-board",
+        store=InMemoryStore(),
     )
 
 
