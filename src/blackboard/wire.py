@@ -1,18 +1,18 @@
 """What crosses between a blackboard and an agent.
 
-The bodies, and the operations that carry them. Both halves import this
-module, so neither can spell a field differently from the other or send to a
-path the other does not answer on.
+The bodies, and the operations that carry them. Both halves import this module, so one
+half cannot spell a field differently from the other or send to a path the other does
+not answer on.
 
 Nothing here depends on a web framework or on an HTTP library. A body is a
-frozen dataclass with ``to_json`` and ``from_json``, so a route hands the
-result of one to its framework and passes what it received to the other.
+frozen dataclass with ``to_json`` and ``from_json``, so a route hands the result of
+``to_json`` to its framework and passes what it received to ``from_json``.
 ``blackboard.server`` answers these operations and ``blackboard.agent`` calls
 them; a service that would rather write its own routes still has the bodies.
 
 Decoding is tolerant, because the two halves are deployed separately and are
-therefore versioned separately. A field a decoder does not recognise is
-ignored, a field that is absent takes its default, and a name is never reused
+therefore versioned separately. A field that a decoder does not recognise is ignored, a
+field that is absent takes its default, and a name is never reused
 for a different meaning. An older agent can therefore read a body from a newer
 blackboard, and a newer agent can read a body from an older one.
 """
@@ -201,7 +201,7 @@ class BoardChangeBody(_Body):
 
 @dataclass(frozen=True)
 class LevelPage(_Body):
-    """Part of a level, and whether the reader has reached the end of it.
+    """Part of a level. ``has_more`` is set when the level holds more beyond it.
 
     A reader continues from one past the last sequence it received. That is
     the cursor: an offset would shift when a concurrent write lands, and a
@@ -230,7 +230,8 @@ class LevelPage(_Body):
 
 @dataclass(frozen=True)
 class BoardPage(_Body):
-    """Part of the whole board, and whether the reader has reached its end."""
+    """Part of the whole board. ``has_more`` is set when the board holds more beyond
+    it."""
 
     changes: list[BoardChangeBody] = field(default_factory=list)
     has_more: bool = False
@@ -402,7 +403,7 @@ LIMIT = "limit"
 #: How many rows a read over HTTP answers with when it names no ``limit``.
 #:
 #: A read in process takes ``limit=None`` and means it. A read over HTTP is a
-#: page, so it has a size whether or not the caller chose one.
+#: page, so it has a size with or without one from the caller.
 DEFAULT_LIMIT = 100
 
 #: The most rows a read over HTTP answers with, whatever ``limit`` asks for.

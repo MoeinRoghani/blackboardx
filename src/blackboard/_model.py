@@ -101,7 +101,7 @@ def create_model(
     way registers itself through ``Control.register_agent`` instead.
 
     Everything the arguments alone can settle is settled before the store is
-    touched: the regions naming each other once, the opening premises being
+    touched: the declarations naming each region once, the opening premises being
     exactly the declared premises, each opening value being JSON, the roster
     naming each agent once, and every region an agent subscribes to or writes
     to being declared. A call that raises here has written nothing, so the

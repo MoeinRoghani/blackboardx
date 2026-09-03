@@ -1,6 +1,7 @@
 # Test an application
 
-Every timed behaviour is observable without waiting, because the clock is injected.
+Every timed behaviour is observable without waiting, because the clock is
+injected.
 
 ## Which store a test uses
 
@@ -11,9 +12,13 @@ Every timed behaviour is observable without waiting, because the clock is inject
 | A test that closes a store and opens the record again | `SqliteStore(str(tmp_path / "board.sqlite3"))` |
 | A test of your own `BoardStore` implementation | Your adapter, through the conformance suite |
 
-`SqliteStore` takes its path and has no default. `":memory:"` is private to the store that opened it, so a second `SqliteStore(":memory:")` in the same process reads an empty board; a test that opens the same record twice gives both a file.
+`SqliteStore` takes its path and has no default. `":memory:"` is private to the
+store that opened it, so a second `SqliteStore(":memory:")` in the same process
+reads an empty board; a test that opens the same record twice gives both stores
+a file.
 
-Content crosses every store as JSON, the in-memory one included, so a test cannot pass against content a deployment would refuse.
+Content crosses every store as JSON, the in-memory one included, so a test
+cannot pass against content that a deployment would refuse.
 
 ## The manual clock
 
@@ -25,18 +30,22 @@ clock = ManualClock(start=datetime(2026, 8, 21, 12, 0, tzinfo=UTC))
 model = create_model(..., clock=clock, store=InMemoryStore())
 ```
 
-`advance` moves time and fires every due call synchronously, on the calling thread, in due order. A call armed during an advance fires inside it when its instant falls at or before the target.
+`advance` moves time and fires every due call synchronously, on the calling
+thread, in the order their instants fall. A call armed during an advance fires
+inside it when its instant falls at or before the instant the advance moves to.
 
 ```python
 clock.advance(timedelta(minutes=10))
 assert model.control.outcome() == Settled()
 ```
 
-`SystemClock` is the default and the only code in the library that reads the operating system clock.
+`SystemClock` is the default and the only code in the library that reads the
+operating system clock.
 
 ## A whole scenario on one thread
 
-Acknowledge inside the callback and the entire cycle runs inline, so no test needs threads.
+Acknowledge inside the callback, and the entire cycle runs inline, so a test
+that drives a cycle this way needs no threads.
 
 ```python
 def agent_cycle(notification):
@@ -49,15 +58,20 @@ model.control.register_agent(
 )
 ```
 
-Name what wakes it. An agent registered without `subscribes_to` is woken by every
-premise and by no level, so a cycle driven by a level write never runs.
+Name what wakes the agent. An agent registered without `subscribes_to` is woken
+by every premise; no level wakes it, so a cycle driven by a level write never
+runs.
 
-Chained notifications are drained from a queue rather than the call stack, so agents that wake each other do not grow it. Nothing in the library bounds such an exchange except the wall clock, so a test that drives one bounds it itself.
+Chained notifications are drained from a queue rather than the call stack, so
+agents that wake each other do not grow the call stack. The wall clock is the
+only bound the library puts on such an exchange, so a test that drives such an
+exchange bounds it itself.
 
 ## One agent body, tested in process
 
 `Control.as_agent(name)` returns the board as that agent sees it. It satisfies
-`AgentBoard`, and so does the `BoardClient` an agent deployed on its own holds,
+`AgentBoard`, and so does the `BoardClient` that an agent deployed on its own
+holds,
 so a body written against that protocol is tested with no HTTP and no client.
 
 ```python
@@ -107,17 +121,20 @@ clock.advance(timedelta(seconds=3))
 assert len(notifications) == 1                   # one notification, covering the window
 ```
 
-The window opens at the first change the region takes, which is the opening value
-`create_model` writes, so the one notification covers that write and both premise
+The window opens at the first change that the region takes, which is the
+opening value that `create_model` writes, so the one notification covers that
+write and both premise
 writes after it. A level carries a window on the same terms, so
 `Level("signals", batch_window=timedelta(seconds=5))` is driven by the same two
 advances.
 
 ## A run that opens over an existing record
 
-`attach_model` opens a run over a board a store already holds, so a test of a
-replacement replica needs no second process. Give both stores one file, because
-a second `SqliteStore(":memory:")` reads an empty board.
+`attach_model` opens a run over a board that a store already holds, so a test
+of a
+replacement replica needs no second process. Give the store before the restart
+and the store after it one file, because a second `SqliteStore(":memory:")`
+reads an empty board.
 
 ```python
 def test_a_run_that_opens_over_an_existing_record(tmp_path):
@@ -157,9 +174,10 @@ def test_a_run_that_opens_over_an_existing_record(tmp_path):
 ```
 
 The sequence continues from the record, and the agent is woken from sequence 1
-because a run carries no cursor over. `regions` is checked against the record by
-name and by kind, so a test that renames a region there fails at `attach_model`
-rather than at the first write.
+because a run does not carry a cursor over from the record. `regions` is
+checked against the record by
+name and by kind, so a test that renames a region in `regions` fails at
+`attach_model` rather than at the first write.
 
 ## Assert on the audit, not on timing
 
@@ -172,17 +190,21 @@ assert [e.reason for e in rejected] == [
 ]
 ```
 
-The audit records every event in the order it occurred, which is a fact about what happened rather than about how fast it happened.
+The audit records every event in the order it occurred.
 
 ## Testing your own adapter
 
-`blackboard.conformance` is the suite every store implementation owes, and it ships with the package:
+`blackboard.conformance` is the suite that every store implementation owes, and
+it ships with the package:
 
 ```
 pip install 'blackboardx[conformance]'
 ```
 
-Subclass `BoardConformance`, give it a `store` fixture returning a fresh store, and its fifty-eight cases run against yours. Subclass `SharedStoreConformance` as well, with a `store` fixture of its own, for the eleven cases about one store holding many boards.
+Subclass `BoardConformance`, and give it a `store` fixture returning a fresh
+store, and its fifty-eight cases run against your store. Subclass
+`SharedStoreConformance` as well, with a `store` fixture of its own, for the
+eleven cases about one store holding many boards.
 
 ```python
 import pytest
@@ -203,10 +225,14 @@ class TestCassandraHoldsManyBoards(SharedStoreConformance):
         return CassandraStore(session)
 ```
 
-That is how `InMemoryStore`, `SqliteStore`, `PostgresStore`, and `MongoStore` are held to the same behaviour, the last two against real servers. They are held to that module rather than a copy of it, so what you run is what the library runs.
+That is how `InMemoryStore`, `SqliteStore`, `PostgresStore`, and `MongoStore`
+are held to the same behaviour, with `PostgresStore` and `MongoStore` run
+against real servers. They are held to that module rather than a copy of it.
 
-Reading the rules and reimplementing them is not the same thing. A store that gives each region its own counter, which is the obvious reading, fails six cases here.
+Reading the rules and reimplementing them is not the same as running the suite.
+A store that gives each region its own counter fails six cases here.
 
 `ManualClock` and `SystemClock` both satisfy the `Clock` protocol, whose
-`call_at` returns a `ScheduledCall` the control component cancels when a
-deadline moves. A clock of your own satisfies the same two methods.
+`call_at` returns a `ScheduledCall` that the control component cancels when a
+deadline moves. A clock of your own satisfies the same two methods, `now` and
+`call_at`.

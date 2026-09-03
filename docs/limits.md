@@ -15,7 +15,8 @@ The board is durable and the run is not.
 | The process, in `HttpNotifier` | Notifications queued but not yet sent |
 
 A second replica holding its own `Control` for the same board knows no agent
-the first registered, owes no notification the first dispatched, and measures
+that the first registered, owes no notification that the first dispatched, and
+measures
 silence from its own start. Losing the replica that holds a run ends that run:
 the record survives and the run does not resume.
 
@@ -24,15 +25,16 @@ So one board is served by one `Control` in one process at a time for
 routing writes by board identifier, not by putting more replicas behind one
 board.
 
-Reads are exempt. Give `BoardService` the store and any replica answers a
-read for any board in it, run or no run, because a read needs the record
+Reads are exempt. Give `BoardService` the store and any replica answers a read
+for any board in it, with a run open or without one, because a read needs the
+record
 rather than the run. The audit is the one read that is not exempt: it lives
 in the process and no operation on the wire exposes it.
 
 A replacement replica opens a run over the record with `attach_model`, which
 carries the record and not the run: the registry, the outstanding
 notifications, the audit, the cursors and the notification identifiers all
-start again. Work an agent had finished but not acknowledged is done twice
+start again. Work that an agent had finished but not acknowledged is done twice
 unless the agent's writes carry idempotency keys.
 
 [Running as a service](concepts/service.md) covers the deployment that follows
@@ -45,7 +47,8 @@ had not been sent. `close` waits up to `close_timeout` in total, then
 abandons what is left and reports each one through `on_failure` before it
 returns.
 
-That usually costs nothing, because a notification carries no values and the
+That loss usually costs nothing, because a notification carries no values and
+the
 next one covers the range a lost one would have covered. It costs something
 when the lost one is the last, and the run then waits until its idle limit
 closes it.
@@ -64,13 +67,13 @@ write where beyond the `writes_to` an application declared.
 
 Each operation has its own path and method so that a gateway in front of the
 service can carry those policies, which is the deployment this library is
-built for. Check the caller in your route, before calling in.
+built for. Check the caller in your route, before calling into the service.
 
 ## Content must be JSON
 
 Content crosses every store as JSON, including the in-memory one, so what is
-written comes back as what JSON carries: a tuple comes back a list, and
-content JSON cannot carry raises `TypeError` before anything is stored.
+written comes back as what JSON carries: a tuple comes back as a list, and
+content that JSON cannot carry raises `TypeError` before anything is stored.
 
 That is deliberate rather than pending. A store that held Python objects as
 they stand would accept in a test what a deployment then refuses.
@@ -88,18 +91,19 @@ send what it sent before.
 
 ## A read over HTTP stops at a thousand
 
-A read in process takes `limit=None` and means it: `model.reader.read_level`
+A read in process takes `limit=None`: `model.reader.read_level`
 returns every contribution from the sequence bound. A read over HTTP is
 bounded twice. It answers with `wire.DEFAULT_LIMIT`, a hundred, when the
 caller names no limit, and never with more than `wire.MAX_LIMIT`, a thousand,
 whatever the caller asks for.
 
-The cap is silent. A request for five thousand answers with a thousand and no
-error, and `has_more` is the only thing that says the level continues. A
+The cap is silent. A request for five thousand is answered with a thousand and
+no error, and `has_more` is the only thing that says the level continues. A
 caller that reads a whole level follows `has_more` and moves `from_sequence`
 past the last sequence it saw. `BoardClient.read_level` and
 `BoardClient.read_board` do that themselves when they are given no `limit`;
-given one, they make a single request and return at most that many.
+given a `limit`, they make a single request and return at most that many
+contributions.
 
 ## A batch window is not on the record
 
@@ -108,20 +112,21 @@ A store holds a region's name and its kind. It holds no batch window, so
 window was declared, and `wire.RegionBody.declaration` rebuilds it the same way
 on the other side.
 
-The window is configuration rather than record, so a run that attaches states
-its windows again in the `regions` it passes. `attach_model` compares names
+The window is configuration rather than record, so a run that attaches must
+state its windows again in the `regions` it passes. `attach_model` compares
+names
 and kinds against the record and nothing else, and a window that disagrees
 with the previous run's is not reported.
 
 ## A record is never stamped backwards
 
 A store refuses a record written for a schema it cannot read, and never
-rewrites one to an earlier schema. An older version of the library would then
-read fields a newer one wrote and take them at face value.
+rewrites one to an earlier schema. If it did, an older version of the library
+would read fields a newer one wrote and take them at face value.
 
 Upgrade forwards. There is no supported path back.
 
-## The blackboard reaches out; the agent does not wait
+## The blackboard reaches out; the agent does not
 
 An agent is notified by a request the blackboard makes to an address the agent
 gave it, so an agent has to be reachable at an address. There is no long poll,
@@ -132,15 +137,16 @@ will not accept an inbound request cannot be notified by this library.
 
 `store.delete` removes one board. Nothing in the library calls it: a run that
 closes deletes no board, and no board expires. There is no retention policy,
-no sweep, and no age after which anything goes.
+no sweep, and no age after which anything is deleted.
 
-It also cannot see a live run. Close the run before deleting the board it is
+`store.delete` also cannot see a live run. Close the run before deleting the
+board it is
 serving.
 
 ## The conformance suite defines behaviour, not performance
 
-`blackboard.conformance` decides whether a store is correct. It says nothing
-about how fast it is, how it behaves under load, or how many boards it will
+`blackboard.conformance` decides a store's correctness. It says nothing about
+how fast a store is, how it behaves under load, or how many boards it will
 hold. Those are yours to measure against your database.
 
 ## What is designed and not built
@@ -151,4 +157,4 @@ agents, the outstanding notifications, the audit, and the deadlines moving
 into the store alongside the record, and a sweep that closes runs whose limits
 have passed.
 
-It is not in the library, and nothing in the library pretends otherwise.
+

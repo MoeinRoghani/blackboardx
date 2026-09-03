@@ -6,9 +6,9 @@ and a write naming a version other than the current one fails. One counter
 orders every write across all regions of one board, and reads are open to any
 caller.
 
-A store holds many boards. Every call names the board it acts on, so one
-connection to a database serves every board an application runs rather than
-one. The board identifier is opaque to the library.
+A store holds many boards. Every call names the board it acts on, so one connection to a
+database serves every board an application runs rather than one board. The board
+identifier is opaque to the library.
 """
 
 from __future__ import annotations
@@ -190,7 +190,7 @@ def _already_written(
 
 
 class InMemoryStore:
-    """A store held in process memory. A test double, not a way to run anything.
+    """A store held in process memory. A test double, not a way to run a deployment.
 
     Nothing it holds outlives the process, and two processes running the same
     code share nothing. An application keeps its record in a database through

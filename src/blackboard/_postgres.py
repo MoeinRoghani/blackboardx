@@ -8,13 +8,13 @@ One database holds many boards, each under its own identifier. Every row
 carries it, so a deployment serving many concurrent runs is the ordinary
 case.
 
-Two guarantees hold across processes, not merely across the threads of one:
+Two guarantees hold across processes, not merely across the threads of one process:
 
 The sequence is gapless. Every write takes it by incrementing a row of
-``blackboard_boards`` under the row lock that update acquires, and holds
+``blackboard_boards`` under the row lock that the update acquires, and holds
 that lock until the transaction commits. Writes to one board are therefore
-serialised, and a number a rolled-back write took is returned rather than
-skipped. A Postgres sequence would be faster and would leave gaps, and a
+serialised, and a number that a rolled-back write took is returned rather than skipped.
+A Postgres sequence would be faster and would leave gaps, and a
 gap is a hole in a record whose numbers are addresses.
 
 A premise write is a conditional update on the version. Two writers
@@ -100,13 +100,13 @@ _PREMISE = "premise"
 
 
 class _RollBack(Exception):
-    """Leaves a transaction by the only door that undoes it."""
+    """Raised to leave a transaction, because raising is what undoes it."""
 
 
 class ConnectionPool(Protocol):
     """What this adapter needs of a connection pool.
 
-    ``psycopg_pool.ConnectionPool`` satisfies it. So does anything else that
+    ``psycopg_pool.ConnectionPool`` satisfies this protocol. So does anything else that
     hands out a connection for the duration of a ``with`` block and takes it
     back at the end.
     """
@@ -119,8 +119,8 @@ class ConnectionPool(Protocol):
 class PostgresStore:
     """Keeps the board in Postgres. Satisfies ``BoardStore``.
 
-    ``pool`` is the application's own connection pool, and this adapter
-    neither opens nor closes it. Every call names the board within the
+    ``pool`` is the application's own connection pool, and this adapter does not open it
+    or close it. Every call names the board within the
     database; two boards under different identifiers share the tables and
     see none of each other's writes.
 
@@ -143,7 +143,7 @@ class PostgresStore:
         """Opens a pool for the duration of a ``with`` block, for a script or test.
 
         An application that already runs a pool passes it to the constructor
-        instead. This is for the cases that have none to pass.
+        instead. This is for the callers that have no pool to pass.
         """
         with _PsycopgPool(dsn, **pool_kwargs) as pool:
             yield cls(pool)

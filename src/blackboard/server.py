@@ -1,16 +1,16 @@
 """Answering an agent's request from the blackboard's side.
 
 An agent that runs as its own service reads and writes over HTTP. The
-operations it needs are the ones :class:`~blackboard.Control` already has, so
-the only questions left are which path carries which one and which status
-code carries which answer. Both halves of this SDK take those answers from
+operations it needs are the ones :class:`~blackboard.Control` already has, so the only
+questions left are which path carries which operation and which status code carries
+which answer. Both halves of this library take those answers from
 :mod:`blackboard.wire`, so a service and its agents cannot disagree about
 them.
 
 :class:`BoardService` is the blackboard's side. It takes a method, a path,
-and a decoded body, and returns a status, headers, and a body. It imports no
-web framework and opens no socket: the service keeps its own server, its
-routing prefix, and its authentication, and hands each request through.
+and a decoded body, and returns a status, headers, and a body. It imports no web
+framework and opens no socket: the application keeps its own server, its routing prefix,
+and its authentication, and hands each request through.
 
     from blackboard.server import BoardService, Request
 
@@ -35,9 +35,9 @@ callable that builds a run on first sight is another.
 
 ``path`` is matched a segment at a time and each variable is decoded once, so
 a board identifier that holds a slash arrives whole as long as the framework
-hands over the path it received. Some frameworks decode the path before you
-see it, and a board identifier is easiest to keep opaque: a UUID travels
-through every one of them unchanged.
+hands over the path it received. Some frameworks decode the path before you see it, so
+keep a board identifier opaque: a UUID travels through every one of those frameworks
+unchanged.
 
 What the status codes mean
 --------------------------
@@ -45,7 +45,7 @@ What the status codes mean
 ======  ==========================================================
 Status  Meaning
 ======  ==========================================================
-200     A read, or a write this key had already made
+200     A read, or a write an idempotency key had already made
 201     A write reached the board for the first time
 204     An acknowledgment was recorded
 400     The body or a query parameter could not be read
@@ -143,7 +143,7 @@ class Request:
 
     ``body`` is JSON that has already been parsed, or ``None`` where the
     request carried none. ``query`` is the query string parsed into single
-    values; a parameter given twice keeps whichever the framework kept.
+    values; a parameter given twice keeps whichever value the framework kept.
     """
 
     method: str
@@ -169,8 +169,8 @@ class BoardService:
     """Answers the operations in :mod:`blackboard.wire` from a set of runs.
 
     ``control_for`` returns the control component for a board identifier, or
-    ``None`` when this service holds no run for it. ``prefix`` is where the
-    service mounted these paths, and is stripped before matching.
+    ``None`` when this service holds no run for it. ``prefix`` is where the application
+    mounted these paths, and is stripped before matching.
     """
 
     def __init__(

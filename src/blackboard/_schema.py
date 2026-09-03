@@ -1,15 +1,15 @@
-"""What wrote a record, and whether this version can read it.
+"""What wrote a record, and the check that this version can read it.
 
 A store opens any database it is pointed at, creating what is missing and
-reading what is there. Nothing asked whether what is there was written by a
-version this one understands.
+reading what is there. Nothing checked that what is there was written by a version this
+library understands.
 
 That has been survivable because every schema change so far added something.
 It stops being survivable the first time one does not, and the failure is the
 worst kind: a run starts, an agent writes, and a read comes back missing a
 column, so the error names a query rather than the cause.
 
-A store therefore records a schema number and checks it when it opens. The
+A store therefore records a schema number and checks it when the store opens. The
 number counts changes to the physical schema, not releases: most releases
 change no schema, and a check that fires on every release is a check nobody
 can leave on.

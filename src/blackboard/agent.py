@@ -1,15 +1,15 @@
 """Calling a blackboard from an agent.
 
-An agent that runs as its own service reads and writes over HTTP. This module
-is the agent's side of the protocol :mod:`blackboard.wire` states, so an agent
+An agent that runs as its own service reads and writes over HTTP. This module is the
+agent's side of the protocol that :mod:`blackboard.wire` states, so an agent
 names no URL, no status code, and no header.
 
 A client is bound to one board and one agent name, the way
 :class:`~blackboard.BoardReader` is bound to one board.
 
-:class:`BoardClient` satisfies :class:`~blackboard.AgentBoard`, the protocol
-one board looks like to one agent, and so does what
-:meth:`~blackboard.Control.as_agent` returns. An agent body written against
+:class:`BoardClient` satisfies :class:`~blackboard.AgentBoard`, the protocol that one
+board looks like to one agent, and what :meth:`~blackboard.Control.as_agent` returns
+satisfies it too. An agent body written against
 ``AgentBoard`` therefore runs in the blackboard's own process or against one
 over HTTP, with nothing changed between them. It also satisfies
 ``BoardReader`` on its own, so an admission rule or a termination predicate
@@ -32,11 +32,11 @@ written against that protocol reads a remote board as well as a local one.
             board.ack(notification.notification_id)
 
 :class:`AsyncBoardClient` is the same surface with ``await`` in front of every
-method. Neither is written in terms of the other: a synchronous method that
-starts an event loop per call throws away the connection pool, so both are
-real and the request they build is one piece of shared code.
+method. One is not written in terms of the other: a synchronous method that
+starts an event loop per call throws away the connection pool, so both are implemented
+separately and the request they build is one piece of shared code.
 
-Install it with ``pip install blackboardx[agent]``.
+Install the ``agent`` extra with ``pip install blackboardx[agent]``.
 
 What comes back, and what is raised
 -----------------------------------
@@ -46,13 +46,13 @@ A write answers the way :meth:`~blackboard.Control.write` answers, with
 premise adds :class:`~blackboard.Conflict`. Those are answers rather than
 faults, and sending the same request again gets the same one.
 
-Everything else is raised, and where the blackboard has an exception for it
-the client raises that one: :class:`~blackboard.UndeclaredRegionError`,
+Everything else is raised, and where the blackboard has an exception for it, the client
+raises that exception: :class:`~blackboard.UndeclaredRegionError`,
 :class:`~blackboard.RegionKindError`, :class:`~blackboard.UnsetPremiseError`,
-:class:`~blackboard.UnknownNotificationError`. A board this blackboard does
-not hold raises :class:`UnknownBoardError`, a blackboard that could not be
-reached raises :class:`Unreachable`, and an answer the two halves disagree
-about raises :class:`ProtocolError`.
+:class:`~blackboard.UnknownNotificationError`. A board that this blackboard does not
+hold raises :class:`UnknownBoardError`, a blackboard that could not be
+reached raises :class:`Unreachable`, and an answer that the two halves disagree about
+raises :class:`ProtocolError`.
 
 What is attempted again
 -----------------------
@@ -62,15 +62,16 @@ be reached or answers 5xx. Reading twice returns the same thing, and an
 acknowledgment of a notification no longer outstanding changes nothing.
 
 A write is attempted again only when it carries an ``idempotency_key``. A
-request that timed out may still have been received, and a contribution
-appended twice is not the same board, so a write with nothing to identify it
-raises :class:`Unreachable` and the agent decides what to do. Given a key the
+request that timed out may still have been received, and a contribution appended twice
+does not leave the same board, so a write with nothing to identify it
+raises :class:`Unreachable` and the agent decides what to do. Given a key, the
 blackboard writes it once however many times it arrives, so the client sends
 it again like a read, and an attempt whose answer was lost comes back as the
 first one's result with ``repeated`` set.
 
 Name the key after work the agent can name again after a restart, rather than
-a fresh random string each time, so that a restart deduplicates too.
+a fresh random string each time, so that a write repeated after a restart is
+deduplicated too.
 
 Retrying a keyed write needs a blackboard at 0.8 or later. An older one takes
 the key and ignores it.
@@ -464,8 +465,8 @@ class BoardClient:
     ``base_url`` is where the blackboard mounted the operations, including
     any prefix. ``http_client`` takes an ``httpx.Client`` you configured
     yourself, with the authentication, the certificates, or the proxy your
-    deployment needs; without one the client builds a plain client and closes
-    it with itself.
+    deployment needs; without one, ``BoardClient`` builds a plain ``httpx.Client`` and
+    closes that client with itself.
     """
 
     def __init__(
@@ -503,7 +504,7 @@ class BoardClient:
         """Returns a level's contributions from the sequence bound, inclusive.
 
         Without a ``limit`` this reads the level to its end, following the
-        blackboard's pages. With one it returns at most that many.
+        blackboard's pages. With a ``limit`` it returns at most that many.
         """
         found: list[Contribution] = []
         start: int | None = from_sequence
@@ -628,8 +629,8 @@ class BoardClient:
 class AsyncBoardClient:
     """:class:`BoardClient` with ``await`` in front of every method.
 
-    It builds the same requests and reads the same answers; only the sending
-    differs. ``http_client`` takes an ``httpx.AsyncClient``.
+    It builds the same requests and reads the same answers; the sending differs.
+    ``http_client`` takes an ``httpx.AsyncClient``.
     """
 
     def __init__(
