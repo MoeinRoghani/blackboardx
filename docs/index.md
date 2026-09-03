@@ -22,7 +22,7 @@ H. Penny Nii set that separation out in a survey of blackboard systems published
 
 Everything belonging to a particular problem stays with the application: the agents, the content they write, the regions the board holds, and the rules the control component applies. The library never interprets a contribution, because interpreting one takes the expertise of the agent that produced it.
 
-That expertise is what Nii calls the knowledge a skeletal system is built on, and this library takes it in either of the forms an application has it in. An agent whose expertise is an algorithm calls the reads and writes itself. An agent whose expertise is a language model offers the same reads and writes to that model as tools, through `blackboard.tools`, and runs what the model asks for. The board and the control component behave the same way under both, because a contribution is a contribution whatever produced it.
+That expertise is what Nii calls the knowledge a skeletal system is built on, and an application supplies it in whichever form it holds it. An agent whose expertise is an algorithm calls the reads and writes itself. An agent whose expertise is a language model offers the same reads and writes to that model as tools, through `blackboard.tools`, and runs what the model asks for. The board and the control component behave the same way under both, because a contribution is a contribution whatever produced it.
 
 The record outlives the run that wrote it, so a run is opened in one of two ways. `create_model` opens a board the store does not hold yet, and gives every declared premise its opening value. `attach_model` opens a run over a board the store already holds, and continues the sequence from where the record ends.
 

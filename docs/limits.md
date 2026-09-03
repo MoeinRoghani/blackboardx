@@ -159,8 +159,8 @@ it does, so the correction costs a turn rather than ending the run.
 `blackboard.tools` renders schemas and runs the calls a model asked for. It
 sends nothing to a model, holds no conversation, and depends on no provider's
 package. The loop, the prompt, and the choice of model are the application's,
-and [Let a model decide](guides/deciding-with-a-model.md) shows the loop this
-library expects to sit inside.
+and [Let a model decide](guides/deciding-with-a-model.md) shows the loop that
+runs around this module.
 
 ## The conformance suite defines behaviour, not performance
 
