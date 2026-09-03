@@ -110,26 +110,26 @@ name you chose and has no way to name another.
 
 Two parameters the methods do take are withheld.
 
-`idempotency_key` is withheld, because `call_id` fills it. A model API gives every call it
-asks for an identifier, and passing that identifier means a loop that sends
-one call twice writes once. The second answer carries `"repeated": true` and
+`idempotency_key` is withheld, because `call_id` fills it. A model API gives
+every call it asks for an identifier, and passing that identifier means a loop
+that sends one call twice writes once. The second answer carries `"repeated": true` and
 the same sequence number as the first. Leave `call_id` out and each call
 writes again, which is what omitting an idempotency key already means.
 
 `limit` is withheld from `blackboard_read_level` and `blackboard_read_board`,
-because the result is bounded here. A read that answers with a list is cut where its JSON
-would exceed `tools.MAX_RESULT_BYTES`, and carries `omitted` with the number of
-entries left out. Those two reads also carry `next_from_sequence`, which always
-moves past what came back, so a model that follows it reaches the end of a
-level. `blackboard_read_regions` is cut the same way and carries no sequence,
-having none. `blackboard_read_premise` answers whole, because one value cut in
-half is a value the model cannot use.
+because the result is bounded here. A read that answers with a list is cut
+where its JSON would exceed `tools.MAX_RESULT_BYTES`, and carries `omitted`
+with the number of entries left out. Those two reads also carry
+`next_from_sequence`, which always moves past what came back, so a model that
+follows it reaches the end of a level. `blackboard_read_regions` is cut the
+same way and carries no sequence, having none. `blackboard_read_premise`
+answers whole, because one value cut in half is a value the model cannot use.
 
 ## What comes back when the model gets it wrong
 
-A malformed call changes nothing. Two of these are caught before the board is
-reached and two are what the board answered, and in both cases what comes back
-says what was wrong and `is_error` is true.
+A malformed call changes nothing. Two of the four below are caught before the
+board is reached and two are what the board answered, and in both cases what
+comes back says what was wrong and `is_error` is true.
 
 | The model sent | What it is told |
 | --- | --- |

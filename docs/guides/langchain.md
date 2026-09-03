@@ -2,8 +2,9 @@
 
 LangChain runs the loop around a model and calls the tools the model asks for.
 The board's reads and writes join that loop as tools, which is what an agent
-whose expertise is a language model needs from this library: `blackboard.tools` supplies the
-schemas and runs the calls, and LangChain supplies everything around them.
+whose expertise is a language model needs from this library: `blackboard.tools`
+supplies the schemas and runs the calls, and LangChain supplies everything
+around them.
 
 Nothing in this library imports LangChain, and installing this library does not
 install it.
