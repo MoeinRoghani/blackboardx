@@ -37,7 +37,7 @@ The library also carries both halves of the conversation between a blackboard an
 | `blackboard.server` | Answering an agent's request, without a web framework |
 | `blackboard.delivery` | Sending a notification to an agent, without the writer waiting |
 | `blackboard.agent` | Reading and writing a board from an agent |
-| `blackboard.tools` | The board's four reads and two writes, as tools a language model can call |
+| `blackboard.tools` | Each method of `AgentBoard` as a tool a language model can call, for the application to choose among |
 | `blackboard.conformance` | The suite a store of your own is held to |
 
 An agent reads and writes through `AgentBoard`, which is one board as one agent sees it: the four reads and the three writes, each without the agent's own name. `Control.as_agent` returns an `AgentBoard` for an agent running in the same process as the run, and `BoardClient` is one for an agent reaching the board over HTTP, so an agent body is written once and deployed either way.

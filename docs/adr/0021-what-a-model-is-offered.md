@@ -4,7 +4,7 @@ Date: 2026-09-03
 
 ## Status
 
-Accepted.
+Accepted. ADR 0022 supersedes the grouping decisions below, meaning the bundle this record describes and the withholding of acknowledgment. The projection rules stand.
 
 ## Context
 

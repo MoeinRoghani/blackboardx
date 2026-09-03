@@ -1,13 +1,19 @@
-"""The four reads and two writes of ``AgentBoard``, as tools a model can call.
+"""Every method of ``AgentBoard``, as a tool a model can call.
 
 An agent decides what to write. Where that decision is an algorithm, the
 application calls the methods of ``AgentBoard`` itself and needs nothing here.
 Where the decision is a language model, the application cannot hand those
 methods to a model API, because such an API takes a schema for each thing it
 may call and answers with a request to call one by name. This module renders
-those methods into that form and runs what comes back.
+each of those methods into that form and runs what comes back.
 
-The rendering is not a copy of the protocol, and the five differences are why
+The list is the application's to build. Each tool is a name this module
+exports, ``ALL`` is every one of them, and ``ToolSet`` holds the ones an
+application chose. Two agents on one board can therefore be offered different
+tools, because what a model is allowed to reach for is a decision about that
+agent rather than about this library.
+
+The rendering is not a copy of the protocol, and the four differences are why
 it belongs here rather than in each application.
 
 The agent's name is absent from every schema. ``AgentBoard`` carries it, so a
@@ -19,19 +25,22 @@ therefore writes once.
 
 An outcome the model can act on comes back as text it can read, because a model
 reads results and catches no exceptions. A rejected write and a premise whose
-version moved are values on the protocol already. Four conditions the protocol
+version moved are values on the protocol already. Five conditions the protocol
 raises are answered here instead: a region the board does not hold, a name of
-the other kind, a premise with no value yet, and a key that already wrote to
-another region. The first two come back naming the regions the board holds.
+the other kind, a premise with no value yet, a key that already wrote to
+another region, and a notification this agent never had. The first two come
+back naming the regions the board holds.
 
 A read that answers with a list is bounded. A list too large for a model to
 hold is cut, and the result says how many entries it left out. A premise's
 value is answered whole, because one value cut in half is a value the model
 cannot use.
 
-Acknowledgment is not among the tools. Acknowledging says the agent has
-stopped working on a notification, and the caller running the loop is what
-knows that, so it stays a call the caller makes.
+``ACK`` needs care in a way the others do not. Acknowledging says the agent
+has stopped working on a notification, so a model that sends it partway
+through its own reasoning tells the run that this agent has finished while it
+is still working. An application that keeps acknowledgment in the loop around
+the model leaves ``ACK`` out of the set it offers.
 """
 
 from __future__ import annotations
@@ -55,21 +64,24 @@ from blackboard._board import (
     UnsetPremiseError,
     Written,
 )
-from blackboard._control import AgentBoard, Rejected
+from blackboard._control import AgentBoard, Rejected, UnknownNotificationError
 
 __all__ = [
+    "ACK",
+    "ALL",
     "MAX_RESULT_BYTES",
-    "TOOLS",
+    "READ_BOARD",
+    "READ_LEVEL",
+    "READ_PREMISE",
+    "READ_REGIONS",
+    "SET_PREMISE",
     "TOOL_PREFIX",
+    "WRITE",
     "ToolAnnotations",
     "ToolDescriptor",
     "ToolResult",
     "ToolSet",
     "UnknownToolError",
-    "definitions",
-    "for_anthropic",
-    "for_openai",
-    "run",
 ]
 
 #: Prefixed to every tool name. These tools sit in a toolset the caller owns,
@@ -91,17 +103,17 @@ class UnknownToolError(BlackboardError):
     """
 
 
-#: Every condition one of these six calls raises. Each is one the model itself
-#: can correct, so each is answered rather than left to reach the caller. A
-#: closed run and an unknown notification are absent because no tool here can
-#: raise them: a write to a closed run answers ``Rejected``, and acknowledgment
-#: is not a tool. Anything else, an unreachable store above all, is the
-#: caller's to handle and is left to propagate.
+#: Every condition one of these seven calls raises. Each is one the model
+#: itself can correct, so each is answered rather than left to reach the caller.
+#: A closed run is absent because no tool here raises it: a write to a closed
+#: run answers ``Rejected``. Anything else, an unreachable store above all, is
+#: the caller's to handle and is left to propagate.
 _ANSWERABLE: tuple[type[BlackboardError], ...] = (
     UndeclaredRegionError,
     RegionKindError,
     UnsetPremiseError,
     IdempotencyKeyError,
+    UnknownNotificationError,
 )
 
 
@@ -141,6 +153,37 @@ class ToolDescriptor:
     withholds: tuple[str, ...] = ()
     from_call_id: tuple[str, ...] = ()
 
+    def definition(self) -> dict[str, Any]:
+        """Returns this tool in the shape the Model Context Protocol defines."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "inputSchema": self.input_schema,
+            "annotations": {
+                "readOnlyHint": self.annotations.read_only,
+                "idempotentHint": self.annotations.idempotent,
+            },
+        }
+
+    def for_anthropic(self) -> dict[str, Any]:
+        """Returns this tool as the Anthropic Messages API takes it."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input_schema": self.input_schema,
+        }
+
+    def for_openai(self) -> dict[str, Any]:
+        """Returns this tool as the OpenAI chat completions API takes it."""
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.input_schema,
+            },
+        }
+
 
 @dataclass(frozen=True)
 class ToolResult:
@@ -174,106 +217,145 @@ _FROM_SEQUENCE = {
     "description": "Where to start reading. 0 reads from the beginning.",
 }
 
-_DESCRIPTORS: tuple[ToolDescriptor, ...] = (
-    ToolDescriptor(
-        name=f"{TOOL_PREFIX}read_regions",
-        description=(
-            "Lists the regions this board holds and the kind of each one. A level "
-            "accumulates contributions in the order they were written. A premise "
-            "holds one current value under a version. Call this when you do not "
-            "know what the board holds."
-        ),
-        method="read_regions",
-        input_schema=_schema({}),
-        annotations=ToolAnnotations(read_only=True),
+READ_REGIONS = ToolDescriptor(
+    name=f"{TOOL_PREFIX}read_regions",
+    description=(
+        "Lists the regions this board holds and the kind of each one. A level "
+        "accumulates contributions in the order they were written. A premise "
+        "holds one current value under a version. Call this when you do not "
+        "know what the board holds."
     ),
-    ToolDescriptor(
-        name=f"{TOOL_PREFIX}read_level",
-        description=(
-            "Reads contributions from one level, in the order they were written, "
-            "starting at a sequence number. Answers with the contributions and the "
-            "sequence to continue from, so a later call reads only what arrived "
-            "after this one."
-        ),
-        method="read_level",
-        input_schema=_schema(
-            {"level": _LEVEL, "from_sequence": _FROM_SEQUENCE}, required=["level"]
-        ),
-        annotations=ToolAnnotations(read_only=True),
-        withholds=("limit",),
+    method="read_regions",
+    input_schema=_schema({}),
+    annotations=ToolAnnotations(read_only=True),
+)
+
+READ_LEVEL = ToolDescriptor(
+    name=f"{TOOL_PREFIX}read_level",
+    description=(
+        "Reads contributions from one level, in the order they were written, "
+        "starting at a sequence number. Answers with the contributions and the "
+        "sequence to continue from, so a later call reads only what arrived "
+        "after this one."
     ),
-    ToolDescriptor(
-        name=f"{TOOL_PREFIX}read_premise",
-        description=(
-            "Reads the current value of one premise and the version that value "
-            f"carries. Changing a premise requires that version, so read it here "
-            f"before calling {TOOL_PREFIX}set_premise."
-        ),
-        method="read_premise",
-        input_schema=_schema({"premise": _PREMISE}, required=["premise"]),
-        annotations=ToolAnnotations(read_only=True),
+    method="read_level",
+    input_schema=_schema(
+        {"level": _LEVEL, "from_sequence": _FROM_SEQUENCE}, required=["level"]
     ),
-    ToolDescriptor(
-        name=f"{TOOL_PREFIX}read_board",
-        description=(
-            "Reads every write to every region of this board in one order, starting "
-            "at a sequence number. Answers with the writes and the sequence to "
-            "continue from. Use this to catch up on the whole board rather than on "
-            "one region."
-        ),
-        method="read_board",
-        input_schema=_schema({"from_sequence": _FROM_SEQUENCE}),
-        annotations=ToolAnnotations(read_only=True),
-        withholds=("limit",),
+    annotations=ToolAnnotations(read_only=True),
+    withholds=("limit",),
+)
+
+READ_PREMISE = ToolDescriptor(
+    name=f"{TOOL_PREFIX}read_premise",
+    description=(
+        "Reads the current value of one premise and the version that value "
+        f"carries. Changing a premise requires that version, so read it here "
+        f"before calling {TOOL_PREFIX}set_premise."
     ),
-    ToolDescriptor(
-        name=f"{TOOL_PREFIX}write",
-        description=(
-            "Adds a contribution to a level, where every other agent on this board "
-            "can read it. A level accumulates, so this adds to the level and "
-            "replaces nothing already there. The content is stored as JSON. Call "
-            f"{TOOL_PREFIX}read_regions first if you do not know which levels this "
-            "board holds."
-        ),
-        method="write",
-        input_schema=_schema(
-            {
-                "level": _LEVEL,
-                "content": {"description": "The contribution. Any JSON value."},
+    method="read_premise",
+    input_schema=_schema({"premise": _PREMISE}, required=["premise"]),
+    annotations=ToolAnnotations(read_only=True),
+)
+
+READ_BOARD = ToolDescriptor(
+    name=f"{TOOL_PREFIX}read_board",
+    description=(
+        "Reads every write to every region of this board in one order, starting "
+        "at a sequence number. Answers with the writes and the sequence to "
+        "continue from. Use this to catch up on the whole board rather than on "
+        "one region."
+    ),
+    method="read_board",
+    input_schema=_schema({"from_sequence": _FROM_SEQUENCE}),
+    annotations=ToolAnnotations(read_only=True),
+    withholds=("limit",),
+)
+
+WRITE = ToolDescriptor(
+    name=f"{TOOL_PREFIX}write",
+    description=(
+        "Adds a contribution to a level, where every other agent on this board "
+        "can read it. A level accumulates, so this adds to the level and "
+        "replaces nothing already there. The content is stored as JSON. Call "
+        f"{TOOL_PREFIX}read_regions first if you do not know which levels this "
+        "board holds."
+    ),
+    method="write",
+    input_schema=_schema(
+        {
+            "level": _LEVEL,
+            "content": {"description": "The contribution. Any JSON value."},
+        },
+        required=["level", "content"],
+    ),
+    annotations=ToolAnnotations(read_only=False),
+    withholds=("idempotency_key",),
+    from_call_id=("idempotency_key",),
+)
+
+SET_PREMISE = ToolDescriptor(
+    name=f"{TOOL_PREFIX}set_premise",
+    description=(
+        "Replaces the value of a premise. Read the premise first and pass the "
+        "version you read as expected_version. Where another agent has written "
+        "to that premise since the read, nothing is changed and the answer "
+        "carries the version now current, so read again and decide from the "
+        "value that is now there."
+    ),
+    method="set_premise",
+    input_schema=_schema(
+        {
+            "premise": _PREMISE,
+            "value": {"description": "The new value. Any JSON value."},
+            "expected_version": {
+                "type": "integer",
+                "description": (
+                    f"The version {TOOL_PREFIX}read_premise last answered with."
+                ),
             },
-            required=["level", "content"],
-        ),
-        annotations=ToolAnnotations(read_only=False),
-        withholds=("idempotency_key",),
-        from_call_id=("idempotency_key",),
+        },
+        required=["premise", "value", "expected_version"],
     ),
-    ToolDescriptor(
-        name=f"{TOOL_PREFIX}set_premise",
-        description=(
-            "Replaces the value of a premise. Read the premise first and pass the "
-            "version you read as expected_version. Where another agent has written "
-            "to that premise since the read, nothing is changed and the answer "
-            "carries the version now current, so read again and decide from the "
-            "value that is now there."
-        ),
-        method="set_premise",
-        input_schema=_schema(
-            {
-                "premise": _PREMISE,
-                "value": {"description": "The new value. Any JSON value."},
-                "expected_version": {
-                    "type": "integer",
-                    "description": (
-                        f"The version {TOOL_PREFIX}read_premise last answered with."
-                    ),
-                },
-            },
-            required=["premise", "value", "expected_version"],
-        ),
-        annotations=ToolAnnotations(read_only=False),
-        withholds=("idempotency_key",),
-        from_call_id=("idempotency_key",),
+    annotations=ToolAnnotations(read_only=False),
+    withholds=("idempotency_key",),
+    from_call_id=("idempotency_key",),
+)
+
+ACK = ToolDescriptor(
+    name=f"{TOOL_PREFIX}ack",
+    description=(
+        "Records that this agent has stopped working on a notification. "
+        "Acknowledging one notification also acknowledges every earlier one, so "
+        "answering the widest range answers the narrower ranges inside it. Send "
+        "this once the work the notification prompted is done, because the run "
+        "reads it as this agent having finished with that notification."
     ),
+    method="ack",
+    input_schema=_schema(
+        {
+            "notification_id": {
+                "type": "integer",
+                "description": "The identifier the notification carried.",
+            }
+        },
+        required=["notification_id"],
+    ),
+    annotations=ToolAnnotations(read_only=False),
+)
+
+#: Every tool this module defines, in the order the documentation lists them.
+#: An application picks from it rather than being handed it: ``ToolSet(ALL)``
+#: offers all of them, and a list of its own offers what that application means
+#: a model to do.
+ALL: tuple[ToolDescriptor, ...] = (
+    READ_REGIONS,
+    READ_LEVEL,
+    READ_PREMISE,
+    READ_BOARD,
+    WRITE,
+    SET_PREMISE,
+    ACK,
 )
 
 
@@ -347,43 +429,15 @@ class ToolSet(Sequence[ToolDescriptor]):
         provider shapes carry the same name, description and schema under the
         key names each of those APIs uses.
         """
-        return [
-            {
-                "name": d.name,
-                "description": d.description,
-                "inputSchema": d.input_schema,
-                "annotations": {
-                    "readOnlyHint": d.annotations.read_only,
-                    "idempotentHint": d.annotations.idempotent,
-                },
-            }
-            for d in self._descriptors
-        ]
+        return [d.definition() for d in self._descriptors]
 
     def for_anthropic(self) -> list[dict[str, Any]]:
         """Returns the tools as the Anthropic Messages API takes them."""
-        return [
-            {
-                "name": d.name,
-                "description": d.description,
-                "input_schema": d.input_schema,
-            }
-            for d in self._descriptors
-        ]
+        return [d.for_anthropic() for d in self._descriptors]
 
     def for_openai(self) -> list[dict[str, Any]]:
         """Returns the tools as the OpenAI chat completions API takes them."""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": d.name,
-                    "description": d.description,
-                    "parameters": d.input_schema,
-                },
-            }
-            for d in self._descriptors
-        ]
+        return [d.for_openai() for d in self._descriptors]
 
     def run(
         self,
@@ -424,35 +478,6 @@ class ToolSet(Sequence[ToolDescriptor]):
 
 
 #: Every tool this module offers, in the order the documentation lists them.
-TOOLS = ToolSet(_DESCRIPTORS)
-
-
-def definitions() -> list[dict[str, Any]]:
-    """Returns the tools in the shape the Model Context Protocol defines."""
-    return TOOLS.definitions()
-
-
-def for_anthropic() -> list[dict[str, Any]]:
-    """Returns the tools as the Anthropic Messages API takes them."""
-    return TOOLS.for_anthropic()
-
-
-def for_openai() -> list[dict[str, Any]]:
-    """Returns the tools as the OpenAI chat completions API takes them."""
-    return TOOLS.for_openai()
-
-
-def run(
-    board: AgentBoard,
-    name: str,
-    arguments: Mapping[str, Any],
-    *,
-    call_id: str | None = None,
-) -> ToolResult:
-    """Runs one call the model asked for, against this board."""
-    return TOOLS.run(board, name, arguments, call_id=call_id)
-
-
 # Checking what the model sent
 
 
@@ -560,6 +585,8 @@ def _render(descriptor: ToolDescriptor, taken: Mapping[str, Any], value: object)
         return json.dumps(written)
     if isinstance(value, PremiseState):
         return json.dumps({"value": value.value, "version": value.version})
+    if descriptor.method == "ack":
+        return json.dumps({"acknowledged": taken["notification_id"]})
     if descriptor.method == "read_regions":
         regions = list(value) if isinstance(value, list) else []
         return _fit(

@@ -25,25 +25,37 @@ That is the whole loop, and it has four steps.
 
 ## Offering the tools
 
-`for_anthropic` and `for_openai` render the same tools into each provider's
-shape. Both return a plain list, so your own tools join them.
+You choose the tools first. Each one is a name this module exports, and
+`ToolSet` holds the ones you picked.
 
 ```python
-from blackboard import tools
+from blackboard.tools import ACK, READ_LEVEL, READ_PREMISE, WRITE, ToolSet
 
-offered = tools.for_anthropic() + my_own_tools
+board_tools = ToolSet([READ_LEVEL, READ_PREMISE, WRITE, ACK])
 ```
+
+`for_anthropic` and `for_openai` render that set into each provider's shape.
+Both return a plain list, so your own tools join them.
+
+```python
+offered = board_tools.for_anthropic() + my_own_tools
+```
+
+`tools.ALL` is every tool, for an application that wants them all:
+`ToolSet(tools.ALL)`. A single tool renders on its own as well, for code that
+assembles the provider payload itself: `WRITE.for_anthropic()`.
 
 Nothing here calls a model API or depends on one, and what these return is a
 list of plain dictionaries.
 
 ## Running what comes back
 
-`tools.run` takes the board, the name and arguments the model answered with,
-and the identifier that API gave the call.
+`run` takes the board, the name and arguments the model answered with, and the
+identifier that API gave the call. It is a method on the set you offered, so
+the tools you rendered and the tools you dispatch are the same tools.
 
 ```python
-outcome = tools.run(board, name, arguments, call_id=call_id)
+outcome = board_tools.run(board, name, arguments, call_id=call_id)
 ```
 
 `board` is any `AgentBoard`, so the same call serves an agent in the run's
@@ -58,15 +70,16 @@ A name this toolset does not hold raises `UnknownToolError`, because your own
 tools are yours to route. Ask first:
 
 ```python
-if tools.TOOLS.owns(name):
-    outcome = tools.run(board, name, arguments, call_id=call_id)
+if board_tools.owns(name):
+    outcome = board_tools.run(board, name, arguments, call_id=call_id)
 ```
 
 ## The loop, once
 
 ```python
-from blackboard import tools
+from blackboard.tools import READ_LEVEL, READ_PREMISE, WRITE, ToolSet
 
+board_tools = ToolSet([READ_LEVEL, READ_PREMISE, WRITE])
 board = model.control.as_agent("triage")
 messages = [{"role": "user", "content": brief(notification)}]
 
@@ -74,7 +87,7 @@ while True:
     reply = client.messages.create(
         model="claude-sonnet-5",
         max_tokens=2048,
-        tools=tools.for_anthropic(),
+        tools=board_tools.for_anthropic(),
         messages=messages,
     )
     if reply.stop_reason != "tool_use":
@@ -82,9 +95,9 @@ while True:
     messages.append({"role": "assistant", "content": reply.content})
     results = []
     for block in reply.content:
-        if block.type != "tool_use" or not tools.TOOLS.owns(block.name):
+        if block.type != "tool_use" or not board_tools.owns(block.name):
             continue
-        outcome = tools.run(board, block.name, block.input, call_id=block.id)
+        outcome = board_tools.run(board, block.name, block.input, call_id=block.id)
         results.append(
             {
                 "type": "tool_result",
@@ -98,9 +111,14 @@ while True:
 board.ack(notification.notification_id)
 ```
 
-Acknowledge after the loop ends, and not inside it. Acknowledging says this
-agent has stopped working on the notification, which the code running the loop
-knows and the model does not, so acknowledgment is not among the tools.
+The set above leaves `ACK` out, so this loop acknowledges after it ends rather
+than letting the model do it. Acknowledging says this agent has stopped working
+on the notification, and a model that sends it partway through its own
+reasoning tells the run that this agent has finished while it is still working.
+
+`ACK` is exported like every other tool, so an application that wants the model
+to decide when it is done puts it in the set and drops the call after the
+loop.
 
 ## What the model is never asked for
 
@@ -171,15 +189,21 @@ or stopping is then a decision your code makes.
 
 ## Offering a model less than everything
 
-`ToolSet.select` and `ToolSet.read_only` return a smaller set, and that set
-renders and runs exactly as the full one does.
+Build the set from the tools that agent should have.
 
 ```python
-tools.TOOLS.read_only().for_anthropic()  # the four reads, no writes
-tools.TOOLS.select("blackboard_read_level", "blackboard_write").for_anthropic()
+reviewer = ToolSet([READ_LEVEL, READ_PREMISE])
 ```
 
-Offer a subset to an agent whose job is to review rather than to contribute.
+`ToolSet.select` and `ToolSet.read_only` narrow a set you already hold, and
+what they return renders and runs exactly as the set it came from does.
+
+```python
+ToolSet(tools.ALL).read_only()  # the four reads, no writes
+```
+
+Offer a smaller set to an agent whose job is to review rather than to
+contribute.
 A subset is not a substitute for the run's own rules: what an agent may write
 is settled by its `writes_to` declaration and by the admission rule, which hold
 wherever the write came from.
@@ -189,24 +213,24 @@ wherever the write came from.
 `for_openai` carries the same schemas under that API's key names.
 
 ```python
-offered = tools.for_openai()
+offered = board_tools.for_openai()
 ```
 
 Calls arrive there with the arguments as a JSON string rather than an object,
 so parse them before passing them on.
 
 ```python
-outcome = tools.run(
+outcome = board_tools.run(
     board, call.function.name, json.loads(call.function.arguments), call_id=call.id
 )
 ```
 
-`tools.definitions()` returns the same tools in the shape the Model Context
+`ToolSet.definitions` returns the same tools in the shape the Model Context
 Protocol defines, which is what a server answering `tools/list` returns.
 
 ## An agent deployed on its own
 
-`tools.run` takes `AgentBoard`, and both a run in this process and a client
+`ToolSet.run` takes `AgentBoard`, and both a run in this process and a client
 over HTTP satisfy it, so the loop above runs unchanged against either.
 
 ```python
