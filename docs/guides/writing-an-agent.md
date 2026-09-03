@@ -15,6 +15,11 @@ what the agent concluded. The library learns what the agent wrote, because it
 sequenced those writes itself. Deciding to add nothing is an ordinary outcome
 and skips step 4.
 
+Step 3 is where the agent's expertise sits, and the examples on this page
+implement it as an algorithm in the agent's own code. An agent that asks a language model instead
+takes the same five steps and offers the board to the model as tools it may
+call, which [Let a model decide](deciding-with-a-model.md) covers.
+
 ## The smallest one
 
 ```python

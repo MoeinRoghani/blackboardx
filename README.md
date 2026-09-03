@@ -14,6 +14,8 @@ The library also carries both halves of the conversation between a blackboard an
 
 An agent reads and writes through `AgentBoard`, which is the four reads and the three writes without the agent's own name. `Control.as_agent` returns an `AgentBoard` for an agent in the same process as the run, and `BoardClient` is one over HTTP, so an agent body is written once and deployed either way.
 
+What an agent knows is the application's to supply. An agent whose expertise is an algorithm decides in its own code. An agent whose expertise is a language model puts the decision to the model, offering it the board as tools through `blackboard.tools`, and makes each call the model asks for. The library sends nothing to a model and depends on no provider's package.
+
 The distribution name is `blackboardx`; the import name is `blackboard`. The documentation, including the API reference, is at <https://moeinroghani.github.io/blackboardx/>.
 
 ## Install
@@ -39,6 +41,7 @@ The base install has no runtime dependency. `InMemoryStore` holds the record in 
 | [Storage](https://moeinroghani.github.io/blackboardx/concepts/storage/) | Where the record is kept, and what an adapter owes |
 | [Guides](https://moeinroghani.github.io/blackboardx/guides/writing-an-agent/) | Writing an agent, notifying over HTTP, admission rules, ending a run, testing |
 | [Serve a blackboard](https://moeinroghani.github.io/blackboardx/guides/serving-a-blackboard/) | Answering agents that run as their own services |
+| [Let a model decide](https://moeinroghani.github.io/blackboardx/guides/deciding-with-a-model/) | Offering the board to a language model as tools it can call |
 | [What it does not do](https://moeinroghani.github.io/blackboardx/limits/) | Every limit of this version, in one place |
 | [API reference](https://moeinroghani.github.io/blackboardx/reference/) | Every exported name |
 

@@ -1,6 +1,6 @@
 # API reference
 
-The public surface is six import paths: the package and five submodules.
+The public surface is seven import paths: the package and six submodules.
 Everything else in the package is internal, and a name outside these pages may
 change without a deprecation.
 
@@ -11,6 +11,7 @@ change without a deprecation.
 | `blackboard.server` | Answering an agent's request, without a web framework | The blackboard |
 | `blackboard.delivery` | Sending notifications to agents over HTTP | The blackboard |
 | `blackboard.agent` | Reading and writing a board from an agent | The agent |
+| `blackboard.tools` | The board's four reads and two writes, as tools a language model can call | The agent |
 | `blackboard.conformance` | The suite every store implementation is held to | Anyone writing a store |
 
 ## `blackboard`
@@ -32,6 +33,10 @@ change without a deprecation.
 ## `blackboard.agent`
 
 ::: blackboard.agent
+
+## `blackboard.tools`
+
+::: blackboard.tools
 
 ## `blackboard.conformance`
 

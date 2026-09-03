@@ -73,7 +73,7 @@ def test_a_proposed_contribution_has_no_agent_field() -> None:
     assert not hasattr(proposed, "agent")
 
 
-def test_the_public_modules_are_the_six_the_reference_lists() -> None:
+def test_the_public_modules_are_the_seven_the_reference_lists() -> None:
     """`docs/reference.md` and `docs/index.md` both name them."""
     import pkgutil
 
@@ -84,7 +84,7 @@ def test_the_public_modules_are_the_six_the_reference_lists() -> None:
         for _, name, _ in pkgutil.iter_modules(package.__path__)
         if not name.startswith("_")
     }
-    assert public == {"agent", "conformance", "delivery", "server", "wire"}
+    assert public == {"agent", "conformance", "delivery", "server", "tools", "wire"}
 
 
 def test_postgres_creates_the_five_tables_the_storage_page_names() -> None:
