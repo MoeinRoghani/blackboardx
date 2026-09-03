@@ -10,7 +10,7 @@ HEARSAY-II therefore gave its specialists a structure to work on rather than a w
 
 That structure is the blackboard. It holds partial answers, meaning pieces that settle nothing on their own and that combine into a result, and it holds them where every specialist can see them.
 
-Removing the calls left a decision behind. Several specialists can have something to add at the same moment, and HEARSAY-II ran them one at a time. Its scheduler ranked the specialists whose preconditions the blackboard had met, on an estimate of what each would contribute, and ran the highest. Evaluating a precondition was cheap and running a specialist was expensive, so it paid to rank them all before running any.
+Removing the calls left a decision behind. Several specialists can have something to add at the same moment, and HEARSAY-II ran them one at a time. Its scheduler ranked each pairing of a specialist with the data that had met its precondition, on an estimate of what that pairing would contribute, and ran the highest. Finding out that a specialist had something to add cost less than having it add it, so it paid to rank them all before running any.
 
 ## How the arrangement outlived the problem
 
@@ -57,13 +57,13 @@ Agents that share a record still need four questions answered before any of them
 
 ## The control problem, and where it moved
 
-The control problem is choosing which of the specialists that could run is the one to run next, and it outlived HEARSAY-II. Some of the systems after it kept asking how such a choice should be made, and Barbara Hayes-Roth's BB1 answered in 1985 by making control a blackboard problem of its own: a second blackboard, holding the system's reasoning about what to do next, with specialists of its own working on it.
+The control problem is choosing which of the specialists that could run is the one to run next, and it outlived HEARSAY-II. Some of the systems after it kept asking how such a choice should be made. Barbara Hayes-Roth answered in 1985 by making control a blackboard problem of its own: a second blackboard, holding the system's reasoning about what to do next, with specialists of its own working on it. BB1 was the system built that way.
 
-The distributed answer kept the blackboard and moved the choice into the participants. Victor Lesser and Daniel Corkill's Distributed Vehicle Monitoring Testbed, in 1983, put a blackboard system in each node of a network and had the nodes cooperate with no scheduler above them, and the work on cooperative distributed problem solving that followed took the same position. Linda, David Gelernter's language for coordinating parallel processes, reached the same position from another direction. Its processes do not call one another: they put tuples into a shared tuple space and take out the ones matching a template they name, and the tuple space ranks no process above another.
+The distributed answer kept the blackboard and moved the choice into the participants. Victor Lesser and Daniel Corkill's Distributed Vehicle Monitoring Testbed, in 1983, put a blackboard system in each node of a network and had the nodes cooperate with no node in authority over the others, each scheduling its own work. The work on cooperative distributed problem solving that followed built the coordination among the participants rather than above them. Linda, David Gelernter's language for coordinating parallel processes, reached the same position from another direction. Its processes do not call one another: they put tuples into a shared tuple space and take out the ones matching a template they name, and the tuple space ranks no process above another.
 
-One thing that separated the two answers was where the cost of finding out what a specialist had to say could be paid. HEARSAY-II could pay it apart from the work, on the cheap precondition rather than on the expensive run, which is what a central ranking needs. An agent carrying a language model cannot separate the two, because finding out what it has to contribute is the same reading and reasoning as making the contribution. No cheap half is left for a ranking to act on.
+One thing that separated the two answers was where the cost of finding out what a specialist had to say could be paid. HEARSAY-II could pay it apart from the work, on the precondition rather than on the run, which is what a central ranking needs. An agent carrying a language model cannot separate the two, because finding out what it has to contribute is the same reading and reasoning as making the contribution. No separable estimate is left for a ranking to act on.
 
-`blackboardx` takes the distributed answer. Its control component notifies and does not rank: every agent subscribed to the region a write changed is notified, apart from the agent that made the write, and nothing chooses among them. The library's configuration offers nowhere to make that choice.
+`blackboardx` takes the distributed answer further than the Testbed did. Each node of the Testbed ran a scheduler of its own, and no part of this library runs one. Its control component notifies and does not rank: every agent subscribed to the region a write changed is notified, apart from the agent that made the write, and there is no priority anywhere in an agent's declaration.
 
 ## Where to start
 
