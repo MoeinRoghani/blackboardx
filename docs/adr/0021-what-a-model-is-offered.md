@@ -48,7 +48,7 @@ The loop around the model, the prompt, and the provider's SDK. The library depen
 
 ## Consequences
 
-`blackboard.tools` is a seventh public import path, and costs nothing beyond the base install. It imports `json` and the package's own names.
+`blackboard.tools` is a seventh public import path, and costs nothing beyond the base install. It imports from the standard library and from this package, and from nothing else.
 
 Two provider shapes are rendered from one set of descriptors, and the Model Context Protocol's shape is rendered alongside them, so a caller reaching a board through an MCP server offers the same tools under the same names.
 
