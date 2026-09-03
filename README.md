@@ -4,15 +4,15 @@ A skeletal blackboard system for Python.
 
 The blackboard architecture came out of HEARSAY-II, a speech understanding system built at Carnegie Mellon in the early 1970s under a DARPA programme. Its difficulty was that a stretch of speech admits several readings, and the knowledge that settles which one is right arrives in unrelated kinds: acoustic, lexical, syntactic, semantic. Which kind will settle a given stretch is not known until that stretch is examined, so the system could not be written as procedures calling one another, because a call fixes what runs next. HEARSAY-II gave its specialists a shared structure to work on instead. Each reads what bears on its own expertise and writes back what it concludes, and none of them calls another.
 
-Later systems kept that arrangement and replaced the knowledge, HASP interpreting sonar where HEARSAY-II interpreted speech. H. Penny Nii, surveying blackboard systems in AI Magazine in 1986, named a system *skeletal* when it supplies the components alone and leaves the knowledge and the control to whoever builds on it.
+Later systems kept that arrangement and replaced the knowledge: HASP interpreted sonar rather than speech. H. Penny Nii, surveying blackboard systems in AI Magazine in 1986, named a system *skeletal* when it supplies the components alone and leaves the knowledge and the control to whoever builds on it.
 
-`blackboardx` is skeletal in that sense. It supplies the board, which stores what agents write and puts every write in one order, and the control component, which determines who is notified of a change, whether a write is admitted, and when the run ends. An application supplies its regions, their opening premise values, the agents the run starts with, an admission rule, a termination predicate, and limits.
+`blackboardx` is skeletal in that sense. It supplies the board, which stores what agents write and puts every write in one order, and the control component, which determines who is notified of a change, which writes are admitted, and when the run ends. An application supplies its regions, their opening premise values, the agents the run starts with, an admission rule, a termination predicate, and limits.
 
 The record outlives the run that wrote it. `create_model` opens a board the store does not hold yet; `attach_model` opens a run over a board the store already holds, and continues the sequence from where the record ends.
 
-It also carries both halves of the conversation between a blackboard and agents deployed as their own services: the bodies and operations they share, the piece that answers an agent's request, the piece that sends a notification without making the writer wait, and the client an agent calls with. Your service keeps its own HTTP server, its routes, its authentication, and its database; neither half writes the protocol between them.
+The library also carries both halves of the conversation between a blackboard and agents deployed as their own services: the bodies and operations they share, the piece that answers an agent's request, the piece that sends a notification without making the writer wait, and the client an agent calls with. Your service keeps its own HTTP server, its routes, its authentication, and its database; the library supplies the protocol between them.
 
-An agent reads and writes through `AgentBoard`, the four reads and the three writes without the agent's own name. `Control.as_agent` returns one in the same process as the run, and `BoardClient` is one over HTTP, so an agent body is written once and deployed either way.
+An agent reads and writes through `AgentBoard`, which is the four reads and the three writes without the agent's own name. `Control.as_agent` returns an `AgentBoard` for an agent in the same process as the run, and `BoardClient` is one over HTTP, so an agent body is written once and deployed either way.
 
 The distribution name is `blackboardx`; the import name is `blackboard`. The documentation, including the API reference, is at <https://moeinroghani.github.io/blackboardx/>.
 
@@ -27,7 +27,7 @@ pip install 'blackboardx[agent]'        # BoardClient, for an agent calling a bl
 pip install 'blackboardx[conformance]'  # the suite a store of your own is held to
 ```
 
-The base install has no runtime dependency. Neither store it ships needs one: `InMemoryStore` holds the record in the process, and `SqliteStore` uses `sqlite3` from the standard library. A deployment keeps the record in the database it already runs, and the adapter for one needs that database's driver.
+The base install has no runtime dependency. `InMemoryStore` holds the record in the process, and `SqliteStore` uses `sqlite3` from the standard library. A deployment keeps the record in the database it already runs, and the adapter for that database needs its driver.
 
 ## Documentation
 
@@ -76,7 +76,7 @@ model.control.ack(notification.notification_id, agent="ocp")
 assert model.control.wait_closed(timeout=timedelta(seconds=10)) == Settled()
 ```
 
-Running that a second time raises `DuplicateRegionError`, because the board is already in `incidents.sqlite3`. `attach_model` opens a run over it.
+Running that example a second time raises `DuplicateRegionError`, because the board is already in `incidents.sqlite3`. `attach_model` opens a run over the board.
 
 ## License
 

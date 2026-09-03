@@ -8,8 +8,8 @@ whole timeout.
 
 :class:`HttpNotifier` supplies that callable. It puts the notification on a
 queue and returns, and a worker sends it. Each call to
-:meth:`HttpNotifier.to` opens its own lane, so agents are reached at the same
-time and one that is slow, retrying, or down delays only itself.
+:meth:`HttpNotifier.to` opens its own lane, so agents are reached at the same time and
+an agent that is slow, retrying, or down delays only itself.
 
     from blackboard import Agent, create_model
     from blackboard.delivery import HttpNotifier
@@ -33,8 +33,8 @@ time and one that is slow, retrying, or down delays only itself.
 The queue is held in memory. A process that stops loses whatever had not been
 sent, which usually costs nothing, because a notification carries no values
 and the next one covers the range a lost one would have covered. It costs
-something when the lost notification is the last, and the run then waits for
-an acknowledgment that no agent knows to send until its idle limit closes it.
+something when the lost notification is the last, and the run then waits for an
+acknowledgment that no agent knows to send, until the run's idle limit closes it.
 """
 
 from __future__ import annotations
@@ -73,8 +73,8 @@ logger = logging.getLogger(__name__)
 class DeliveryFailed(BlackboardError):
     """A delivery did not land and is worth attempting again.
 
-    A refused connection, a timeout, a 5xx, a 429. ``retry_after`` carries
-    what the server asked for when it said so.
+    Raised for a refused connection, a timeout, a 5xx, or a 429. ``retry_after`` carries
+    what the server asked for, where the server said so.
     """
 
     def __init__(self, message: str, *, retry_after: float | None = None) -> None:
@@ -85,7 +85,7 @@ class DeliveryFailed(BlackboardError):
 class DeliveryRefused(BlackboardError):
     """A delivery the agent will refuse again.
 
-    A 400, a 404, a 422. Sending the same body a second time produces the
+    Raised for a 400, a 404, or a 422. Sending the same body a second time produces the
     same answer, so the notifier reports it rather than retrying. It is not
     a ``DeliveryFailed``, because that one says another attempt might land.
     """
@@ -246,15 +246,15 @@ class Lane:
 class HttpNotifier:
     """Sends notifications to agents without the writer waiting.
 
-    ``transport`` defaults to :class:`HttpxTransport`, built when the
-    notifier is. ``attempts`` counts every call to the transport, so 4 means
+    ``transport`` defaults to :class:`HttpxTransport`, built when the notifier is built.
+    ``attempts`` counts every call to the transport, so 4 means
     one send and three retries. ``backoff`` decides the wait between them.
-    ``on_failure`` is called once for every notification the notifier gives
-    up on, on the lane's own thread; a failure is logged at ``ERROR``
+    ``on_failure`` is called on the lane's own thread, once for every notification the
+    notifier gives up on; a failure is logged at ``ERROR``
     whatever it does.
 
     Closing drains what is queued, waiting up to ``close_timeout`` seconds in
-    total rather than per lane. Whatever is still queued then is reported
+    total rather than per lane. Whatever is still queued at that point is reported
     through ``on_failure`` before ``close`` returns. A transport the notifier
     built is closed with it; one you supplied is yours to close.
     """
@@ -291,7 +291,7 @@ class HttpNotifier:
 
         The lane is the ``notify`` callable an ``Agent`` is created with, and
         it can be closed on its own. Each call opens a lane of its own, so
-        give every agent its own even when two share an address: two agents
+        give every agent its own even when two agents share an address: two agents
         behind one lane share a queue and take turns.
 
         Close a lane when the run that used it ends. A notifier serving many
@@ -308,8 +308,8 @@ class HttpNotifier:
     def close(self) -> None:
         """Sends what is queued, stops the lanes, and returns.
 
-        Waits up to ``close_timeout`` seconds in total, not per lane. A lane
-        still parked in a retry after that abandons it, and everything it
+        Waits up to ``close_timeout`` seconds in total, not per lane. After that, a lane
+        still parked in a retry abandons it, and everything it
         still holds is reported through ``on_failure`` before this returns.
 
         A transport this notifier built is closed here. One that was supplied

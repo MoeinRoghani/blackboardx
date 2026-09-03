@@ -8,7 +8,7 @@ One database holds many boards, each under its own identifier. Every
 document carries it, so a deployment serving many concurrent runs is the
 ordinary case.
 
-Two guarantees hold across processes, not merely across the threads of one,
+Two guarantees hold across processes, not merely across the threads of one process,
 and both span more than one document:
 
 The sequence is gapless. A write takes it by incrementing a counter
@@ -70,8 +70,8 @@ _Result = TypeVar("_Result")
 class MongoStore:
     """Keeps the board in MongoDB. Satisfies ``BoardStore``.
 
-    ``database`` is the application's own ``pymongo.database.Database``, and
-    this adapter neither opens nor closes the client behind it.
+    ``database`` is the application's own ``pymongo.database.Database``, and this
+    adapter does not open or close the client behind it.
     One database holds many boards. Every call names the board it acts on,
     and two boards under different identifiers share the collections and see
     none of each other's writes.
@@ -105,7 +105,7 @@ class MongoStore:
         """Opens a client for the duration of a ``with`` block, for a script or test.
 
         An application that already runs a client passes its database to the
-        constructor instead. This is for the cases that have none to pass.
+        constructor instead. This is for the callers that have no client to pass.
         """
         client: MongoClient[Any] = MongoClient(uri, **client_kwargs)
         try:

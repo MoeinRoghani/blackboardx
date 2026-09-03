@@ -1,22 +1,28 @@
 # End a run
 
-Three things end a run, and the outcome it produces names which of the three it was.
+Three things end a run, and the outcome the run produces names which of the
+three ended it.
 
 ## Silence
 
-Most runs end this way, when nothing has happened for the idle limit.
+A run ends on silence when nothing has happened for the idle limit.
 
 ```python
 RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=10))
 ```
 
-A write of either kind pushes the deadline out, and so does a registration or an acknowledgment. Reads do not, so an agent polling the board cannot hold a run open.
+A write to a level or a premise pushes the deadline out, and so does a
+registration or an acknowledgment. Reads do not, so an agent polling the board
+cannot hold a run open.
 
-Choose the idle limit by how long an agent's slowest step takes. Shorter than that and a run closes while an agent is still thinking; much longer and a finished run sits open.
+Choose the idle limit by how long an agent's slowest step takes. If it is
+shorter than that, a run closes while an agent is still thinking; if it is much
+longer, a finished run sits open.
 
 ## Requiring something of the result
 
-A termination predicate is asked when the idle limit passes, and answering continue re-arms it.
+A termination predicate is asked when the idle limit passes, and answering
+`CONTINUE` re-arms the idle limit.
 
 ```python
 from blackboard import TerminationDecision
@@ -31,13 +37,16 @@ def both_levels_have_something(reader):
 model = create_model(..., termination_predicate=both_levels_have_something)
 ```
 
-Supplying none lets silence close the run on its own.
+Supplying no predicate lets silence close the run on its own.
 
-The predicate runs without the control component's lock, so a verdict is discarded if the board moved while it ran, and the next deadline asks again.
+The predicate runs without the control component's lock, so its decision is
+discarded if the board moved while it ran, and the predicate is asked again at
+the next deadline.
 
 ## The wall clock, and closing by hand
 
-The wall clock is the hard stop, and it applies whatever the predicate says. A caller may also close a run outright.
+The wall clock closes the run whatever the predicate says. A caller may also
+close a run outright.
 
 ```python
 model.control.abort("the operator stopped the investigation")
@@ -62,11 +71,19 @@ match outcome:
 ```
 
 The empty case takes a guard because `frozenset()` written as a pattern
-matches every frozenset, empty or not, and would swallow the case under it.
+matches every frozenset, including a non-empty one, and would swallow the case
+under it.
 
-Match the outcome rather than checking that it is not `None`, because `unfinished` carries a result the outcome alone does not. A region left empty because nobody examined it and a region left empty because an agent looked and found nothing are different findings, and `unfinished` is what separates them.
+Match the outcome rather than checking that it is not `None`, because
+`unfinished` carries a result that the outcome alone does not carry. A region
+left empty because nobody examined it and a region left empty because an agent
+looked and found nothing are different findings.
 
-`Settled` and `WallClockExpired` name the agents still holding an unacknowledged notification. `Aborted` names none: `abort` closes the run and leaves `unfinished` empty, so a caller that stopped a run and wants to know who had not answered reads the audit, where each `NotificationDispatched` without a matching `NotificationAcknowledged` is one of them.
+`Settled` and `WallClockExpired` name the agents still holding an
+unacknowledged notification. `Aborted` names none: `abort` closes the run and
+leaves `unfinished` empty, so a caller that stopped a run and wants to know who
+had not answered reads the audit, where each `NotificationDispatched` without a
+matching `NotificationAcknowledged` names one of those agents.
 
 ## Being told instead of asking
 
@@ -77,26 +94,31 @@ gives `create_model` or `attach_model` an `on_closed` callback.
 model = create_model(..., on_closed=record_the_outcome)
 ```
 
-It is called once, with the same `RunOutcome` `wait_closed` returns, on
+It is called once, with the same `RunOutcome` that `wait_closed` returns, on
 whichever thread closed the run: the caller's thread for `abort`, and the
 clock's for the idle limit and the wall clock. An exception it raises is
 suppressed, so a callback that fails does not reach whoever closed the run.
 
 The outcome names no board, so a callback that serves several runs takes the
-identifier from the call that opened the one it belongs to. [Serve a
+identifier from the call that opened the run it belongs to. [Serve a
 blackboard](serving-a-blackboard.md) uses `on_closed` that way, to drop a
-closed run from the registry the service reads.
+closed run from the runs that the service reads.
 
 ## After it closes
 
-Reads and the audit keep working, so the result stays available. A write to either kind of region comes back `Rejected` with the cause `RUN_CLOSED`. Registering an agent or declaring a region raises `RunClosedError`. [The run](../concepts/run.md#after-closing) explains why one returns and the other raises.
+Reads and the audit keep working, so the result stays available. A write to a
+level or a premise comes back `Rejected` with the cause `RUN_CLOSED`.
+Registering an agent or declaring a region raises `RunClosedError`. [The
+run](../concepts/run.md#after-closing) explains why a write returns and a
+registration raises.
 
 ## The names
 
-`TerminationPredicate` is the type of the callable `create_model` takes: it
+`TerminationPredicate` is the type of the callable that `create_model` takes:
+it
 receives a `BoardReader` and answers a `TerminationDecision`.
 
 `on_closed`, on `create_model` and `attach_model`, is called once with the
 `RunOutcome` when the run ends, on whichever thread ended it. It is how a
-service holding many runs learns that one finished, where `outcome` asks and
-`wait_closed` blocks.
+service holding many runs learns that one finished, where `outcome` answers
+when it is asked and `wait_closed` waits for the run to close.

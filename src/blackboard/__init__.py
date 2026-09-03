@@ -2,9 +2,9 @@
 
 The library supplies the board, the shared structure through which
 independent agents contribute to one result, and the control component,
-which determines which agents are notified of a change, whether a proposed
-write is admitted, whether the run's limits still hold, and when the run
-has finished. An application creates a model by supplying its regions,
+which determines which agents are notified of a change, which proposed writes are
+admitted, when the run's limits still hold, and when the run has finished. An
+application creates a model by supplying its regions,
 their opening premise values, the agents the run starts with, an admission
 rule, a termination predicate, and limits. The public surface is the set of
 names in ``__all__``; every other name is internal.

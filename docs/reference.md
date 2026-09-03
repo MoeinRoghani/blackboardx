@@ -6,7 +6,7 @@ change without a deprecation.
 
 | Import path | Holds | Imported by |
 | --- | --- | --- |
-| `blackboard` | The board, the control component, `create_model` and `attach_model`, and the `AgentBoard` an agent body is written against | Both |
+| `blackboard` | The board, the control component, `create_model` and `attach_model`, and the `AgentBoard` an agent body is written against | The blackboard and the agent |
 | `blackboard.wire` | The request and response bodies that cross between the two halves, and the seven operations that carry them | Both |
 | `blackboard.server` | Answering an agent's request, without a web framework | The blackboard |
 | `blackboard.delivery` | Sending notifications to agents over HTTP | The blackboard |

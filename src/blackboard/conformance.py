@@ -1,12 +1,12 @@
 """The suite every store implementation is held to.
 
-`BoardStore` is a protocol, so an application may keep its record in a
-database this library ships no adapter for. What that store has to guarantee
+`BoardStore` is a protocol, so an application may keep its record in a database that
+this library ships no adapter for. What that store has to guarantee
 is not obvious from the signatures: one counter across every region rather
 than one per region, a conflicting premise write taking no sequence number so
 a conflict leaves no gap, a key writing once, a bounded read continuing from
-a sequence rather than an offset. Each of those has a case here because each
-is a thing an implementation gets wrong.
+a sequence rather than an offset. Each of those has a case here because an
+implementation gets each of them wrong.
 
 Subclass `BoardConformance` and `SharedStoreConformance`, supply a `store`
 fixture returning a fresh store, and run pytest:
@@ -26,10 +26,9 @@ fixture returning a fresh store, and run pytest:
         def store(self):
             return CassandraStore(session)
 
-The four stores the library ships are held to this module rather than to a
-copy of it, so what an implementer runs is what the library runs.
+The four stores the library ships are held to this module rather than to a copy of it.
 
-Running it needs pytest, which the library itself does not:
+Running it needs pytest, which the library itself does not need:
 ``pip install blackboardx[conformance]``.
 """
 
@@ -571,7 +570,7 @@ class SharedStoreConformance:
             second.read_level("application")
         second.declare(Level("application"))
 
-    def test_neither_board_reads_the_other_s_contributions(
+    def test_one_board_does_not_read_the_other_s_contributions(
         self, two_boards: tuple[Bound, Bound]
     ) -> None:
         first, second = two_boards
@@ -622,9 +621,10 @@ class SharedStoreConformance:
     ) -> None:
         first, second = same_board_twice
         first.declare(Level("application"))
-        # Two handles on one board are two processes. Neither an in-process
-        # lock nor a read this handle already made can catch this, so the
-        # refusal rests on the store, and it has to be the same refusal.
+        # Two handles on one board are two processes. This escapes an
+        # in-process lock, and it escapes a read that this handle already
+        # made, so the refusal rests on the store and has to be the same
+        # refusal.
         with pytest.raises(DuplicateRegionError):
             second.declare(Level("application"))
         with pytest.raises(DuplicateRegionError):

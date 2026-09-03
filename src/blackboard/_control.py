@@ -1,16 +1,16 @@
 """The control component.
 
 A write made through the control component passes the application's
-admission rule before the board sequences it. The rule sees the proposed
-write with a read handle on the board and returns accept or a reasoned
-rejection. An admitted level write is sequenced and audited. An admitted
+admission rule before the board sequences it. The rule sees the proposed write with a
+read handle on the board and returns an acceptance or a reasoned rejection. An admitted
+level write is sequenced and audited. An admitted
 premise write may still fail with a conflict, which returns to the writer
 unaudited. A rejected write returns its reason to the writer, never reaches
 the board, and is audited without a sequence number.
 
 An admitted premise write also notifies the registered agents, each
-through its batch window, except the agent that wrote the change. Which
-agents hold an unacknowledged notification is tracked here.
+through its batch window, except the agent that wrote the change. The control component
+tracks which agents hold an unacknowledged notification.
 
 The run closes in exactly one of three states: settled, wall clock
 expired, or aborted. It closes on silence: every write, premise write,
@@ -25,8 +25,8 @@ deadlines are held in this process. The board is given, not owned, and it
 is the only part of a run that a second process can read.
 
 The rule runs without the control component's lock, so two writes judged
-at the same moment are both judged against the board as it was before
-either landed. A premise write closes that window with its expected
+at the same moment are both judged against the board as it was before the first of them
+landed. A premise write closes that window with its expected
 version; a level write does not, so a rule refusing duplicates bounds
 concurrent duplicates rather than preventing them.
 """
@@ -66,13 +66,13 @@ class BoardStore(Protocol):
     A store holds many boards. Every call names the board it acts on, so one
     connection to a database serves every board an application runs.
 
-    ``InMemoryStore`` and ``SqliteStore`` satisfy it, as does any adapter an
+    ``InMemoryStore`` and ``SqliteStore`` satisfy this protocol, as does any adapter an
     application writes against its own database. The control component names
     no concrete type, and holds every implementation to one conformance suite.
 
-    Content crosses this protocol as JSON. An implementation returns what
-    JSON carries, so a tuple written comes back a list, and content JSON
-    cannot carry raises ``TypeError`` before anything is stored.
+    Content crosses this protocol as JSON. An implementation returns what JSON carries,
+    so a tuple that is written comes back as a list, and content that JSON cannot carry
+    raises ``TypeError`` before anything is stored.
     """
 
     def declare(self, board_id: str, region: Level | Premise) -> None:
@@ -88,7 +88,7 @@ class BoardStore(Protocol):
     ) -> Written:
         """Adds one contribution to a level and returns where it landed.
 
-        ``idempotency_key`` names one write on one board. A key the store has
+        ``idempotency_key`` names one write on one board. A key that the store has
         already written answers with what that write produced, marked
         ``repeated``, and adds nothing. A key that named a different region
         raises ``IdempotencyKeyError``, because that is a mistake rather than
@@ -121,9 +121,8 @@ class BoardStore(Protocol):
         """Returns a level's contributions from the sequence bound, inclusive.
 
         ``limit`` caps how many come back. A caller continues from one past
-        the last sequence it received, which an offset could not do, because
-        an offset shifts when a concurrent write lands and a sequence number
-        does not.
+        the last sequence it received, which an offset could not do, because an offset
+        shifts when a concurrent write lands, and a sequence number does not.
         """
         ...
 
@@ -140,8 +139,8 @@ class BoardStore(Protocol):
     def delete(self, board_id: str) -> Deleted:
         """Removes one board's regions, record, premise values, and counter.
 
-        Everything or nothing: a caller that gets an answer got a board that
-        is gone. A board the store never held names nothing rather than
+        Delete removes everything or nothing: a caller that gets an answer got a board
+        that is gone. A board that the store never held names nothing rather than
         failing, so a delete that runs twice is safe.
 
         Nothing in the library calls this. Deleting is a retention decision
@@ -152,13 +151,13 @@ class BoardStore(Protocol):
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         """Returns the regions declared on one board, with their kinds.
 
-        A store records a region's name and its kind, and nothing else. A
-        premise comes back with the default batch window whatever window it
-        was declared with, because the window tells the control component
+        A store records a region's name and its kind, and nothing else. A premise comes
+        back with the default batch window, whatever window it was declared with,
+        because the window tells the control component
         when to notify and is no part of the record.
 
-        A board nobody declared a region on returns nothing rather than
-        refusing, because a board comes into being by being written to.
+        A board that nobody declared a region on returns nothing rather than refusing,
+        because a board comes into being by being written to.
         """
         ...
 
@@ -207,7 +206,7 @@ class ProposedPremiseWrite:
 
 
 ProposedWrite: TypeAlias = ProposedContribution | ProposedPremiseWrite
-"""A proposed write of either kind, as the admission rule receives it."""
+"""A proposed write, level or premise, as the admission rule receives it."""
 
 
 @dataclass(frozen=True)
@@ -230,8 +229,8 @@ class RejectionCause(Enum):
     """Why the control component refused a write.
 
     Every cause is a decision the run made about a write it understood. What
-    the application's own configuration settles, such as a region nobody
-    declared, raises instead.
+    the application's own configuration settles, such as a region nobody declared,
+    raises an error instead.
 
     ``ADMISSION``: the admission rule rejected it. ``NOT_PERMITTED``: the
     writing agent did not declare that level. ``RUN_CLOSED``: the run has
@@ -281,7 +280,7 @@ class Notification:
     """One notification: the range it covers and the regions that changed.
 
     It carries no values. The agent reads the board itself, over any range
-    and any region, not only the regions this names.
+    and any region, not only the regions this notification names.
     """
 
     notification_id: NotificationId
@@ -296,8 +295,8 @@ class Notification:
 class Agent:
     """An agent declaration: identity, delivery, and what it wants.
 
-    ``subscribes_to`` names the regions, of either kind, whose changes wake
-    this agent, and naming any excludes every region not named. Omitting it
+    ``subscribes_to`` names the regions, level or premise, whose changes wake
+    this agent, and naming any region excludes every region not named. Omitting it
     subscribes the agent to every premise and to no level, which is the
     common case: a premise holds something the work was given, which bears
     on any agent's work, while another agent's conclusion does not.
@@ -335,8 +334,8 @@ class DuplicateAgentError(BlackboardError):
     """One roster named the same agent twice.
 
     A roster is one list written at one moment, so a repeat in it is a
-    mistake. Registering a name again later is a returning agent rather than
-    a duplicate, and replaces that agent's declaration.
+    mistake. Registering a name again later names a returning agent rather than a
+    duplicate, and replaces that agent's declaration.
     """
 
 
@@ -384,8 +383,8 @@ TerminationPredicate: TypeAlias = Callable[["BoardReader"], TerminationDecision]
 class RunLimits:
     """The two limits on a run, both durations, both required.
 
-    Time is the only bound. A count of writes limits the cause of a
-    notification and a count of notifications limits the effect, and
+    Time is the only bound. A count of writes would limit the cause of a notification
+    and a count of notifications would limit the effect, and
     limiting the effect can leave a change that no agent hears while the run
     is still open, which ends the shared record without closing the run.
     """
@@ -534,8 +533,8 @@ class _BoundReader:
 def reader_for(store: BoardStore, board_id: str) -> BoardReader:
     """Returns a read handle over one board of a store, with no run behind it.
 
-    A read needs the record and not the run, so a process holding the store
-    can serve one for any board in it. Writing needs a ``Control``.
+    A read needs the record and not the run, so a process holding the store can serve a
+    read for any board in it. Writing needs a ``Control``.
     """
     return _BoundReader(store, board_id)
 
@@ -544,11 +543,11 @@ def reader_for(store: BoardStore, board_id: str) -> BoardReader:
 class AgentBoard(Protocol):
     """One board, as one agent sees it: what an agent body is written against.
 
-    ``BoardClient`` satisfies this over HTTP and ``Control.as_agent`` returns
-    it in process, so a body written once serves either deployment. Every
+    ``BoardClient`` satisfies this over HTTP and ``Control.as_agent`` returns one in
+    process, so a body written once serves both deployments. Every
     method omits the agent's own name, because the object already carries it.
 
-    Reads are the four ``BoardReader`` has. Writes are the three
+    Reads are the four operations that ``BoardReader`` has. Writes are the three that
     ``Control`` has, without the identity argument.
     """
 
@@ -720,11 +719,11 @@ class Control:
         """Returns this board as one agent sees it.
 
         The object carries the agent's name, so its methods are the ones
-        ``BoardClient`` has and an agent body written against ``AgentBoard``
-        runs either in this process or against a blackboard over HTTP.
+        ``BoardClient`` has and an agent body written against ``AgentBoard`` runs in
+        this process or against a blackboard over HTTP.
 
-        The agent need not be registered. Registering decides what wakes it;
-        this decides what it writes as.
+        The agent need not be registered. Registering decides what wakes it; this call
+        decides what it writes as.
         """
         return _AgentBoard(self, name)
 
@@ -759,8 +758,7 @@ class Control:
         what an agent that restarted or moved needs. Its cursor survives,
         because it has not forgotten what it acknowledged. Whatever
         notification it was still holding is discarded, and the one issued
-        here covers everything since that cursor. One notification says
-        what several would have said, because a notification carries no
+        here covers everything since that cursor, because a notification carries no
         values.
         """
         deliveries: list[_Delivery] = []
@@ -980,8 +978,9 @@ class Control:
         before that one is acknowledged with it, because the cursor is
         cumulative and answering the wider range answered the narrower ones.
 
-        An acknowledgment of a notification no longer outstanding changes
-        nothing; one naming a notification never issued to that agent raises.
+        An acknowledgment of a notification no longer outstanding changes nothing; an
+        acknowledgment that names a notification never issued to that agent raises an
+        error.
         """
         acknowledged = NotificationId(notification_id)
         with self._lock:

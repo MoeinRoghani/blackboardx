@@ -1,8 +1,8 @@
 # Serve a blackboard over HTTP
 
-Agents that run as their own services read and write over HTTP. The
-operations they need are the ones `Control` already has, so the library
-states which path carries each one and answers them; your service keeps its
+Agents that run as their own services read and write over HTTP. The operations
+they need are the operations `Control` already has, so the library states which
+path carries each operation and answers it; your service keeps its
 own HTTP server, its framework, and its authentication.
 
 `BoardService.handle` takes a method, a path, a decoded body, and the query
@@ -12,20 +12,21 @@ framework and opens no socket.
 ## Mounting it
 
 One `Control` serves one board, so the service holds the runs it is
-responsible for and `control_for` finds the one a request names.
+responsible for and `control_for` finds the run that a request names.
 
-Give it the store as well and a read is answered from the record when no run
-is held, so any replica answers a read for any board the store holds:
+Give it the store as well, and a read is answered from the record when no run
+is held, so any replica answers a read for any board that the store holds:
 
 ```python
 service = BoardService(control_for=runs.get, store=store, prefix="/v1")
 ```
 
-Writes still need the run, and answer 404 without one. A board the store never
-held answers 404 either way.
+Writes still need the run, and answer 404 without one. A board that the store
+never held answers 404 for reads and for writes alike.
 
-`blackboard.reader_for(store, board_id)` builds the same reader those reads
-are answered from, for a caller that wants one of its own without a run. It
+`blackboard.reader_for(store, board_id)` builds the same reader that those
+reads are answered from, for a caller that wants one of its own without a run.
+It
 has the four read operations and nothing else.
 
 `on_open` and `on_closed` on `create_model` and `attach_model` are how `runs`
@@ -49,8 +50,8 @@ model = create_model(
 comes from the call that opened the run.
 
 `on_open` runs before the first agent is woken, which matters because waking
-an agent runs its callback on this thread: without it, an agent that reads
-back through this service meets 404 for the board that is creating it.
+an agent runs its callback on this thread: without that ordering, an agent that
+reads back through this service meets 404 for the board that is being created.
 
 === "FastAPI"
 
@@ -116,8 +117,9 @@ back through this service meets 404 for the board that is creating it.
         return body, answer.status, dict(answer.headers)
     ```
 
-`handle` raises nothing you have to catch. A board this service does not
-hold, a region nobody declared, a body that will not decode, and a run that
+`handle` raises nothing you have to catch. A board that this service does not
+hold, a region that nobody declared, a body that will not decode, and a run
+that
 has closed all come back as a status and a body.
 
 ## The operations
@@ -132,21 +134,23 @@ has closed all come back as a status and a body.
 | `PUT` | `/boards/{board_id}/premises/{premise}` | The version the set produced |
 | `POST` | `/boards/{board_id}/acknowledgements` | Nothing |
 
-The paths above are `blackboard.wire.OPERATIONS`, and both halves build them
-from those objects rather than from a string of their own. Mount the prefix
-you gave `BoardService`; the rest of each path is the library's.
+The paths above are `blackboard.wire.OPERATIONS`, and the client and the
+service build them from those objects rather than from a string of their own.
+Mount the prefix that you gave `BoardService`; the rest of each path is the
+library's.
 
 The two reads that return a page take `limit` and `from_sequence` as query
 parameters. A read that names no `limit` answers with
 `blackboard.wire.DEFAULT_LIMIT` rows, which is 100. A `limit` above
-`blackboard.wire.MAX_LIMIT`, which is 1000, is capped at it silently. A page
+`blackboard.wire.MAX_LIMIT`, which is 1000, is capped at that maximum silently.
+A page
 says `has_more` when it stopped early, and the reader continues from one past
 the last sequence it received. A sequence number is the cursor because an
 offset shifts when a concurrent write lands.
 
 A read in process takes `limit=None` and means unbounded, because it is not
-paying for a page. A read over HTTP is a page whether or not the caller chose
-a size.
+paying for a page. A read over HTTP is a page, with or without a size from the
+caller.
 
 ## What a request body carries
 
@@ -156,8 +160,8 @@ a size.
 | `PUT .../premises/{premise}` | `SetPremiseRequest` | `writer`, `value`, `expected_version` |
 | `POST .../acknowledgements` | `AckRequest` | `agent`, `notification_id` |
 
-`content` and `value` are required because a body that carries neither would
-otherwise store `null`, and setting a premise to `null` wakes every
+`content` and `value` are required because a body without the one its operation
+takes would otherwise store `null`, and setting a premise to `null` wakes every
 subscriber to it.
 
 `WriteRequest.level` and `SetPremiseRequest.premise` are optional and are
@@ -179,7 +183,8 @@ receives a body that says what it is.
 | 410 | The run has closed and takes no more writes | `ErrorBody`, `run_closed` |
 | 422 | The control component refused the write | `RejectedBody`, whose `cause` is `admission` or `not_permitted` |
 
-Every 4xx here is an answer the blackboard decided rather than a fault in the
+Every 4xx here is an answer that the blackboard decided rather than a fault in
+the
 transfer, so repeating the request is not what resolves it. Only
 a 5xx and a failure to connect are worth another attempt.
 
@@ -188,14 +193,17 @@ branch on. `detail` is written for a person reading a log and changes between
 versions.
 
 409 carries two bodies. A premise write whose expected version is not the
-current one answers a `ConflictBody`, which names the version the premise now
-holds, and the caller reads the premise and decides again against it. A write
+current one answers a `ConflictBody`, which names the version that the premise
+now holds, and the caller reads the premise and decides again against it. A
+write
 whose idempotency key already named another region answers an `ErrorBody`
 naming `idempotency_key_reused`, and sending it again answers the same. A
-client tells the two apart by whether the body has an `error` key, which is
+client tells the two apart by the presence of an `error` key in the body, which
+is
 what `BoardClient` does.
 
-A region nobody declared is 404 `unknown_region`, and a level operation on a
+A region that nobody declared is 404 `unknown_region`, and a level operation on
+a
 premise, or a premise operation on a level, is 404 `wrong_region_kind`. The
 region names come from the application's own declarations rather than from
 anything this run decided, so a request naming one that does not exist is
@@ -208,8 +216,8 @@ whose `writes_to` does not name that level.
 ## Writing once
 
 A write body may carry an `idempotency_key`. The blackboard writes one key
-once: a key it has already written answers 200 with the first write's
-sequence and `repeated`, and adds nothing, where a first write answers 201. A
+once: a key that it has already written answers 200 with the first write's
+sequence and `repeated`, and adds nothing, whereas a first write answers 201. A
 key that already named another region is refused 409 with `error` set to
 `idempotency_key_reused`, and in process the same write raises
 `IdempotencyKeyError`.
@@ -228,7 +236,8 @@ against the path holds.
 
 ## Authentication
 
-The library has none. The service is behind your gateway, the gateway
+The library has no authentication. The service is behind your gateway, the
+gateway
 authenticates the caller, and each operation has a path and a method for a
 policy to be written against. A read-only agent is given the four `GET` paths
 and nothing else.
@@ -240,12 +249,13 @@ the route, before calling in, from whatever the gateway put on the request.
 
 `handle` matches the path a segment at a time and decodes each variable once,
 so an identifier holding a slash arrives whole as long as your framework
-hands over the path it received. Some frameworks decode the path first. A
-UUID travels through all of them unchanged, and is the identifier to use.
+hands over the path it received. Some frameworks decode the path first. A UUID
+travels through every framework unchanged, and is the identifier to use.
 
 ## Notifying the other way
 
 This page covers what an agent sends. [Notify agents over
-HTTP](notifying-agents.md) covers what the blackboard sends, which needs the
-`notifier` extra. `blackboard.server` needs none: it is in the base install
+HTTP](notifying-agents.md) covers what the blackboard sends, and that direction
+needs the `notifier` extra. `blackboard.server` needs no extra: it is in the
+base install
 and depends on nothing.

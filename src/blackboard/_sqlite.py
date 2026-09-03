@@ -3,11 +3,11 @@
 This is what a developer runs locally and what a test runs against when it
 wants the storage semantics a deployment has: one sequence across every
 region, and a premise write guarded by the version it expects to replace.
-Pointed at a file, a run's record survives the process that made it.
+Where the store is pointed at a file, a run's record survives the process that made it.
 
 One file holds many boards, each under its own identifier, as one server
-does. Moving from a file to a server changes the board that is constructed
-and nothing else.
+does. Moving from a file to a server changes the store that is constructed and nothing
+else.
 
 Content is stored as JSON, so a contribution must be serialisable. That is
 the same contract any adapter across a process boundary imposes, and meeting
@@ -92,8 +92,8 @@ class SqliteStore:
     nothing with the first, so it reads an empty board.
 
     One file holds many boards. Every call names the board it acts on, and
-    two boards under different identifiers share the file and see none of
-    each other's writes, including the sequence.
+    two boards under different identifiers share the file and see none of each other's
+    writes, sequence numbers included.
 
     The schema is created on construction, because SQLite has no server to
     migrate separately and the file is the application's own.

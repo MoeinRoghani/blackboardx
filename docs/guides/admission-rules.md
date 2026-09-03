@@ -1,6 +1,8 @@
 # Write an admission rule
 
-The rule is where the application refuses a write: one that fails its own schema, duplicates something already on the board, or adds nothing.
+The rule is where the application refuses a write: one that fails the
+application's schema, duplicates something already on the board, or adds
+nothing.
 
 ## The signature
 
@@ -13,7 +15,10 @@ def rule(proposed, reader):
     return Accept()  # or Reject("why")
 ```
 
-It runs on every proposed write the control component puts to it, of both kinds, before the board sequences anything. Supplying no rule accepts every one of them. [Where it does not apply](#where-it-does-not-apply) names the writes it is never asked about.
+It runs on every proposed write of both kinds that the control component puts
+to it, before the board sequences anything. With no rule supplied, every one of
+them is accepted. [Where it does not apply](#where-it-does-not-apply) names the
+writes it is never asked about.
 
 ## Telling the two kinds apart
 
@@ -46,11 +51,13 @@ def rule(proposed, reader):
     return Accept()
 ```
 
-The reason reaches the writing agent, so write it for whoever has to fix the caller.
+The reason reaches the writing agent, so write it for whoever has to fix the
+caller.
 
 ## Reading the board
 
-The rule receives a read handle, so it can refuse a write for what the board already holds rather than for the write alone.
+The rule receives a `BoardReader`, so it can refuse a write for what the board
+already holds rather than for the write alone.
 
 ```python
 def refuse_duplicates(proposed, reader):
@@ -63,29 +70,45 @@ def refuse_duplicates(proposed, reader):
 
 ## The check-then-act window
 
-The rule runs without the control component's lock, so two writes judged at the same moment both see the board as it was before either landed. A duplicate-refusing rule therefore bounds concurrent duplicates rather than preventing them.
+The rule runs without the control component's lock, so two writes judged at the
+same moment both see the board as it was before either write landed. A
+duplicate-refusing rule therefore bounds concurrent duplicates rather than
+preventing them.
 
-A premise write closes that window itself, because it names the version it expects to replace. A level write has no equivalent, so a rule that has to be exact rather than approximate needs a unique constraint in the database the board writes to.
+A premise write closes that window itself, because it names the version it
+expects to replace. A level write has no equivalent, so a rule that has to be
+exact rather than approximate needs a unique constraint in the store that the
+board writes to.
 
 ## Where it does not apply
 
 Some writes are settled before the rule is asked, so no rule sees them.
 
-A premise's opening value bypasses admission. It reaches the board and takes a sequence number like any other write, but it is the application's own input rather than a proposal from a writer, so there is nothing for the rule to judge.
+A premise's opening value bypasses admission. It reaches the board and takes a
+sequence number like any other write, but it is the application's own input
+rather than a proposal from a writer, so there is nothing for the rule to
+judge.
 
-A write naming a region nobody declared raises `UndeclaredRegionError`, and one naming a region declared as the other kind raises `RegionKindError`. Both raise before the rule runs, so a rule never has to check that the region it is judging exists.
+A write naming a region nobody declared raises `UndeclaredRegionError`, and one
+naming a region declared as the other region kind raises `RegionKindError`.
+Both raise before the rule runs, so a rule never has to check that the region
+it is judging exists.
 
-A write to a closed run comes back `Rejected` with the cause `RUN_CLOSED`, and a registered agent writing to a level its `writes_to` does not name comes back with the cause `NOT_PERMITTED`. Both are decided before the rule runs, and `ADMISSION` is the only cause a rule produces.
+A write to a closed run comes back `Rejected` with the cause `RUN_CLOSED`, and
+a write by a registered agent to a level that its `writes_to` does not name
+comes back with the cause `NOT_PERMITTED`. Both are decided before the rule
+runs, and `ADMISSION` is the only cause a rule produces.
 
 ## The names
 
-`AdmissionRule` is the type of the callable `create_model` takes: it receives a
+`AdmissionRule` is the type of the callable that `create_model` takes: it
+receives a
 `ProposedWrite` and a `BoardReader`, and answers `Accept` or `Reject`.
 
 `ProposedWrite` is `ProposedContribution | ProposedPremiseWrite`, so a rule that
 cares which kind it was given branches on `isinstance`. A contribution names a
-`level` and a premise write names a `premise` and the `expected_version` it
-means to replace, and both name the `writer`.
+`level`; a premise write names a `premise` and the `expected_version` it means
+to replace; and both name the `writer`.
 
 A rule never sees a write to a region nobody declared. That raises
 `UndeclaredRegionError` before the rule is reached, because the application
