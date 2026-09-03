@@ -1,11 +1,11 @@
-"""The reads and writes of ``AgentBoard``, as tools a model can call.
+"""The four reads and two writes of ``AgentBoard``, as tools a model can call.
 
 An agent decides what to write. Where that decision is an algorithm, the
 application calls the methods of ``AgentBoard`` itself and needs nothing here.
 Where the decision is a language model, the application cannot hand those
 methods to a model API, because such an API takes a schema for each thing it
 may call and answers with a request to call one by name. This module renders
-the same methods into that form and runs what comes back.
+those methods into that form and runs what comes back.
 
 The rendering is not a copy of the protocol, and the five differences are why
 it belongs here rather than in each application.
