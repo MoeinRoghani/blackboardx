@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 from datetime import timedelta
 from typing import Any
 
@@ -543,3 +544,39 @@ def test_the_same_loop_runs_against_a_board_reached_over_http() -> None:
 
     assert not model.told[0].is_error
     assert [c.content for c in control.reader.read_level("findings")] == ["a"]
+
+
+# The descriptions are interface, so they are held to the same rules
+
+
+def test_no_description_carries_a_construction_the_standard_forbids() -> None:
+    """A description acts at run time, so the writing standard binds it."""
+    forbidden = ("—", " whether", " neither")
+    for descriptor in tools.TOOLS:
+        prose = [descriptor.description] + [
+            spec.get("description", "")
+            for spec in descriptor.input_schema["properties"].values()
+        ]
+        for sentence in prose:
+            for banned in forbidden:
+                assert banned not in sentence, (descriptor.name, banned)
+
+
+def test_a_description_names_only_tools_that_exist() -> None:
+    """A renamed tool cannot leave another description pointing at nothing."""
+    named = set()
+    for descriptor in tools.TOOLS:
+        prose = descriptor.description + " ".join(
+            spec.get("description", "")
+            for spec in descriptor.input_schema["properties"].values()
+        )
+        named.update(re.findall(rf"{tools.TOOL_PREFIX}\w+", prose))
+    assert named
+    for name in named:
+        assert tools.TOOLS.owns(name), name
+
+
+def test_every_parameter_carries_a_description() -> None:
+    for descriptor in tools.TOOLS:
+        for parameter, spec in descriptor.input_schema["properties"].items():
+            assert spec.get("description"), (descriptor.name, parameter)
