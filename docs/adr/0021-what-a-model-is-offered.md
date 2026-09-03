@@ -10,16 +10,15 @@ Accepted.
 
 `AgentBoard` is what an agent body is written against, and an application whose agent decides its own work by an algorithm calls those methods. An application that puts a language model in the position of deciding cannot hand the methods over, because a model API takes a schema for each thing it may call and answers with a request to call one by name.
 
-These frameworks will derive such a schema from a function's signature, its type hints, and its docstring, and that is the path an application takes by default. Derivation over this surface produces a defective tool, in four ways.
+A framework around such an API will derive that schema from a function's signature, its type hints, and its docstring, and derivation is the path an application takes by default. Derivation over this surface produces a defective tool, in four ways.
 
-`content` and `value` are typed `object`, because a board carries any value JSON can. Derivation renders that as a property with no type and no description, which tells the model nothing about what belongs there. A written schema leaves the type open too, because the board does carry any value JSON can, and says so in the description.
+`content` and `value` are typed `object`, because a board carries any value JSON can. Derivation renders that as a property with no type and no description, which tells the model nothing about what belongs there. A written schema leaves the type open as well, and says in the description what belongs there.
 
 `idempotency_key` becomes a parameter the model fills in. A model that leaves it out loses the protection it exists for, and a model that invents a value gives one that is not guaranteed to be the same on a second attempt, which is the one thing an idempotency key must be.
 
 The docstrings are written for a reader of the API reference. "Proposes a contribution to a level, as this object's agent" is the sentence that page wants. It does not say when to call the tool, that the content is stored as JSON, or what a refusal means.
 
 The outcomes are values and exceptions. The model can act on none of them: it cannot read `Rejected` or `Conflict`, and `UndeclaredRegionError` never reaches it at all, because it ends the loop it runs inside.
-
 
 ## Decision
 
