@@ -91,9 +91,9 @@ fills that field from the identifier the model API gave the call, `tools.run`
 passes it as the write's idempotency key, and a second execution of the same
 call returns the first write rather than adding a second.
 
-```python
-{"sequence": 2}  # the first execution
-{"sequence": 2, "repeated": true}  # the same call, executed again
+```text
+{"sequence": 2}                     the first execution
+{"sequence": 2, "repeated": true}   the same call, executed again
 ```
 
 Against `langchain-core` 1.6.1, LangChain fills an injected field in a schema
@@ -107,7 +107,7 @@ execution writes again.
 
 `tools.run` answers a mistake the model can correct rather than raising it, so
 it reaches the model as the tool's result and the loop continues. An exception
-from a store that cannot be reached still travels out, and reaches LangChain
+from a store that cannot be reached is raised instead, and reaches LangChain
 rather than the model.
 
 ```text

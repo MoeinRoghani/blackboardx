@@ -159,7 +159,7 @@ now current, so the model reads the premise again and decides from the value
 that is now there.
 
 ```json
-{"conflict": {"current_version": 4, "reason": "the premise moved since ..."}}
+{"conflict": {"current_version": 4, "reason": "the premise moved since the version this call named. Read it again and decide from the value now there."}}
 ```
 
 `cause` is one of `admission`, `not_permitted` and `run_closed`, the three
