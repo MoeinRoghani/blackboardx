@@ -1,8 +1,8 @@
 # Use the board inside LangChain
 
 LangChain runs the loop around a model and calls the tools the model asks for.
-A board joins that loop as tools, which is what an agent whose expertise is a
-language model needs from this library: `blackboard.tools` supplies the
+The board's reads and writes join that loop as tools, which is what an agent
+whose expertise is a language model needs from this library: `blackboard.tools` supplies the
 schemas and runs the calls, and LangChain supplies everything around them.
 
 Nothing in this library imports LangChain, and installing this library does not
@@ -65,8 +65,8 @@ agent = create_agent(llm, board_tools + my_own_tools)
 
 ## What the model is shown
 
-Each tool offers the parameters of the method it calls, less the ones the
-projection withholds.
+Each tool offers the parameters of the method it calls, less the ones
+`blackboard.tools` withholds.
 
 | Tool | What the model may send |
 | --- | --- |
@@ -95,16 +95,19 @@ call returns the first write rather than adding a second.
 {"sequence": 2, "repeated": true}  # the same call, executed again
 ```
 
-LangChain fills an injected field only in a schema it derived from a Pydantic
-model, which is why `as_langchain_tool` builds one rather than passing
+Against `langchain-core` 1.6.1, LangChain fills an injected field in a schema
+it derived from a Pydantic model and not in a plain schema dictionary, which is
+why `as_langchain_tool` builds one rather than passing
 `descriptor.input_schema` as it stands. Passing the schema directly works and
 offers the model the same parameters; what it loses is the identifier, so each
 execution writes again.
 
 ## What the model is told when it is wrong
 
-`tools.run` answers rather than raising, so a mistake reaches the model as the
-tool's result and the loop continues.
+`tools.run` answers a mistake the model can correct rather than raising it, so
+it reaches the model as the tool's result and the loop continues. An exception
+from a store that cannot be reached still travels out, and reaches LangChain
+rather than the model.
 
 ```text
 no region is declared with the name 'finding'. This board holds the levels 'findings', 'signals' and the premises 'severity'.
@@ -117,8 +120,7 @@ outcome looks like.
 
 ## Offering a model less than everything
 
-Build from a subset, and the tools the model never sees are the ones it cannot
-call.
+Build from a subset, and the model is offered only those tools.
 
 ```python
 reads = [as_langchain_tool(board, d) for d in tools.TOOLS.read_only()]

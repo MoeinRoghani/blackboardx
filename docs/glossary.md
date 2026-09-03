@@ -13,7 +13,7 @@ in this table, and every page, docstring and identifier uses it in that sense.
 | **Application** | The system built on this library. It supplies the agents, the content, the region declarations, and the rules. |
 | **Agent** | A participant that reads the board, decides if it has anything to add, writes, and acknowledges. The creator names the agents a run starts with, and one that joins a run already under way registers itself. The library never creates one. |
 | **Skeletal** | Nii's term for a blackboard system that carries no domain knowledge, so an application is built on it by adding knowledge and control. |
-| **Tool** | One of the six reads and writes that `blackboard.tools` renders, in the form a language model API accepts: a name, a description, and a schema for what may be sent. A model answers with a request to call one, and the application runs it. `ToolDescriptor` in the code. |
+| **Tool** | One of the four reads or two of the writes of `AgentBoard`, in the form a language model API accepts: a name, a description, and a schema for what may be sent. Acknowledgment is not one. A model answers with a request to call one, and the application runs it. `ToolDescriptor` in the code. |
 
 ## The record
 

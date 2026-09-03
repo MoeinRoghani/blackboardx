@@ -2,7 +2,7 @@
 
 An agent decides its own work. Every other decision belongs here: who is notified, which writes are admitted, and when the run ends.
 
-How an agent reaches its decision is outside this component and outside the library. An agent that runs an algorithm and an agent that asks a language model reach the control component through the same calls, and it treats their writes alike. [Let a model decide](../guides/deciding-with-a-model.md) covers the second.
+How an agent reaches its decision is outside this component and outside the library. An agent that runs an algorithm and an agent that asks a language model reach the control component through the same calls, and it treats their writes alike. [Let a model decide](../guides/deciding-with-a-model.md) covers the agent that asks a language model.
 
 ## Admission
 

@@ -628,3 +628,30 @@ def test_the_region_list_is_cut_and_carries_no_sequence() -> None:
     assert body["omitted"] > 0
     assert len(body["regions"]) + body["omitted"] == 600
     assert "next_from_sequence" not in body
+
+
+def test_a_condition_no_tool_can_raise_is_not_caught() -> None:
+    """The answered list is what these six calls raise, and nothing besides."""
+    from blackboard._board import (
+        IdempotencyKeyError,
+        RegionKindError,
+        UndeclaredRegionError,
+        UnsetPremiseError,
+    )
+
+    assert set(tools._ANSWERABLE) == {
+        UndeclaredRegionError,
+        RegionKindError,
+        UnsetPremiseError,
+        IdempotencyKeyError,
+    }
+
+
+def test_a_premise_declared_without_a_value_says_so_rather_than_raising() -> None:
+    control = a_run()
+    control.declare(Premise("unset"))
+    result = tools.run(
+        control.as_agent("triage"), "blackboard_read_premise", {"premise": "unset"}
+    )
+    assert result.is_error
+    assert "unset" in result.content

@@ -1,4 +1,4 @@
-"""The agent surface as tools a model can call.
+"""The reads and writes of ``AgentBoard``, as tools a model can call.
 
 An agent decides what to write. Where that decision is an algorithm, the
 application calls the methods of ``AgentBoard`` itself and needs nothing here.
@@ -19,8 +19,10 @@ therefore writes once.
 
 An outcome the model can act on comes back as text it can read, because a model
 reads results and catches no exceptions. A rejected write and a premise whose
-version moved are values on the protocol already. A region the board does not
-hold is raised there and answered here, naming the regions the board does hold.
+version moved are values on the protocol already. Four conditions the protocol
+raises are answered here instead: a region the board does not hold, a name of
+the other kind, a premise with no value yet, and a key that already wrote to
+another region. The first two come back naming the regions the board holds.
 
 A read that answers with a list is bounded. A list too large for a model to
 hold is cut, and the result says how many entries it left out. A premise's
@@ -53,13 +55,7 @@ from blackboard._board import (
     UnsetPremiseError,
     Written,
 )
-from blackboard._control import (
-    AgentBoard,
-    PremiseError,
-    Rejected,
-    RunClosedError,
-    UnknownNotificationError,
-)
+from blackboard._control import AgentBoard, Rejected
 
 __all__ = [
     "MAX_RESULT_BYTES",
@@ -76,32 +72,36 @@ __all__ = [
     "run",
 ]
 
-#: Prefixed to every tool name. The board's tools are made to sit in a toolset
-#: the board does not own, so the prefix keeps them from colliding with the
-#: caller's own tools and marks which tools reach the board.
+#: Prefixed to every tool name. These tools sit in a toolset the caller owns,
+#: beside the caller's own, so the prefix keeps the two apart and marks which
+#: of them reach the board.
 TOOL_PREFIX = "blackboard_"
 
-#: The byte budget for a result that answers with a list. A list that would
-#: exceed it is cut, and the result says how many entries it left out. One entry
-#: is always kept, so a single entry larger than this comes back whole.
+#: The size a result that answers with a list is cut down to, in bytes of JSON.
+#: A cut result says how many entries it left out. One entry is always kept, so
+#: a single entry larger than this comes back whole.
 MAX_RESULT_BYTES = 16384
 
 
 class UnknownToolError(BlackboardError):
-    """A name that no descriptor in this toolset carries."""
+    """Raised when a call names a tool this toolset does not hold.
+
+    A caller offers its own tools beside these, and routes on ``ToolSet.owns``
+    so that its own names reach its own code rather than this one.
+    """
 
 
-#: What a call raises that the model itself can correct or must be told about.
-#: Everything else, a store that cannot be reached above all, is the caller's
-#: to handle and is left to travel.
+#: Every condition one of these six calls raises. Each is one the model itself
+#: can correct, so each is answered rather than left to reach the caller. A
+#: closed run and an unknown notification are absent because no tool here can
+#: raise them: a write to a closed run answers ``Rejected``, and acknowledgment
+#: is not a tool. Anything else, an unreachable store above all, is the
+#: caller's to handle and is left to propagate.
 _ANSWERABLE: tuple[type[BlackboardError], ...] = (
     UndeclaredRegionError,
     RegionKindError,
     UnsetPremiseError,
     IdempotencyKeyError,
-    UnknownNotificationError,
-    RunClosedError,
-    PremiseError,
 )
 
 
@@ -124,13 +124,13 @@ class ToolDescriptor:
     """One method of ``AgentBoard``, as a model API accepts it.
 
     ``method`` names the method this calls, and is what ties the schema to the
-    protocol: the parameters the schema offers, together with those
-    ``withholds`` names, are exactly that method's parameters, and a test holds
+    protocol. The parameters the schema offers, taken together with the ones
+    ``withholds`` lists, are exactly that method's parameters, and a test holds
     them to it.
 
-    ``withholds`` names the parameters deliberately absent from the schema.
-    ``from_call_id`` names those the caller's identifier for the model call
-    fills in, and every one of them is withheld.
+    ``withholds`` lists the parameters deliberately absent from the schema.
+    ``from_call_id`` lists the ones filled from the caller's identifier for the
+    model call, and each of those is withheld.
     """
 
     name: str
@@ -149,9 +149,9 @@ class ToolResult:
     ``content`` is what goes back to the model. ``is_error`` marks a call the
     model got wrong, which it can correct and send again; a write the run
     refused is not one of those, because the model asked correctly and the run
-    said no. ``value`` is what the board returned, for a caller that wants the
-    outcome rather than its rendering, and is ``None`` where nothing was
-    returned or the call did not reach the board.
+    said no. ``value`` is what the board returned, for a caller that wants that
+    value rather than the text rendered from it, and is ``None`` where the
+    call did not reach the board.
     """
 
     content: str
@@ -278,11 +278,11 @@ _DESCRIPTORS: tuple[ToolDescriptor, ...] = (
 
 
 class ToolSet(Sequence[ToolDescriptor]):
-    """Descriptors under unique names, rendered together and dispatched to.
+    """The descriptors a caller offers to a model, each under its own name.
 
     A caller offers a set to a model and runs what the model asks for against
-    a board. Selecting a subset answers with another set, so a caller that
-    offers a model reads alone dispatches through the same object it offered.
+    a board. Selecting a subset returns another set, so a caller that offers a
+    model only the reads runs those calls through the object it offered.
     """
 
     def __init__(self, descriptors: Iterable[ToolDescriptor]) -> None:
@@ -312,16 +312,19 @@ class ToolSet(Sequence[ToolDescriptor]):
         return f"ToolSet({', '.join(d.name for d in self._descriptors)})"
 
     def owns(self, name: str) -> bool:
-        """Says which tool calls belong to this set.
+        """Says if this set holds the tool that a call names.
 
-        A model answers with the name of a tool, and the caller's own tools
-        sit in the same offer, so this is what a caller asks before handing a
-        call to ``run``.
+        A model answers with the name of a tool, and the caller's own tools sit
+        in the same offer, so a caller asks this before handing a call to
+        ``run``.
         """
         return name in self._by_name
 
     def descriptor(self, name: str) -> ToolDescriptor:
-        """Returns the descriptor under this name, or raises."""
+        """Returns the descriptor under this name.
+
+        Raises ``UnknownToolError`` where this set holds no such name.
+        """
         found = self._by_name.get(name)
         if found is None:
             held = ", ".join(sorted(self._by_name)) or "no tools"
@@ -394,8 +397,9 @@ class ToolSet(Sequence[ToolDescriptor]):
 
         ``name`` and ``arguments`` are what the model API answered with, and
         ``call_id`` is that API's identifier for the call, which becomes the
-        write's idempotency key. A name this set does not hold raises, because
-        the caller's own tools are the caller's to route.
+        write's idempotency key. A name this set does not hold raises
+        ``UnknownToolError``, because the caller's own tools are the caller's
+        to route.
 
         Arguments are checked before the board is touched, so a malformed call
         changes nothing and comes back saying what was wrong with it.
@@ -424,17 +428,17 @@ TOOLS = ToolSet(_DESCRIPTORS)
 
 
 def definitions() -> list[dict[str, Any]]:
-    """Returns every tool in the shape the Model Context Protocol defines."""
+    """Returns the tools in the shape the Model Context Protocol defines."""
     return TOOLS.definitions()
 
 
 def for_anthropic() -> list[dict[str, Any]]:
-    """Returns every tool as the Anthropic Messages API takes them."""
+    """Returns the tools as the Anthropic Messages API takes them."""
     return TOOLS.for_anthropic()
 
 
 def for_openai() -> list[dict[str, Any]]:
-    """Returns every tool as the OpenAI chat completions API takes them."""
+    """Returns the tools as the OpenAI chat completions API takes them."""
     return TOOLS.for_openai()
 
 
@@ -494,10 +498,10 @@ def _complain(descriptor: ToolDescriptor, arguments: Mapping[str, Any]) -> str |
 
 
 def _fit(build: Callable[[int], dict[str, Any]], total: int) -> str:
-    """Serialises the largest prefix of a result that fits the byte budget.
+    """Serialises the largest prefix of a result that fits ``MAX_RESULT_BYTES``.
 
-    One entry is kept whatever its size, so the budget bounds how many entries
-    come back rather than the bytes exactly. A read that answered with nothing
+    One entry is kept whatever its size, so this bounds how many entries come
+    back rather than the bytes exactly. A read that answered with nothing
     would carry the sequence bound it was given, and a caller following that
     bound would ask for the same page for ever.
     """
@@ -596,7 +600,7 @@ def _regions_body(regions: list[Any], kept: int) -> dict[str, Any]:
 
 
 def _explain(board: AgentBoard, answered: BlackboardError) -> str:
-    """Renders a raised condition as what the model needs to correct it."""
+    """Renders an exception the board raised as what the model needs."""
     said = str(answered) or type(answered).__name__
     if isinstance(answered, (UndeclaredRegionError, RegionKindError)):
         held = _held(board)
@@ -606,7 +610,7 @@ def _explain(board: AgentBoard, answered: BlackboardError) -> str:
 
 
 def _held(board: AgentBoard) -> str:
-    """Names the regions the board holds, for a call that named one it does not."""
+    """Names the regions the board holds, for a call that named another."""
     try:
         regions = board.read_regions()
     except BlackboardError:  # pragma: no cover - a board that cannot be read

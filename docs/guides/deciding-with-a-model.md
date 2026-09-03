@@ -51,7 +51,8 @@ process and an agent reaching the board over HTTP.
 
 `outcome.content` is the text to hand back to the model. `outcome.is_error`
 marks a call the model got wrong and can correct. `outcome.value` is what the
-board returned, for code that wants the outcome rather than its rendering.
+board returned, for code that wants that value rather than the text rendered
+from it.
 
 A name this toolset does not hold raises `UnknownToolError`, because your own
 tools are yours to route. Ask first:
@@ -109,14 +110,14 @@ name you chose and has no way to name another.
 
 Two parameters the methods do take are withheld.
 
-`idempotency_key`, because `call_id` fills it. A model API gives every call it
+`idempotency_key` is withheld, because `call_id` fills it. A model API gives every call it
 asks for an identifier, and passing that identifier means a loop that sends
 one call twice writes once. The second answer carries `"repeated": true` and
 the same sequence number as the first. Leave `call_id` out and each call
 writes again, which is what omitting an idempotency key already means.
 
-`limit` on `blackboard_read_level` and `blackboard_read_board`, because the
-result is bounded here. A read that answers with a list is cut where its JSON
+`limit` is withheld from `blackboard_read_level` and `blackboard_read_board`,
+because the result is bounded here. A read that answers with a list is cut where its JSON
 would exceed `tools.MAX_RESULT_BYTES`, and carries `omitted` with the number of
 entries left out. Those two reads also carry `next_from_sequence`, which always
 moves past what came back, so a model that follows it reaches the end of a
@@ -126,8 +127,9 @@ half is a value the model cannot use.
 
 ## What comes back when the model gets it wrong
 
-Arguments are checked before the board is touched, so a malformed call changes
-nothing. What comes back says what was wrong with it, and `is_error` is true.
+A malformed call changes nothing. Two of these are caught before the board is
+reached and two are what the board answered, and in both cases what comes back
+says what was wrong and `is_error` is true.
 
 | The model sent | What it is told |
 | --- | --- |
@@ -137,8 +139,10 @@ nothing. What comes back says what was wrong with it, and `is_error` is true.
 | A premise where a level belongs | Which kind that name is |
 
 Naming the regions in the answer is what lets the model correct itself on the
-next turn rather than repeat the call. An argument the schema does not name is
-ignored rather than refused, because it changes nothing about the call made.
+next turn rather than repeat the call.
+
+An argument the schema does not name is ignored rather than refused, because it
+changes nothing about the call that is made.
 
 ## A refusal is not a mistake
 
@@ -161,25 +165,26 @@ that is now there.
 `cause` is one of `admission`, `not_permitted` and `run_closed`, the three
 members of `RejectionCause`.
 
-A store that cannot be reached is raised rather than answered, because no
-wording of it lets the model proceed. Those exceptions reach your loop, where
-retrying or stopping is a decision your code makes.
+An exception from a store that cannot be reached is left to reach your loop
+rather than answered, because no wording of it lets the model proceed. Retrying
+or stopping is then a decision your code makes.
 
 ## Offering a model less than everything
 
-`ToolSet` selects, and a subset renders and runs the same way.
+`ToolSet.select` and `ToolSet.read_only` return a smaller set, and that set
+renders and runs exactly as the full one does.
 
 ```python
 tools.TOOLS.read_only().for_anthropic()  # the four reads, no writes
 tools.TOOLS.select("blackboard_read_level", "blackboard_write").for_anthropic()
 ```
 
-A subset is what an agent whose job is to review rather than to contribute is
-offered. It is not a substitute for the run's own rules: what an agent may
-write is settled by its `writes_to` declaration and by the admission rule,
-which hold wherever the write came from.
+Offer a subset to an agent whose job is to review rather than to contribute.
+A subset is not a substitute for the run's own rules: what an agent may write
+is settled by its `writes_to` declaration and by the admission rule, which hold
+wherever the write came from.
 
-## OpenAI, and the shape both are rendered from
+## OpenAI, and the Model Context Protocol
 
 `for_openai` carries the same schemas under that API's key names.
 
