@@ -143,6 +143,25 @@ no sweep, and no age after which anything is deleted.
 board it is
 serving.
 
+## A tool schema does not name the board's regions
+
+`blackboard.tools` renders one set of schemas, and they are the same whatever
+board they are used against. `blackboard_write` takes a level as a string, and
+nothing in that schema says which levels the board holds, so a model learns
+them by calling `blackboard_read_regions` or by being told in the prompt it was
+given.
+
+A model that names a region the board does not hold is answered with the ones
+it does, so the correction costs a turn rather than ending the run.
+
+## The library calls no model API
+
+`blackboard.tools` renders schemas and runs the calls a model asked for. It
+sends nothing to a model, holds no conversation, and depends on no provider's
+package. The loop, the prompt, and the choice of model are the application's,
+and [Let a model decide](guides/deciding-with-a-model.md) shows the loop this
+library expects to sit inside.
+
 ## The conformance suite defines behaviour, not performance
 
 `blackboard.conformance` decides a store's correctness. It says nothing about
