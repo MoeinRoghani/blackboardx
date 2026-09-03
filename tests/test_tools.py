@@ -506,18 +506,15 @@ def test_a_call_the_toolset_does_not_own_is_left_to_the_caller() -> None:
     assert model.told == []
 
 
-def test_the_same_loop_runs_against_a_board_reached_over_http() -> None:
-    """`tools.run` takes the protocol, so the deployment does not reach it."""
-    pytest.importorskip("httpx")
-    from blackboard.agent import BoardClient
+def _serving(control: Control) -> Any:
+    """A transport that answers an agent's requests from this run."""
+    import httpx
+
     from blackboard.server import BoardService, Request
 
-    control = a_run()
     service = BoardService(lambda board_id: control)
 
     def handler(request: Any) -> Any:
-        import httpx
-
         answer = service.handle(
             Request(
                 method=request.method,
@@ -528,9 +525,19 @@ def test_the_same_loop_runs_against_a_board_reached_over_http() -> None:
         )
         return httpx.Response(answer.status, json=answer.body)
 
+    return handler
+
+
+def test_the_same_loop_runs_against_a_board_reached_over_http() -> None:
+    """`tools.run` takes the protocol, so the deployment does not reach it."""
+    pytest.importorskip("httpx")
+    from blackboard.agent import BoardClient
+
+    control = a_run()
+
     import httpx
 
-    transport = httpx.MockTransport(handler)
+    transport = httpx.MockTransport(_serving(control))
     model = ScriptedModel(
         [[("toolu_01", "blackboard_write", {"level": "findings", "content": "a"})]]
     )
@@ -544,6 +551,27 @@ def test_the_same_loop_runs_against_a_board_reached_over_http() -> None:
 
     assert not model.told[0].is_error
     assert [c.content for c in control.reader.read_level("findings")] == ["a"]
+
+
+def test_a_region_error_is_answered_over_http_as_it_is_in_process() -> None:
+    """The answered conditions hold for a board reached over the wire too."""
+    pytest.importorskip("httpx")
+    import httpx
+
+    from blackboard.agent import BoardClient
+
+    control = a_run()
+    with BoardClient(
+        base_url="http://blackboard.test",
+        board_id=BOARD,
+        agent="triage",
+        http_client=httpx.Client(transport=httpx.MockTransport(_serving(control))),
+    ) as board:
+        result = tools.run(board, "blackboard_read_level", {"level": "signal"})
+
+    assert result.is_error
+    assert "signal" in result.content
+    assert "findings" in result.content
 
 
 # The descriptions are interface, so they are held to the same rules
