@@ -55,6 +55,8 @@ A notification says the agent is out of date. The notification carries the seque
 
 An agent never receives a notification for a change it wrote.
 
+Every other agent subscribed to the changed region is notified, and nothing ranks them. Choosing which of several agents should run, the decision a blackboard scheduler makes, is not made here, and there is no priority anywhere in an agent's declaration. [The control problem](../index.md#the-control-problem-and-where-it-moved) covers why.
+
 ## What wakes an agent
 
 An agent declares what wakes it when it registers.
