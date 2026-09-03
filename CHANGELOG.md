@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.8.0...v0.9.0) (2026-09-03)
+
+
+### Features
+
+* **tools:** the agent surface as tools a model can call ([#204](https://github.com/MoeinRoghani/blackboardx/issues/204)) ([1a09ad2](https://github.com/MoeinRoghani/blackboardx/commit/1a09ad2e64f0277732546dbfba5daad4995451d5))
+
+
+### Documentation
+
+* place this library in the control-problem literature ([#206](https://github.com/MoeinRoghani/blackboardx/issues/206)) ([18a2b93](https://github.com/MoeinRoghani/blackboardx/commit/18a2b935b103748817e31c18fa89c18aee82697b))
+* write the prose the way the standards require ([#201](https://github.com/MoeinRoghani/blackboardx/issues/201)) ([eb4110f](https://github.com/MoeinRoghani/blackboardx/commit/eb4110fe9e5f4e4d65ad6596c961605ab2694284)), closes [#200](https://github.com/MoeinRoghani/blackboardx/issues/200)
+
 ## [0.8.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.7.0...v0.8.0) (2026-09-02)
 
 
