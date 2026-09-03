@@ -34,8 +34,8 @@ from blackboard import tools
 offered = tools.for_anthropic() + my_own_tools
 ```
 
-Nothing here calls a model API or depends on one. The list is data, and the
-call that carries it is yours to make.
+Nothing here calls a model API or depends on one, and what these return is a
+list of plain dictionaries.
 
 ## Running what comes back
 
