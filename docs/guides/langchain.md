@@ -20,13 +20,14 @@ from typing import Annotated, Any
 from langchain_core.tools import InjectedToolCallId, StructuredTool
 from pydantic import Field, create_model as pydantic_model
 
-from blackboard import tools
+from blackboard.tools import READ_LEVEL, READ_PREMISE, WRITE, ToolSet
 
 PYTHON_TYPE: dict[str | None, Any] = {"string": str, "integer": int}
 
 
 def as_langchain_tool(board, descriptor):
     """Builds the LangChain tool for one of this library's descriptors."""
+    one = ToolSet([descriptor])
     schema = descriptor.input_schema
     fields: dict[str, Any] = {}
     for name, spec in schema["properties"].items():
@@ -44,7 +45,7 @@ def as_langchain_tool(board, descriptor):
             for k, v in arguments.items()
             if k in schema["required"] or v is not None
         }
-        return tools.run(board, descriptor.name, given, call_id=call_id).content
+        return one.run(board, descriptor.name, given, call_id=call_id).content
 
     return StructuredTool(
         name=descriptor.name,
@@ -55,7 +56,8 @@ def as_langchain_tool(board, descriptor):
 
 
 board = model.control.as_agent("triage")
-board_tools = [as_langchain_tool(board, d) for d in tools.TOOLS]
+chosen = ToolSet([READ_LEVEL, READ_PREMISE, WRITE])
+board_tools = [as_langchain_tool(board, d) for d in chosen]
 ```
 
 `board_tools` goes wherever LangChain takes tools, beside your own.
@@ -77,6 +79,7 @@ Each tool offers the parameters of the method it calls, less the ones
 | `blackboard_read_board` | `from_sequence` |
 | `blackboard_write` | `level`, `content` |
 | `blackboard_set_premise` | `premise`, `value`, `expected_version` |
+| `blackboard_ack` | `notification_id` |
 
 The agent's name is absent because the `AgentBoard` you bound carries it, and
 no method takes it. `idempotency_key` is absent because the call identifier
@@ -87,7 +90,7 @@ injects it. `limit` is absent from the two paged reads because
 ## Why the call identifier is injected
 
 `InjectedToolCallId` is what makes a repeated tool call write once. LangChain
-fills that field from the identifier the model API gave the call, `tools.run`
+fills that field from the identifier the model API gave the call, `run`
 passes it as the write's idempotency key, and a second execution of the same
 call returns the first write rather than adding a second.
 
@@ -105,7 +108,7 @@ execution writes again.
 
 ## What the model is told when it is wrong
 
-`tools.run` answers a mistake the model can correct rather than raising it, so
+`ToolSet.run` answers a mistake the model can correct rather than raising it, so
 it reaches the model as the tool's result and the loop continues. An exception
 from a store that cannot be reached is raised instead, and reaches LangChain
 rather than the model.
@@ -121,10 +124,10 @@ outcome looks like.
 
 ## Offering a model less than everything
 
-Build from a subset, and the model is offered only those tools.
+Build from a smaller set, and the model is offered only those tools.
 
 ```python
-reads = [as_langchain_tool(board, d) for d in tools.TOOLS.read_only()]
+reads = [as_langchain_tool(board, d) for d in ToolSet([READ_LEVEL, READ_PREMISE])]
 ```
 
 What an agent may write is still settled by its `writes_to` declaration and by
@@ -132,8 +135,8 @@ the admission rule, which hold wherever a write came from.
 
 ## Acknowledging
 
-Acknowledgment is not among the tools, so acknowledge after LangChain's loop
-returns.
+The set above leaves `ACK` out, so acknowledge after LangChain's loop returns.
+Put `ACK` in the set instead, and the model decides when this agent is done.
 
 ```python
 result = agent.invoke({"messages": [("user", brief(notification))]})
@@ -147,11 +150,11 @@ takes the rendered schemas as they are, because LangChain converts a plain tool
 dictionary itself.
 
 ```python
-llm.bind_tools(tools.for_openai())
+llm.bind_tools(chosen.for_openai())
 ```
 
 That path offers the model the same tools and leaves you to run the calls with
-`tools.run`, which is [the loop the other guide
+`ToolSet.run`, which is [the loop the other guide
 shows](deciding-with-a-model.md#the-loop-once).
 
 ## Versions
