@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.9.0...v0.10.0) (2026-09-03)
+
+
+### Features
+
+* **tools:** the application composes the tool list ([#208](https://github.com/MoeinRoghani/blackboardx/issues/208)) ([39534c2](https://github.com/MoeinRoghani/blackboardx/commit/39534c218cd2071f450316aea54fad0cc401e23a))
+
 ## [0.9.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.8.0...v0.9.0) (2026-09-03)
 
 
