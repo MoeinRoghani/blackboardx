@@ -10,6 +10,8 @@ HEARSAY-II therefore gave its specialists a structure to work on rather than a w
 
 That structure is the blackboard. It holds partial answers, meaning pieces that settle nothing on their own and that combine into a result, and it holds them where every specialist can see them.
 
+Removing the calls left one decision behind. Several specialists can have something to add at the same moment, and HEARSAY-II ran them one at a time, so something had to choose. HEARSAY-II settled that in a scheduler, which ranked the specialists whose conditions the blackboard had met and picked among them. Testing a specialist was cheap and running one was expensive, so it paid to rank them all before running any.
+
 ## How the arrangement outlived the problem
 
 Later systems kept the arrangement and replaced the knowledge. HASP, at Stanford, interpreted sonar rather than speech, and its specialists knew about ocean acoustics rather than about phonemes. The arrangement carried over unchanged, which showed that what HEARSAY-II had contributed was separable from what it knew about speech.
@@ -52,6 +54,16 @@ Agents that share a record still need four questions answered before any of them
 | How an agent learns what the others found, when no agent calls another | It reads the board |
 | What the record holds when two agents write to one place at once | A level keeps both in order; a premise keeps one, guarded by a version |
 | How the group establishes that nothing further is coming | The run closes on silence, or on the wall-clock limit |
+
+## The control problem, and where it moved
+
+Choosing which of the specialists that could run does run next is the control problem, and it outlived HEARSAY-II. The systems after it kept asking how such a choice should be made, and Barbara Hayes-Roth's BB1 answered in 1985 by making control a blackboard problem of its own: a second blackboard, holding the system's reasoning about what to do next, worked on by knowledge sources of its own.
+
+A separate line of work kept the shared structure and moved the choice out of it. Victor Lesser and Daniel Corkill's Distributed Vehicle Monitoring Testbed, in 1983, put a blackboard system in each node of a network and had the nodes cooperate with no scheduler above them, and the work on cooperative distributed problem solving that followed took the same position. Linda, David Gelernter's coordination language, took it in another vocabulary. Its tuple space holds what processes put there and hands back what they ask for, and it decides nothing about which process runs.
+
+What settled which answer a system could afford was the cost of finding out what a specialist had to say. In HEARSAY-II that was the cost of running it, which is why a scheduler ranked cheap preconditions first. A node carrying a language model pays that cost itself: it reads the board and works out what it has to contribute, so a ranking above it has nothing left to add. That is the condition the distributed answer always needed and rarely had.
+
+`blackboardx` follows that second answer. Its control component decides which agents are told of a change, and it does not decide which of them runs: every agent subscribed to the region a write changed is notified, apart from the agent that made the write, and nothing ranks them. What to do about a notification is the agent's, and `blackboard.tools` is how an agent puts that decision to a language model.
 
 ## Where to start
 
