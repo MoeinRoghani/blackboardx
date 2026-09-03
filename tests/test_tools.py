@@ -580,3 +580,51 @@ def test_every_parameter_carries_a_description() -> None:
     for descriptor in tools.TOOLS:
         for parameter, spec in descriptor.input_schema["properties"].items():
             assert spec.get("description"), (descriptor.name, parameter)
+
+
+# A read always moves the cursor forward
+
+
+def test_one_entry_larger_than_the_budget_comes_back_whole() -> None:
+    """A cut that returned nothing would leave a model reading the same page."""
+    board = a_board()
+    board.write("signals", "x" * (tools.MAX_RESULT_BYTES * 2))
+    board.write("signals", "small")
+    result = tools.run(board, "blackboard_read_level", {"level": "signals"})
+    body = json.loads(result.content)
+    assert len(body["contributions"]) == 1
+    assert body["contributions"][0]["sequence"] == 2
+    assert body["next_from_sequence"] == 3
+    assert body["omitted"] == 1
+
+
+def test_a_read_that_cuts_never_answers_with_the_bound_it_was_given() -> None:
+    """Whatever the sizes, the next call asks for something later than this one."""
+    board = a_board()
+    for index in range(50):
+        board.write("signals", {"index": index, "padding": "y" * 900})
+    body = json.loads(
+        tools.run(board, "blackboard_read_level", {"level": "signals"}).content
+    )
+    assert body["omitted"] > 0
+    assert body["next_from_sequence"] > 0
+
+
+def test_a_premise_value_is_answered_whole() -> None:
+    """One value cut in half is a value the model cannot use."""
+    board = a_board(premises={"severity": "y" * (tools.MAX_RESULT_BYTES * 2)})
+    result = tools.run(board, "blackboard_read_premise", {"premise": "severity"})
+    assert not result.is_error
+    body = json.loads(result.content)
+    assert len(body["value"]) == tools.MAX_RESULT_BYTES * 2
+    assert "omitted" not in body
+
+
+def test_the_region_list_is_cut_and_carries_no_sequence() -> None:
+    """Regions have no position, so a cut list has nothing to continue from."""
+    many = [Level(f"level-{index:04d}") for index in range(600)]
+    board = a_board(regions=many, premises={})
+    body = json.loads(tools.run(board, "blackboard_read_regions", {}).content)
+    assert body["omitted"] > 0
+    assert len(body["regions"]) + body["omitted"] == 600
+    assert "next_from_sequence" not in body

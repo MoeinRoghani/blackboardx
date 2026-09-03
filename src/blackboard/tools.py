@@ -7,7 +7,7 @@ methods to a model API, because such an API takes a schema for each thing it
 may call and answers with a request to call one by name. This module renders
 the same methods into that form and runs what comes back.
 
-The rendering is not a copy of the protocol, and the four differences are why
+The rendering is not a copy of the protocol, and the five differences are why
 it belongs here rather than in each application.
 
 The agent's name is absent from every schema. ``AgentBoard`` carries it, so a
@@ -17,13 +17,15 @@ model cannot write under a name other than the one the caller bound.
 identifier the model API gives the call. A loop that sends a call twice
 therefore writes once.
 
-An outcome the model can act on comes back as text it can read. A rejected
-write, a premise whose version moved, and a region the board does not hold are
-each answered rather than raised, because a model reads results and cannot
-catch exceptions.
+An outcome the model can act on comes back as text it can read, because a model
+reads results and catches no exceptions. A rejected write and a premise whose
+version moved are values on the protocol already. A region the board does not
+hold is raised there and answered here, naming the regions the board does hold.
 
-A read is bounded. A result too large for a model to hold is cut, and says how
-many entries it left out.
+A read that answers with a list is bounded. A list too large for a model to
+hold is cut, and the result says how many entries it left out. A premise's
+value is answered whole, because one value cut in half is a value the model
+cannot use.
 
 Acknowledgment is not among the tools. Acknowledging says the agent has
 stopped working on a notification, and the caller running the loop is what
@@ -79,8 +81,9 @@ __all__ = [
 #: caller's own tools and marks which tools reach the board.
 TOOL_PREFIX = "blackboard_"
 
-#: The largest result this module hands back, in bytes of JSON. A read that
-#: would exceed it is cut, and the result says how many entries it left out.
+#: The byte budget for a result that answers with a list. A list that would
+#: exceed it is cut, and the result says how many entries it left out. One entry
+#: is always kept, so a single entry larger than this comes back whole.
 MAX_RESULT_BYTES = 16384
 
 
@@ -108,8 +111,8 @@ class ToolAnnotations:
 
     ``read_only`` is false for a tool that writes. ``idempotent`` says that
     running the same call twice leaves the board as running it once did, which
-    holds for every tool here because a write takes the call's identifier as
-    its idempotency key.
+    holds when the caller passes the model call's identifier, because a write
+    takes that identifier as its idempotency key.
     """
 
     read_only: bool
@@ -491,11 +494,18 @@ def _complain(descriptor: ToolDescriptor, arguments: Mapping[str, Any]) -> str |
 
 
 def _fit(build: Callable[[int], dict[str, Any]], total: int) -> str:
-    """Serialises the largest prefix of a result that fits the byte budget."""
+    """Serialises the largest prefix of a result that fits the byte budget.
+
+    One entry is kept whatever its size, so the budget bounds how many entries
+    come back rather than the bytes exactly. A read that answered with nothing
+    would carry the sequence bound it was given, and a caller following that
+    bound would ask for the same page for ever.
+    """
+    floor = 1 if total else 0
     kept = total
     while True:
         text = json.dumps(build(kept))
-        if len(text.encode()) <= MAX_RESULT_BYTES or kept == 0:
+        if len(text.encode()) <= MAX_RESULT_BYTES or kept <= floor:
             return text
         kept = kept - 1 if kept <= 4 else kept * 3 // 4
 

@@ -38,7 +38,11 @@ def as_langchain_tool(board, descriptor):
     fields["call_id"] = (Annotated[str, InjectedToolCallId], Field(None))
 
     def call(call_id: str, **arguments: Any) -> str:
-        given = {k: v for k, v in arguments.items() if v is not None}
+        given = {
+            k: v
+            for k, v in arguments.items()
+            if k in schema["required"] or v is not None
+        }
         return tools.run(board, descriptor.name, given, call_id=call_id).content
 
     return StructuredTool(
@@ -61,7 +65,8 @@ agent = create_agent(llm, board_tools + my_own_tools)
 
 ## What the model is shown
 
-Each tool offers the parameters of the method it calls, and nothing else.
+Each tool offers the parameters of the method it calls, less the ones the
+projection withholds.
 
 | Tool | What the model may send |
 | --- | --- |
@@ -72,9 +77,11 @@ Each tool offers the parameters of the method it calls, and nothing else.
 | `blackboard_write` | `level`, `content` |
 | `blackboard_set_premise` | `premise`, `value`, `expected_version` |
 
-The agent's name is absent because the `AgentBoard` you bound carries it.
-`idempotency_key` is absent because the call identifier fills it, and `call_id`
-is absent from what the model sees because LangChain injects it.
+The agent's name is absent because the `AgentBoard` you bound carries it, and
+no method takes it. `idempotency_key` is absent because the call identifier
+fills it, and `call_id` is absent from what the model sees because LangChain
+injects it. `limit` is absent from the two paged reads because
+`blackboard.tools` bounds the result itself.
 
 ## Why the call identifier is injected
 
@@ -99,9 +106,8 @@ execution writes again.
 `tools.run` answers rather than raising, so a mistake reaches the model as the
 tool's result and the loop continues.
 
-```
-no region is declared with the name 'finding'. This board holds the
-levels 'findings', 'signals' and the premises 'severity'.
+```text
+no region is declared with the name 'finding'. This board holds the levels 'findings', 'signals' and the premises 'severity'.
 ```
 
 A write the run refused arrives the same way, carrying the cause and the
@@ -147,5 +153,7 @@ shows](deciding-with-a-model.md#the-loop-once).
 
 ## Versions
 
-The code above was run against `langchain-core` 1.6.1. LangChain names its own
+`as_langchain_tool` was run against `langchain-core` 1.6.1, which is where
+`StructuredTool` and `InjectedToolCallId` live. `create_agent` comes from the
+`langchain` package rather than from `langchain-core`. LangChain names its own
 tool interfaces, and a later release may name them differently.

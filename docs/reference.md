@@ -11,7 +11,7 @@ change without a deprecation.
 | `blackboard.server` | Answering an agent's request, without a web framework | The blackboard |
 | `blackboard.delivery` | Sending notifications to agents over HTTP | The blackboard |
 | `blackboard.agent` | Reading and writing a board from an agent | The agent |
-| `blackboard.tools` | The agent's reads and writes as tools a language model can call | The agent |
+| `blackboard.tools` | The board's four reads and two writes, as tools a language model can call | The agent |
 | `blackboard.conformance` | The suite every store implementation is held to | Anyone writing a store |
 
 ## `blackboard`

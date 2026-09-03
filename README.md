@@ -14,7 +14,7 @@ The library also carries both halves of the conversation between a blackboard an
 
 An agent reads and writes through `AgentBoard`, which is the four reads and the three writes without the agent's own name. `Control.as_agent` returns an `AgentBoard` for an agent in the same process as the run, and `BoardClient` is one over HTTP, so an agent body is written once and deployed either way.
 
-What an agent knows is the application's to supply. An agent whose expertise is an algorithm calls those reads and writes itself. An agent whose expertise is a language model offers the same reads and writes to that model as tools, through `blackboard.tools`, and runs the calls the model asks for. The library sends nothing to a model and depends on no provider's package.
+What an agent knows is the application's to supply. An agent whose expertise is an algorithm calls those reads and writes itself. An agent whose expertise is a language model offers the board to that model as tools it may call, through `blackboard.tools`, and runs the calls the model asks for. The library sends nothing to a model and depends on no provider's package.
 
 The distribution name is `blackboardx`; the import name is `blackboard`. The documentation, including the API reference, is at <https://moeinroghani.github.io/blackboardx/>.
 

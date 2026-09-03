@@ -103,11 +103,11 @@ knows and the model does not, so acknowledgment is not among the tools.
 
 ## What the model is never asked for
 
-Three things the methods take are absent from every schema.
+The agent's name appears in no schema, and no method takes it either: the
+`AgentBoard` you bound carries it. A model offered these tools writes under the
+name you chose and has no way to name another.
 
-The agent's name, because the `AgentBoard` you bound carries it. A model
-offered these tools writes under the name you chose and has no way to name
-another.
+Two parameters the methods do take are withheld.
 
 `idempotency_key`, because `call_id` fills it. A model API gives every call it
 asks for an identifier, and passing that identifier means a loop that sends
@@ -115,10 +115,14 @@ one call twice writes once. The second answer carries `"repeated": true` and
 the same sequence number as the first. Leave `call_id` out and each call
 writes again, which is what omitting an idempotency key already means.
 
-`limit` on the two paged reads, because the result is bounded here. A read
-whose JSON would exceed `tools.MAX_RESULT_BYTES` is cut, and what comes back
-carries `omitted` with the number of entries left out and
-`next_from_sequence` for continuing past what it did return.
+`limit` on `blackboard_read_level` and `blackboard_read_board`, because the
+result is bounded here. A read that answers with a list is cut where its JSON
+would exceed `tools.MAX_RESULT_BYTES`, and carries `omitted` with the number of
+entries left out. Those two reads also carry `next_from_sequence`, which always
+moves past what came back, so a model that follows it reaches the end of a
+level. `blackboard_read_regions` is cut the same way and carries no sequence,
+having none. `blackboard_read_premise` answers whole, because one value cut in
+half is a value the model cannot use.
 
 ## What comes back when the model gets it wrong
 

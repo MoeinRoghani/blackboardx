@@ -22,7 +22,7 @@ H. Penny Nii set that separation out in a survey of blackboard systems published
 
 Everything belonging to a particular problem stays with the application: the agents, the content they write, the regions the board holds, and the rules the control component applies. The library never interprets a contribution, because interpreting one takes the expertise of the agent that produced it.
 
-That expertise is what Nii calls the knowledge a skeletal system is built on, and an application supplies it in whichever form it holds it. An agent whose expertise is an algorithm calls the reads and writes itself. An agent whose expertise is a language model offers the same reads and writes to that model as tools, through `blackboard.tools`, and runs what the model asks for. The board and the control component behave the same way under both, because a contribution is a contribution whatever produced it.
+That expertise is what Nii calls the knowledge a skeletal system is built on, and an application supplies it in whichever form it holds it. An agent whose expertise is an algorithm calls the reads and writes itself. An agent whose expertise is a language model offers the board to that model as tools it may call, through `blackboard.tools`, and runs what the model asks for. The board and the control component behave the same way under both, because a contribution is a contribution whatever produced it.
 
 The record outlives the run that wrote it, so a run is opened in one of two ways. `create_model` opens a board the store does not hold yet, and gives every declared premise its opening value. `attach_model` opens a run over a board the store already holds, and continues the sequence from where the record ends.
 
@@ -35,7 +35,7 @@ The library also carries both halves of the conversation between a blackboard an
 | `blackboard.server` | Answering an agent's request, without a web framework |
 | `blackboard.delivery` | Sending a notification to an agent, without the writer waiting |
 | `blackboard.agent` | Reading and writing a board from an agent |
-| `blackboard.tools` | The agent's reads and writes as tools a language model can call |
+| `blackboard.tools` | The board's four reads and two writes, as tools a language model can call |
 | `blackboard.conformance` | The suite a store of your own is held to |
 
 An agent reads and writes through `AgentBoard`, which is one board as one agent sees it: the four reads and the three writes, each without the agent's own name. `Control.as_agent` returns an `AgentBoard` for an agent running in the same process as the run, and `BoardClient` is one for an agent reaching the board over HTTP, so an agent body is written once and deployed either way.
