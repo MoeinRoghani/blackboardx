@@ -63,7 +63,7 @@ A separate line of work kept the shared structure and moved the choice out of it
 
 What settled which answer a system could afford was the cost of finding out what a specialist had to say. In HEARSAY-II that was the cost of running it, which is why a scheduler ranked cheap preconditions first. A node carrying a language model pays that cost itself: it reads the board and works out what it has to contribute, so a ranking above it has nothing left to add. That is the condition the distributed answer always needed and rarely had.
 
-`blackboardx` follows that second answer. Its control component decides which agents are told of a change, and it does not decide which of them runs: every agent subscribed to the region a write changed is notified, apart from the agent that made the write, and nothing ranks them. What to do about a notification is the agent's, and `blackboard.tools` is how an agent puts that decision to a language model.
+`blackboardx` follows that second answer. Its control component decides which agents are told of a change, and it does not decide which of them runs: every agent subscribed to the region a write changed is notified, apart from the agent that made the write, and nothing ranks them. The choice HEARSAY-II gave its scheduler is one this library never makes, and its configuration offers nowhere to make it. What an agent does about a notification is settled inside the agent, by an algorithm or by a language model the agent offers the board to.
 
 ## Where to start
 
