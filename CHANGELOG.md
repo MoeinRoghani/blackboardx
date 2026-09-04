@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.10.1...v0.11.0) (2026-09-04)
+
+
+### Features
+
+* **control:** a run is kept in a store, the way the record already is ([#218](https://github.com/MoeinRoghani/blackboardx/issues/218)) ([aa2dcb2](https://github.com/MoeinRoghani/blackboardx/commit/aa2dcb2049b0f10e14f08ca49572bcf340719e72)), closes [#217](https://github.com/MoeinRoghani/blackboardx/issues/217)
+
 ## [0.10.1](https://github.com/MoeinRoghani/blackboardx/compare/v0.10.0...v0.10.1) (2026-09-04)
 
 
