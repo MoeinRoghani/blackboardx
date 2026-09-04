@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.1](https://github.com/MoeinRoghani/blackboardx/compare/v0.10.0...v0.10.1) (2026-09-04)
+
+
+### Bug Fixes
+
+* **control:** a run does not close on an agent it has just woken ([#216](https://github.com/MoeinRoghani/blackboardx/issues/216)) ([563d520](https://github.com/MoeinRoghani/blackboardx/commit/563d5201609a9b6ef9229359ebfa1c142f5edad8)), closes [#212](https://github.com/MoeinRoghani/blackboardx/issues/212)
+
+
+### Documentation
+
+* how to choose the wall clock ([#211](https://github.com/MoeinRoghani/blackboardx/issues/211)) ([4787e2c](https://github.com/MoeinRoghani/blackboardx/commit/4787e2c928f48f93eccdc1465006a61cb4b0fa79)), closes [#210](https://github.com/MoeinRoghani/blackboardx/issues/210)
+* qualify what keeps a run from falling silent ([#215](https://github.com/MoeinRoghani/blackboardx/issues/215)) ([e68f745](https://github.com/MoeinRoghani/blackboardx/commit/e68f745acf6675511a3967c03ef5b5efb4578c54)), closes [#214](https://github.com/MoeinRoghani/blackboardx/issues/214)
+
 ## [0.10.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.9.0...v0.10.0) (2026-09-03)
 
 
