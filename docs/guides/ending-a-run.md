@@ -60,6 +60,10 @@ RunLimits(wall_clock=timedelta(seconds=100), idle=timedelta(seconds=30))
 # WallClockExpired(unfinished=frozenset({'a', 'b'}))
 ```
 
+A termination predicate does not help here. It is asked when the idle deadline
+passes, and in a run that never goes quiet that deadline never passes, so the
+predicate is never asked at all.
+
 Choose the wall clock by how long the work is allowed to take, and not from the
 idle limit. The two guard different failures. A run that closes while an agent
 is still thinking is the failure the idle limit is sized against; a run that
