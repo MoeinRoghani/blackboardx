@@ -263,3 +263,50 @@ class TestASweepClosesWhatNoProcessHolds:
 
         assert isinstance(first.outcome(), Settled)
         assert sweep(runs, now=datetime(2026, 1, 2, tzinfo=UTC)) == []
+
+
+class TestAnIdleTimerAsksTheStoreBeforeClosing:
+    def test_a_process_seeing_no_traffic_does_not_close_a_busy_run(
+        self, shared: tuple[InMemoryStore, InMemoryRunStore]
+    ) -> None:
+        """The other process is working; this one has heard nothing.
+
+        A write pushes the idle deadline in the store, and the process that
+        did not take it has a timer armed from whenever it last saw
+        something. Left to fire, that timer closes a run another process is
+        working, and the store cannot tell the difference because the close
+        is conditional on the run being open and it is.
+        """
+        here, there = Woken(), Woken()
+        quiet = ManualClock(datetime(2026, 1, 1, tzinfo=UTC))
+        busy = ManualClock(datetime(2026, 1, 1, tzinfo=UTC))
+        first = open_first(shared, here, busy)
+        second = open_second(shared, there, quiet)
+
+        # The busy process takes a write two minutes in, which pushes the
+        # deadline the store holds out to five minutes.
+        busy.advance(timedelta(minutes=2))
+        first.write("findings", {"cause": "a bad deploy"}, writer="git")
+
+        # The quiet process reaches its own three-minute deadline first.
+        quiet.advance(timedelta(minutes=3, seconds=1))
+
+        assert second.outcome() is None, "a quiet process closed a busy run"
+        assert first.outcome() is None
+
+    def test_the_quiet_process_closes_the_run_once_the_store_agrees(
+        self, shared: tuple[InMemoryStore, InMemoryRunStore]
+    ) -> None:
+        quiet = ManualClock(datetime(2026, 1, 1, tzinfo=UTC))
+        busy = ManualClock(datetime(2026, 1, 1, tzinfo=UTC))
+        first = open_first(shared, Woken(), busy)
+        second = open_second(shared, Woken(), quiet)
+        busy.advance(timedelta(minutes=2))
+        first.write("findings", {"cause": "a bad deploy"}, writer="git")
+
+        quiet.advance(timedelta(minutes=3, seconds=1))
+        assert second.outcome() is None
+        # Past the deadline the write pushed the store's to.
+        quiet.advance(timedelta(minutes=2, seconds=1))
+
+        assert isinstance(second.outcome(), Settled)
