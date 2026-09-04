@@ -45,30 +45,27 @@ the next deadline.
 
 ## The wall clock
 
-The wall clock closes the run whatever the predicate says, and it is the only
-limit that ends a run that never goes quiet.
+The wall clock closes the run whatever the predicate says, and it is what ends
+a run that never falls silent.
 
-A run goes quiet when nothing happens on it, and agents that answer each other
-never let that happen. A write by one wakes the other, whose write wakes the
-first, and each write pushes the idle deadline out again. Two agents that each
-take twenty seconds, under an idle limit of thirty, leave that deadline
-permanently out of reach.
+Agents that answer each other faster than the idle limit never let a run fall
+silent. Each write wakes the other agent, whose write pushes the deadline out
+again, and the deadline is never reached. Two agents answering each other every
+twenty seconds, under an idle limit of thirty, run until the wall clock passes
+and are both named unfinished.
 
 ```python
 RunLimits(wall_clock=timedelta(seconds=100), idle=timedelta(seconds=30))
-# five rounds of answering each other, then:
 # WallClockExpired(unfinished=frozenset({'a', 'b'}))
 ```
 
 A termination predicate does not help here. It is asked when the idle deadline
-passes, and in a run that never goes quiet that deadline never passes, so the
+passes, and in a run that never falls silent that deadline never passes, so the
 predicate is never asked at all.
 
-Choose the wall clock by how long the work is allowed to take, and not from the
-idle limit. The two guard different failures. A run that closes while an agent
-is still thinking is the failure the idle limit is sized against; a run that
-never closes at all is the failure the wall clock is sized against, and no
-value of the idle limit prevents it.
+Choose the wall clock by how long the work is allowed to take. An idle limit
+shorter than the gap between events would end such a run, and would end every
+slower run with it, which is the failure the idle limit is sized against.
 
 ## Closing by hand
 
