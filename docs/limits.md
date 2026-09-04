@@ -4,43 +4,41 @@ Every limit here is a limit of the library as it stands, checked against the
 code rather than remembered. Where something is designed and not built, this
 page says so and points at the design.
 
-## A run in one process ends with that process
+## A run lives in one process
 
-Where a run is kept is a choice, and the default keeps it in memory.
+The board is durable and the run is not.
 
 | Held where | What |
 | --- | --- |
-| The board store | Regions, contributions, premise values and versions, the sequence, idempotency keys |
-| The run store | The registered agents and their cursors, outstanding notifications, the notification numbering, the two deadlines, the outcome |
-| The process, in `Control` | The audit, and each agent's `notify` callable |
+| The database, through the store | Regions, contributions, premise values and versions, the sequence, idempotency keys |
+| The process, in `Control` | The registered agents, outstanding notifications, the audit, the idle and wall clock timers |
 | The process, in `HttpNotifier` | Notifications queued but not yet sent |
 
-With no run store named, `Control` keeps the run in an `InMemoryRunStore`, so
-a second replica holding its own `Control` for the same board knows no agent
+A second replica holding its own `Control` for the same board knows no agent
 that the first registered, owes no notification that the first dispatched, and
-measures silence from its own start. Losing the replica that holds the run ends
-that run: the record survives and the run does not.
+measures
+silence from its own start. Losing the replica that holds a run ends that run:
+the record survives and the run does not resume.
 
-That is the right default for a blackboard embedded in one process, and it is
-what an application deploying more than one replica has to change. Name a
-`RunStore` both replicas reach and both serve the same run: notifications are
-numbered from one counter, an agent acknowledges to whichever replica answers,
-and the run closes once with one outcome.
+So one board is served by one `Control` in one process at a time for
+**writing**. Scale by putting different boards on different replicas and
+routing writes by board identifier, not by putting more replicas behind one
+board.
 
-Reads need neither. Give `BoardService` the store and any replica answers a
-read for any board in it, with a run open or without one, because a read needs
-the record rather than the run. The audit is the one read that is not exempt:
-it lives in the process and no operation on the wire exposes it.
+Reads are exempt. Give `BoardService` the store and any replica answers a read
+for any board in it, with a run open or without one, because a read needs the
+record
+rather than the run. The audit is the one read that is not exempt: it lives
+in the process and no operation on the wire exposes it.
 
-`attach_model` opens a run over a board that already holds a record. With a run
-store it opens the run that is there, so the cursors, the outstanding
-notifications and the numbering are where the other process left them. Without
-one it opens a second run over the same record: everything the process held
-starts again, and work an agent had finished but not acknowledged is done twice
-unless its writes carry idempotency keys.
+A replacement replica opens a run over the record with `attach_model`, which
+carries the record and not the run: the registry, the outstanding
+notifications, the audit, the cursors and the notification identifiers all
+start again. Work that an agent had finished but not acknowledged is done twice
+unless the agent's writes carry idempotency keys.
 
-A run whose process stopped is closed by `sweep`, which any process holding the
-run store calls. The interval it is called on is how late such a run closes.
+[Running as a service](concepts/service.md) covers the deployment that follows
+from this. A run that resumes rather than restarts is designed and not built.
 
 ## A queued notification does not survive a restart
 
@@ -55,15 +53,11 @@ next one covers the range a lost one would have covered. It costs something
 when the lost one is the last, and the run then waits until its idle limit
 closes it.
 
-## The audit is unbounded, in memory, and what one process observed
+## The audit is unbounded and in memory
 
 `Control.read_audit` returns every event of the run, with no bound and no
 cursor. A long run holds every event in the process and hands back all of them
-at once. No store holds it, including a run store.
-
-Two processes serving one board therefore hold two audits, and each records the
-writes, dispatches and acknowledgments that reached it. Neither is the audit of
-the run.
+at once. Nothing writes the audit to the store.
 
 ## There is no authentication and no authorisation
 
