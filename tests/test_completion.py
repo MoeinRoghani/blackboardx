@@ -53,6 +53,15 @@ def declaration(name: str, notify: object) -> Agent:
     )
 
 
+def watching(name: str, notify: object) -> Agent:
+    """An agent woken by the level these tests write to."""
+    return Agent(
+        name=name,
+        notify=notify,  # type: ignore[arg-type]  # the callers pass a recorder
+        subscribes_to=["application"],
+    )
+
+
 def make_control(clock: ManualClock, **kwargs: object) -> Control:
     return Control(
         regions=[Level("application"), Premise("window")],
@@ -205,3 +214,60 @@ class TestAbortAndAfterClose:
         assert control.wait_closed(timeout=timedelta(0)) is None
         control.abort("stopped")
         assert control.wait_closed() == Aborted(reason="stopped")
+
+
+class TestANotificationPushesTheDeadline:
+    """A run that has just given an agent work does not close on that agent."""
+
+    def test_a_late_registration_does_not_close_on_the_agent_it_woke(self) -> None:
+        clock = ManualClock(start=START)
+        control = make_control(clock)
+        control.write("application", "work", writer="collector")
+        clock.advance(IDLE - timedelta(seconds=1))
+
+        recorder = Recorder()
+        control.register_agent(watching("late", recorder))
+        assert recorder.received, "registering handed the agent a notification"
+
+        clock.advance(timedelta(seconds=2))
+        assert control.outcome() is None
+
+    def test_the_deadline_runs_from_that_notification(self) -> None:
+        clock = ManualClock(start=START)
+        control = make_control(clock)
+        control.write("application", "work", writer="collector")
+        clock.advance(IDLE - timedelta(seconds=1))
+        control.register_agent(watching("late", Recorder()))
+
+        clock.advance(IDLE - timedelta(seconds=1))
+        assert control.outcome() is None
+        clock.advance(timedelta(seconds=2))
+        assert control.outcome() == Settled(unfinished=frozenset({"late"}))
+
+    def test_a_registration_that_hands_out_nothing_pushes_nothing(self) -> None:
+        """An agent given no work leaves the run as silent as it found it."""
+        clock = ManualClock(start=START)
+        control = make_control(clock)
+        control.write("application", "work", writer="collector")
+        clock.advance(IDLE - timedelta(seconds=1))
+
+        recorder = Recorder()
+        control.register_agent(
+            Agent(name="idle-one", notify=recorder, subscribes_to=[])
+        )
+        assert not recorder.received
+
+        clock.advance(timedelta(seconds=2))
+        assert control.outcome() == Settled(unfinished=frozenset())
+
+    def test_an_agent_coming_back_pushes_it_too(self) -> None:
+        clock = ManualClock(start=START)
+        control = make_control(clock)
+        recorder = Recorder()
+        control.register_agent(watching("ocp", recorder))
+        control.write("application", "work", writer="collector")
+        clock.advance(IDLE - timedelta(seconds=1))
+
+        control.register_agent(watching("ocp", Recorder()))
+        clock.advance(timedelta(seconds=2))
+        assert control.outcome() is None

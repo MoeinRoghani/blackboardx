@@ -1137,6 +1137,11 @@ class Control:
             regions=regions,
         )
         key = (state.declaration.name, notification_id)
+        # Handing an agent work is an event, so the run does not then close on
+        # the agent it just woke. A write already pushed the deadline out
+        # before reaching here; a registration pushed nothing, and a
+        # registration that hands out no notification never reaches here.
+        self._touch_idle_locked()
         self._issued.add(key)
         self._outstanding[key] = _Outstanding(to_sequence=self._last_sequence)
         self._audit.append(NotificationDispatched(at=now, notification=notification))

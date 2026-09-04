@@ -11,9 +11,14 @@ A run ends on silence when nothing has happened for the idle limit.
 RunLimits(wall_clock=timedelta(hours=1), idle=timedelta(minutes=10))
 ```
 
-A write to a level or a premise pushes the deadline out, and so does a
-registration or an acknowledgment. Reads do not, so an agent polling the board
-cannot hold a run open.
+A write to a level or a premise pushes the deadline out, and so do an
+acknowledgment and a notification reaching an agent. Reads do not, so an agent
+polling the board cannot hold a run open.
+
+Registering pushes the deadline out through the notification it hands the new
+agent, so a run does not close on an agent that has just joined. Registering an
+agent that subscribes to nothing the board holds pushes nothing, because that
+agent was given nothing to do.
 
 Choose the idle limit by how long an agent's slowest step takes. If it is
 shorter than that, a run closes while an agent is still thinking; if it is much
