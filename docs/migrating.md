@@ -3,6 +3,63 @@
 Every name that moved, what replaced it, and the release its old form stops
 working in.
 
+## 0.10 to 0.11
+
+Nothing that worked before stops working. A run is kept where it always was
+unless you say otherwise.
+
+### A run can be kept in a store
+
+`Control`, `create_model` and `attach_model` take `run_store`. With none, the
+run is held in this process and ends with it, which is what every release
+before this one did.
+
+```python
+# 0.10, and 0.11 with nothing changed
+model = create_model(
+    board_id=..., store=store, regions=[...], premises={...}, limits=limits
+)
+
+# 0.11, for a run more than one process serves
+model = create_model(
+    board_id=...,
+    store=store,
+    run_store=PostgresRunStore(pool),
+    regions=[...],
+    premises={...},
+    limits=limits,
+)
+```
+
+Every replica naming the same run store serves the same run: notifications are
+numbered from one counter, an agent acknowledges to whichever replica answers
+it, and the run closes once with one outcome. [Running as a
+service](concepts/service.md) covers what that changes about a deployment.
+
+| New | What it is |
+| --- | --- |
+| `RunStore` | The protocol, beside `BoardStore` |
+| `InMemoryRunStore` | The default, holding the run in this process |
+| `PostgresRunStore` | A run more than one process serves; needs the `postgres` extra |
+| `sweep` | Closes every run whose deadline has passed, from any process |
+| `RegisteredAgent`, `Dispatched`, `Acknowledged`, `Closure` | What a run store answers with |
+| `UnknownRunError` | A store asked about a board no run is open on |
+
+`PostgresRunStore.create_schema` creates three tables, and an application
+already calling `PostgresStore.create_schema` at startup calls this beside it.
+A database an earlier version wrote needs no migration: these tables are new
+and nothing moved into them.
+
+### An abort names the agents that had not finished
+
+`Control.abort` produced an `Aborted` whose `unfinished` was always empty,
+though `RunOutcome` states that every outcome names the agents holding an
+unacknowledged notification. It now names them, as `Settled` and
+`WallClockExpired` always did.
+
+A caller reading `unfinished` on an aborted run saw nothing and now sees the
+agents that were working when the run was aborted.
+
 ## 0.7 to 0.8
 
 Two things changed for anyone who wrote a store: a store holds many boards, and
