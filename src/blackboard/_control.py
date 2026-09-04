@@ -1250,6 +1250,8 @@ class Control:
         with self._lock:
             if self._outcome is not None or generation != self._idle_generation:
                 return
+            if self._still_busy_locked():
+                return
             predicate = self._termination_predicate
             if predicate is None:
                 self._close_locked(Settled(unfinished=self._unfinished_locked()))
@@ -1264,11 +1266,37 @@ class Control:
         with self._lock:
             if self._outcome is not None or generation != self._idle_generation:
                 return
+            if self._still_busy_locked():
+                return
             if decision is TerminationDecision.COMPLETE:
                 self._close_locked(Settled(unfinished=self._unfinished_locked()))
             else:
                 self._touch_idle_locked()
         self._tell_closed()
+
+    def _still_busy_locked(self) -> bool:
+        """Whether the run saw something this process did not, and re-arms if so.
+
+        Callers hold self._lock. Every event pushes the deadline the store
+        holds, and a process that took none of them has a timer armed from
+        whenever it last saw something. Left to fire, that timer closes a run
+        another process is working, and the store cannot refuse it: closing is
+        conditional on the run being open, and it is.
+
+        So the timer asks the store what the deadline now is, and arms itself
+        for that instead of closing.
+        """
+        _, idle_deadline = self._runs.deadlines(self._board_id)
+        now = self._clock.now()
+        if idle_deadline <= now:
+            return False
+        if self._idle_call is not None:
+            self._idle_call.cancel()
+        self._idle_generation += 1
+        self._idle_call = self._clock.call_at(
+            idle_deadline, partial(self._idle_passed, self._idle_generation)
+        )
+        return True
 
     def _check_completion(self) -> None:
         """Records that something happened, which pushes the idle deadline out.
