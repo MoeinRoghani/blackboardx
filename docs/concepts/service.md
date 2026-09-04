@@ -25,19 +25,36 @@ A store makes the **record** durable. It does not make the **run** durable, and 
 
 | Held where | What |
 | --- | --- |
-| The database, through the store | Regions, contributions, premise values and versions, the sequence, idempotency keys |
-| The process, in `Control` | The registered agents, their cursors, outstanding notifications, the notification identifiers, the audit, the idle and wall clock timers |
+| The board store | Regions, contributions, premise values and versions, the sequence, idempotency keys |
+| The run store | The registered agents and their cursors, outstanding notifications, the notification numbering, the two deadlines, the outcome |
+| The process, in `Control` | The audit, and each agent's `notify` callable |
 | The process, in `HttpNotifier` | Notifications queued but not yet sent |
 
-A `Control` lives in one process. A second replica holding its own `Control` for the same board knows no agent that the first replica registered, owes no notification that the first replica dispatched, and measures silence from its own start. Losing the replica that holds a board's `Control` ends that board's run: the record survives and the run does not resume.
+Where the run is kept decides how many replicas can serve one board.
 
-So one board is written through one `Control` in one process at a time. Writes are scaled by putting different boards on different replicas and routing by board identifier.
+With no run store named, `Control` keeps the run in this process. A second replica holding its own `Control` for the same board knows no agent that the first replica registered, owes no notification that the first replica dispatched, and measures silence from its own start. Losing the replica that holds a board's `Control` ends that board's run: the record survives and the run does not.
 
-Reads are not bound that way. `BoardService` takes the store as well as the registry, and answers the four `GET` operations from the record whenever the replica holds no run for the board, so any replica holding the store answers a read for any board in that store. A board that the store never held answers 404 in both cases, so a mistyped identifier is not answered with an empty board. The audit is the one read that stays with the run, because it lives in the process and no operation on the wire exposes it.
+Name a `RunStore` that every replica reaches and every replica serves the same run. Notifications are numbered from one counter, so no agent receives one identifier for two ranges. An agent acknowledges to whichever replica answered it, and the acknowledgment closes the notification whichever replica issued it. A run closes once, because closing is conditional on the run still being open, and a replica that did not close it reports the outcome of the replica that did. A request for any board can then be served by any replica, which is what an application behind one address with no affinity needs.
 
-Making the run itself durable, so that a replacement resumes rather than restarts, means putting the registry, the outstanding notifications, and the deadlines in the database alongside the record. That is not in the library today, and `docs/design/durable-runs.md` in the repository sets out what it would take.
+```python
+from blackboard import PostgresRunStore, PostgresStore, create_model
 
-A notification lost with the process usually costs nothing, since a notification carries no values and the next notification covers the range the lost one would have covered. A lost notification costs something when it is the last one, and the run then waits until its idle limit closes it.
+store = PostgresStore(pool)
+runs = PostgresRunStore(pool)
+
+model = create_model(
+    board_id=board_id,
+    store=store,
+    run_store=runs,
+    regions=[...],
+    premises={...},
+    limits=limits,
+)
+```
+
+Reads need neither. `BoardService` takes the store as well as the registry, and answers the four `GET` operations from the record whenever the replica holds no run for the board, so any replica holding the store answers a read for any board in that store. A board that the store never held answers 404 in both cases, so a mistyped identifier is not answered with an empty board. The audit is the one read that stays with the process, because it lives there and no operation on the wire exposes it.
+
+A notification lost with the process usually costs nothing, since a notification carries no values and the next notification covers the range the lost one would have covered. A lost notification costs something when it is the last one, and the run then waits until its idle limit closes it. With a run store the notification was recorded before it was sent, so what a process lost is the sending and not the record of what is owed.
 
 ## Holding the runs
 
@@ -83,6 +100,16 @@ model = attach_model(
 ```
 
 `regions` still names what the run expects and is checked against the record, so a replica pointed at the wrong identifier is refused rather than left to fail at its first write. A board that the store holds no regions for is refused, because attaching to nothing would build a run whose every write is rejected.
+
+Pass the run store here as well, and the replacement opens the run that is there rather than a second run over the same record: the cursors, the outstanding notifications and the numbering are where the replica that died left them, and the wall clock is the one that run started with.
+
+A run whose replica died and whose replacement never came is closed by `sweep`, which any replica holding the run store calls on whatever schedule the deployment chooses. The interval is how late such a run closes, and it bounds nothing else.
+
+```python
+from blackboard import sweep
+
+closed = sweep(runs, now=datetime.now(UTC))
+```
 
 | Carries over | Starts again |
 | --- | --- |

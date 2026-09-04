@@ -27,9 +27,11 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
 from psycopg.errors import UniqueViolation
+from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool as _PsycopgPool
 
 from blackboard._board import (
@@ -46,6 +48,13 @@ from blackboard._board import (
     UndeclaredRegionError,
     UnsetPremiseError,
     Written,
+)
+from blackboard._run import (
+    Acknowledged,
+    Closure,
+    Dispatched,
+    RegisteredAgent,
+    UnknownRunError,
 )
 from blackboard._schema import stamp_to_write
 
@@ -456,3 +465,320 @@ class PostgresStore:
             raise RegionKindError(
                 f"{name!r} names a level, and this operation takes a premise"
             )
+
+
+_RUN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS blackboard_runs (
+    board_id             TEXT PRIMARY KEY,
+    wall_deadline        TIMESTAMPTZ NOT NULL,
+    idle_deadline        TIMESTAMPTZ NOT NULL,
+    next_notification_id BIGINT      NOT NULL DEFAULT 1,
+    dispatched_through   BIGINT      NOT NULL DEFAULT 0,
+    outcome              TEXT,
+    unfinished           JSONB,
+    reason               TEXT        NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS blackboard_run_agents (
+    board_id      TEXT   NOT NULL
+        REFERENCES blackboard_runs(board_id) ON DELETE CASCADE,
+    name          TEXT   NOT NULL,
+    subscribes_to JSONB,
+    writes_to     JSONB,
+    read_through  BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (board_id, name)
+);
+CREATE TABLE IF NOT EXISTS blackboard_run_notifications (
+    board_id        TEXT    NOT NULL
+        REFERENCES blackboard_runs(board_id) ON DELETE CASCADE,
+    notification_id BIGINT  NOT NULL,
+    agent           TEXT    NOT NULL,
+    to_sequence     BIGINT  NOT NULL,
+    acknowledged    BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (board_id, notification_id)
+);
+CREATE INDEX IF NOT EXISTS blackboard_run_notifications_unanswered
+    ON blackboard_run_notifications (board_id, agent)
+    WHERE NOT acknowledged;
+CREATE INDEX IF NOT EXISTS blackboard_runs_by_idle
+    ON blackboard_runs (idle_deadline) WHERE outcome IS NULL;
+CREATE INDEX IF NOT EXISTS blackboard_runs_by_wall
+    ON blackboard_runs (wall_deadline) WHERE outcome IS NULL;
+"""
+
+
+def _declared(named: Any) -> Any:
+    """A declaration as a column holds it, keeping absent apart from empty.
+
+    Null is what a control component reads as the default: every premise and
+    no level, and every level writable. An empty array is an agent nothing
+    wakes and an agent that may write nowhere.
+    """
+    if named is None:
+        return None
+    return Jsonb(sorted(named))
+
+
+class PostgresRunStore:
+    """Keeps the run in Postgres. Satisfies ``RunStore``.
+
+    ``pool`` is the application's own connection pool, and this adapter does
+    not open it or close it. Every call names the board within the database,
+    so one pool serves every run an application holds.
+
+    Every method is one transaction, which is what makes two processes serving
+    one board safe. Numbering a notification takes the run's row lock, so two
+    processes issuing at the same moment take two numbers. Closing is
+    conditional on the run still being open, so two callers racing produce one
+    winner.
+
+    Requires the ``postgres`` extra::
+
+        pip install 'blackboardx[postgres]'
+
+    Call :meth:`create_schema` once against a database that has none, or run
+    the equivalent DDL from whatever migration tool the application uses.
+    """
+
+    def __init__(self, pool: ConnectionPool) -> None:
+        self._pool = pool
+
+    def create_schema(self) -> None:
+        """Creates the tables this adapter reads, if they are not there."""
+        with self._pool.connection() as connection:
+            connection.execute(_RUN_SCHEMA)
+
+    @contextmanager
+    def _open(self, board_id: str) -> Iterator[Any]:
+        """One transaction over a run that exists, or refuses naming it."""
+        with self._pool.connection() as connection, connection.transaction():
+            held = connection.execute(
+                "SELECT 1 FROM blackboard_runs WHERE board_id = %s", (board_id,)
+            ).fetchone()
+            if held is None:
+                raise UnknownRunError(f"no run is open on {board_id!r}")
+            yield connection
+
+    def open_run(
+        self, board_id: str, *, wall_deadline: datetime, idle_deadline: datetime
+    ) -> None:
+        with self._pool.connection() as connection, connection.transaction():
+            # A board that already holds an open run keeps its deadlines, so a
+            # second process attaching does not extend the wall clock the
+            # first one started.
+            connection.execute(
+                "INSERT INTO blackboard_runs "
+                "(board_id, wall_deadline, idle_deadline) VALUES (%s, %s, %s) "
+                "ON CONFLICT (board_id) DO NOTHING",
+                (board_id, wall_deadline, idle_deadline),
+            )
+
+    def register(
+        self,
+        board_id: str,
+        name: str,
+        subscribes_to: Any = None,
+        writes_to: Any = None,
+    ) -> RegisteredAgent:
+        with self._open(board_id) as connection:
+            row = connection.execute(
+                "INSERT INTO blackboard_run_agents "
+                "(board_id, name, subscribes_to, writes_to) VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT (board_id, name) DO UPDATE SET "
+                "subscribes_to = excluded.subscribes_to, "
+                "writes_to = excluded.writes_to "
+                "RETURNING name, subscribes_to, writes_to, read_through",
+                (board_id, name, _declared(subscribes_to), _declared(writes_to)),
+            ).fetchone()
+            assert row is not None  # the upsert always returns its row
+            return _agent_of(row)
+
+    def registered(self, board_id: str) -> list[RegisteredAgent]:
+        with self._open(board_id) as connection:
+            rows = connection.execute(
+                "SELECT name, subscribes_to, writes_to, read_through "
+                "FROM blackboard_run_agents WHERE board_id = %s ORDER BY name",
+                (board_id,),
+            ).fetchall()
+        return [_agent_of(row) for row in rows]
+
+    def registration(self, board_id: str, name: str) -> RegisteredAgent | None:
+        with self._open(board_id) as connection:
+            row = connection.execute(
+                "SELECT name, subscribes_to, writes_to, read_through "
+                "FROM blackboard_run_agents WHERE board_id = %s AND name = %s",
+                (board_id, name),
+            ).fetchone()
+        return None if row is None else _agent_of(row)
+
+    def issue(self, board_id: str, agent: str, to_sequence: int) -> int:
+        with self._open(board_id) as connection:
+            # The update takes the run's row lock and holds it to commit, so
+            # two processes issuing at once take two numbers rather than one.
+            row = connection.execute(
+                "UPDATE blackboard_runs SET next_notification_id = "
+                "next_notification_id + 1 WHERE board_id = %s "
+                "RETURNING next_notification_id - 1",
+                (board_id,),
+            ).fetchone()
+            assert row is not None  # the run exists; _open checked
+            notification_id = int(row[0])
+            connection.execute(
+                "INSERT INTO blackboard_run_notifications "
+                "(board_id, notification_id, agent, to_sequence) "
+                "VALUES (%s, %s, %s, %s)",
+                (board_id, notification_id, agent, to_sequence),
+            )
+            return notification_id
+
+    def acknowledge(
+        self, board_id: str, agent: str, notification_id: int
+    ) -> Acknowledged | None:
+        with self._open(board_id) as connection:
+            named = connection.execute(
+                "SELECT to_sequence, acknowledged FROM blackboard_run_notifications "
+                "WHERE board_id = %s AND notification_id = %s AND agent = %s "
+                "FOR UPDATE",
+                (board_id, notification_id, agent),
+            ).fetchone()
+            if named is None:
+                raise UnknownRunError(
+                    f"no notification {notification_id} was issued to {agent!r}"
+                )
+            if named[1]:
+                return None
+            through = int(named[0])
+            # The cursor is cumulative, so acknowledging this range
+            # acknowledges every range it already covers.
+            covered = connection.execute(
+                "UPDATE blackboard_run_notifications SET acknowledged = TRUE "
+                "WHERE board_id = %s AND agent = %s AND NOT acknowledged "
+                "AND to_sequence <= %s",
+                (board_id, agent, through),
+            ).rowcount
+            moved = connection.execute(
+                "UPDATE blackboard_run_agents SET read_through = GREATEST("
+                "read_through, %s) WHERE board_id = %s AND name = %s "
+                "RETURNING read_through",
+                (through, board_id, agent),
+            ).fetchone()
+            cursor = through if moved is None else int(moved[0])
+            return Acknowledged(cursor=cursor, covered=covered)
+
+    def outstanding(self, board_id: str) -> list[Dispatched]:
+        with self._open(board_id) as connection:
+            rows = connection.execute(
+                "SELECT notification_id, agent, to_sequence "
+                "FROM blackboard_run_notifications "
+                "WHERE board_id = %s AND NOT acknowledged ORDER BY notification_id",
+                (board_id,),
+            ).fetchall()
+        return [
+            Dispatched(
+                notification_id=int(r[0]), agent=str(r[1]), to_sequence=int(r[2])
+            )
+            for r in rows
+        ]
+
+    def forget(self, board_id: str, agent: str) -> None:
+        with self._open(board_id) as connection:
+            connection.execute(
+                "UPDATE blackboard_run_notifications SET acknowledged = TRUE "
+                "WHERE board_id = %s AND agent = %s AND NOT acknowledged",
+                (board_id, agent),
+            )
+
+    def dispatched_through(self, board_id: str) -> int:
+        with self._open(board_id) as connection:
+            row = connection.execute(
+                "SELECT dispatched_through FROM blackboard_runs WHERE board_id = %s",
+                (board_id,),
+            ).fetchone()
+        return 0 if row is None else int(row[0])
+
+    def note_dispatched(self, board_id: str, sequence: int) -> None:
+        with self._open(board_id) as connection:
+            # Only forward. What covers the gap after a process stopped
+            # compares this to the board's own head, so a lower number
+            # arriving late must not undo it.
+            connection.execute(
+                "UPDATE blackboard_runs SET dispatched_through = GREATEST("
+                "dispatched_through, %s) WHERE board_id = %s",
+                (sequence, board_id),
+            )
+
+    def push_idle(self, board_id: str, until: datetime) -> None:
+        with self._open(board_id) as connection:
+            connection.execute(
+                "UPDATE blackboard_runs SET idle_deadline = %s "
+                "WHERE board_id = %s AND outcome IS NULL",
+                (until, board_id),
+            )
+
+    def deadlines(self, board_id: str) -> tuple[datetime, datetime]:
+        with self._open(board_id) as connection:
+            row = connection.execute(
+                "SELECT wall_deadline, idle_deadline FROM blackboard_runs "
+                "WHERE board_id = %s",
+                (board_id,),
+            ).fetchone()
+            assert row is not None  # the run exists; _open checked
+            return row[0], row[1]
+
+    def close(
+        self,
+        board_id: str,
+        outcome: str,
+        unfinished: Any = (),
+        reason: str = "",
+    ) -> bool:
+        with self._open(board_id) as connection:
+            # Conditional on the run still being open, so a local timer and a
+            # sweep racing produce one winner and one outcome.
+            changed = connection.execute(
+                "UPDATE blackboard_runs SET outcome = %s, unfinished = %s, "
+                "reason = %s WHERE board_id = %s AND outcome IS NULL",
+                (outcome, Jsonb(sorted(unfinished)), reason, board_id),
+            ).rowcount
+        return bool(changed)
+
+    def closed_as(self, board_id: str) -> Closure | None:
+        with self._open(board_id) as connection:
+            row = connection.execute(
+                "SELECT outcome, unfinished, reason FROM blackboard_runs "
+                "WHERE board_id = %s",
+                (board_id,),
+            ).fetchone()
+        if row is None or row[0] is None:
+            return None
+        held = row[1] if isinstance(row[1], list) else []
+        return Closure(
+            outcome=str(row[0]),
+            unfinished=frozenset(str(name) for name in held),
+            reason=str(row[2]),
+        )
+
+    def expired(self, now: datetime, limit: int | None = None) -> list[str]:
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT board_id FROM blackboard_runs WHERE outcome IS NULL "
+                "AND (wall_deadline <= %s OR idle_deadline <= %s) "
+                "ORDER BY idle_deadline LIMIT %s",
+                (now, now, limit),
+            ).fetchall()
+        return [str(r[0]) for r in rows]
+
+    def delete(self, board_id: str) -> None:
+        with self._pool.connection() as connection, connection.transaction():
+            connection.execute(
+                "DELETE FROM blackboard_runs WHERE board_id = %s", (board_id,)
+            )
+
+
+def _agent_of(row: Any) -> RegisteredAgent:
+    """One registration as the store returns it."""
+    return RegisteredAgent(
+        name=str(row[0]),
+        subscribes_to=None if row[1] is None else frozenset(row[1]),
+        writes_to=None if row[2] is None else frozenset(row[2]),
+        cursor=int(row[3]),
+    )

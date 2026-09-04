@@ -67,17 +67,28 @@ from blackboard._control import (
     reader_for,
 )
 from blackboard._model import Model, attach_model, create_model
+from blackboard._run import (
+    Acknowledged,
+    Closure,
+    Dispatched,
+    InMemoryRunStore,
+    RegisteredAgent,
+    RunStore,
+    UnknownRunError,
+    sweep,
+)
 from blackboard._schema import SCHEMA_VERSION, SchemaVersionError
 from blackboard._sqlite import SqliteStore
 
 if TYPE_CHECKING:
     from blackboard._mongodb import MongoStore
-    from blackboard._postgres import PostgresStore
+    from blackboard._postgres import PostgresRunStore, PostgresStore
 
 __all__ = [
     "SCHEMA_VERSION",
     "Aborted",
     "Accept",
+    "Acknowledged",
     "AdmissionRule",
     "Agent",
     "AgentBoard",
@@ -87,13 +98,16 @@ __all__ = [
     "BoardReader",
     "BoardStore",
     "Clock",
+    "Closure",
     "Conflict",
     "Contribution",
     "Control",
     "Deleted",
+    "Dispatched",
     "DuplicateAgentError",
     "DuplicateRegionError",
     "IdempotencyKeyError",
+    "InMemoryRunStore",
     "InMemoryStore",
     "Level",
     "ManualClock",
@@ -103,6 +117,7 @@ __all__ = [
     "NotificationAcknowledged",
     "NotificationDispatched",
     "NotificationId",
+    "PostgresRunStore",
     "PostgresStore",
     "Premise",
     "PremiseError",
@@ -112,6 +127,7 @@ __all__ = [
     "ProposedPremiseWrite",
     "ProposedWrite",
     "RegionKindError",
+    "RegisteredAgent",
     "Reject",
     "Rejected",
     "RejectionCause",
@@ -119,6 +135,7 @@ __all__ = [
     "RunClosedError",
     "RunLimits",
     "RunOutcome",
+    "RunStore",
     "ScheduledCall",
     "SchemaVersionError",
     "Settled",
@@ -128,6 +145,7 @@ __all__ = [
     "TerminationPredicate",
     "UndeclaredRegionError",
     "UnknownNotificationError",
+    "UnknownRunError",
     "UnsetPremiseError",
     "WallClockExpired",
     "WriteAccepted",
@@ -136,11 +154,13 @@ __all__ = [
     "attach_model",
     "create_model",
     "reader_for",
+    "sweep",
 ]
 
 
 _EXTRAS = {
     "MongoStore": ("blackboard._mongodb", "mongodb"),
+    "PostgresRunStore": ("blackboard._postgres", "postgres"),
     "PostgresStore": ("blackboard._postgres", "postgres"),
 }
 
