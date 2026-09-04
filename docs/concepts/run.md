@@ -61,7 +61,7 @@ An agent body takes an `AgentBoard` instead and calls `board.ack(notification.no
 
 Acknowledging one notification acknowledges every notification to that agent whose range ends at or before the acknowledged notification's range. An agent that reads to the end of the board answers every range it was sent, by acknowledging the last one. Ranges are compared by where they end rather than by when they arrived, so acknowledging an earlier, narrower range leaves a later, wider one outstanding and the run keeps waiting for it.
 
-A notification the agent never received cannot be acknowledged by name. A callback that raises is contained, so the agent does not learn what that notification covered or its identifier. Without the rule that an acknowledgment covers every earlier range, that notification would hold the run open until the idle limit and name a working agent unfinished.
+A notification the agent never received cannot be acknowledged by name. A callback that raises is contained, so the agent does not learn what that notification covered or its identifier. Without the rule that an acknowledgment covers every earlier range, that notification would stay outstanding for the rest of the run and name a working agent unfinished.
 
 Acknowledging a notification that is no longer outstanding changes nothing. Acknowledging a notification that was never issued to that agent raises `UnknownNotificationError`.
 
@@ -74,6 +74,8 @@ A run does not close because nothing is outstanding at some instant. Agents are 
 | `Settled` | Nothing happened for the idle limit |
 | `WallClockExpired` | The wall clock limit passed |
 | `Aborted` | A caller closed the run |
+
+An unacknowledged notification does not hold a run open. A run closes on silence with acknowledgments outstanding, and names the agents that were holding one.
 
 `Settled` and `WallClockExpired` carry `unfinished`, naming the agents still holding an unacknowledged notification. Why a run ended and which agents failed to finish are separate facts, so a run settles normally even though one agent never returns. `Aborted` carries an empty `unfinished`, whatever was outstanding when the caller closed the run. [End a run](../guides/ending-a-run.md) covers what to do with the outcome.
 
