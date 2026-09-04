@@ -75,6 +75,8 @@ A run does not close because nothing is outstanding at some instant. Agents are 
 | `WallClockExpired` | The wall clock limit passed |
 | `Aborted` | A caller closed the run |
 
+An unacknowledged notification does not hold a run open. A run closes on silence with acknowledgments outstanding, and names the agents that were holding one.
+
 `Settled` and `WallClockExpired` carry `unfinished`, naming the agents still holding an unacknowledged notification. Why a run ended and which agents failed to finish are separate facts, so a run settles normally even though one agent never returns. `Aborted` carries an empty `unfinished`, whatever was outstanding when the caller closed the run. [End a run](../guides/ending-a-run.md) covers what to do with the outcome.
 
 ## Time is the only bound

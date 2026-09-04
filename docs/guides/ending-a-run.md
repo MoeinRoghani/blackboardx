@@ -43,10 +43,32 @@ The predicate runs without the control component's lock, so its decision is
 discarded if the board moved while it ran, and the predicate is asked again at
 the next deadline.
 
-## The wall clock, and closing by hand
+## The wall clock
 
-The wall clock closes the run whatever the predicate says. A caller may also
-close a run outright.
+The wall clock closes the run whatever the predicate says, and it is the only
+limit that ends a run that never goes quiet.
+
+A run goes quiet when nothing happens on it, and agents that answer each other
+never let that happen. A write by one wakes the other, whose write wakes the
+first, and each write pushes the idle deadline out again. Two agents that each
+take twenty seconds, under an idle limit of thirty, leave that deadline
+permanently out of reach.
+
+```python
+RunLimits(wall_clock=timedelta(seconds=100), idle=timedelta(seconds=30))
+# five rounds of answering each other, then:
+# WallClockExpired(unfinished=frozenset({'a', 'b'}))
+```
+
+Choose the wall clock by how long the work is allowed to take, and not from the
+idle limit. The two guard different failures. A run that closes while an agent
+is still thinking is the failure the idle limit is sized against; a run that
+never closes at all is the failure the wall clock is sized against, and no
+value of the idle limit prevents it.
+
+## Closing by hand
+
+A caller may close a run outright.
 
 ```python
 model.control.abort("the operator stopped the investigation")
