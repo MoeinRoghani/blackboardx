@@ -44,7 +44,6 @@ from blackboard._control import (
     RunOutcome,
     TerminationPredicate,
 )
-from blackboard._run import RunStore
 
 
 @dataclass(frozen=True)
@@ -77,7 +76,6 @@ def create_model(
     termination_predicate: TerminationPredicate | None = None,
     limits: RunLimits,
     clock: Clock | None = None,
-    run_store: RunStore | None = None,
     on_open: Callable[[Model], None] | None = None,
     on_closed: Callable[[RunOutcome], None] | None = None,
 ) -> Model:
@@ -88,15 +86,6 @@ def create_model(
     ``board_id`` names this board inside the store. The caller supplies it,
     because only the caller knows what identifies a run in its own system.
     The library never reads it.
-
-    ``run_store`` says where the run is kept: which agents are registered and
-    what each has read, which notifications are outstanding, how they are
-    numbered, and when the two deadlines fall. With none named the run is held
-    in this process and ends with it, which is what an application embedding a
-    blackboard in one process wants. Naming one is how an application asks for
-    a run that a second process can serve, and it is what ``attach_model``
-    needs to open a run another process opened rather than a second run over
-    the same record.
 
     ``store`` says where the record is kept and has no default, because a run
     whose record no second process can read is not a shared solution model.
@@ -140,7 +129,6 @@ def create_model(
         board_id=board_id,
         store=store,
         clock=clock if clock is not None else SystemClock(),
-        run_store=run_store,
         on_closed=on_closed,
     )
     model = Model(board_id=board_id, reader=control.reader, control=control)
@@ -175,7 +163,6 @@ def attach_model(
     termination_predicate: TerminationPredicate | None = None,
     limits: RunLimits,
     clock: Clock | None = None,
-    run_store: RunStore | None = None,
     on_open: Callable[[Model], None] | None = None,
     on_closed: Callable[[RunOutcome], None] | None = None,
 ) -> Model:
@@ -196,19 +183,13 @@ def attach_model(
 
     What the record holds carries over: the regions, the contributions, the
     premise values and their versions, the sequence, and the idempotency
-    keys.
+    keys. What the process held does not, because it died with it: the agent
+    registry, the outstanding notifications, the audit, every agent's cursor,
+    and the notification identifiers, which start again at one.
 
-    What else carries over depends on ``run_store``. With none, the run this
-    opens is a second run over the same record: the agent registry, the
-    outstanding notifications, every agent's cursor and the notification
-    identifiers all start again, and an agent registered against it is woken
-    covering everything on the board, which is what an agent that lost its own
-    memory of the run needs. With one, this opens the run that is already
-    there: the cursors, the outstanding notifications and the identifiers are
-    where the other process left them, and the wall clock is the one that run
-    started with rather than a new one.
-
-    The audit does not carry over either way. It is what one process observed.
+    So an agent registered against the attached run is woken as one joining a
+    run already under way, covering everything on the board, which is what an
+    agent that lost its own memory of the run needs.
     """
     declarations = list(regions)
     roster = list(agents or ())
@@ -223,7 +204,6 @@ def attach_model(
         store=store,
         clock=clock if clock is not None else SystemClock(),
         adopt=True,
-        run_store=run_store,
         on_closed=on_closed,
     )
     model = Model(board_id=board_id, reader=control.reader, control=control)

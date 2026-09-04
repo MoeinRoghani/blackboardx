@@ -58,7 +58,6 @@ from blackboard._board import (
     Written,
 )
 from blackboard._clock import Clock, ScheduledCall
-from blackboard._run import Closure, InMemoryRunStore, RunStore, UnknownRunError
 
 
 class BoardStore(Protocol):
@@ -473,22 +472,9 @@ class _AgentState:
     window_generation: int = 0
 
 
-#: The three states a run closes in, by the name the store records.
-_OUTCOMES: dict[str, Callable[[frozenset[str], str], RunOutcome]] = {
-    "Settled": lambda unfinished, reason: Settled(unfinished=unfinished),
-    "WallClockExpired": lambda unfinished, reason: WallClockExpired(
-        unfinished=unfinished
-    ),
-    "Aborted": lambda unfinished, reason: Aborted(reason=reason, unfinished=unfinished),
-}
-
-
-def _outcome_of(closure: Closure) -> RunOutcome:
-    """The outcome a store recorded, as the object a caller receives."""
-    build = _OUTCOMES.get(closure.outcome)
-    if build is None:  # pragma: no cover - a release added an outcome
-        return Aborted(reason=closure.outcome, unfinished=closure.unfinished)
-    return build(closure.unfinished, closure.reason)
+@dataclass
+class _Outstanding:
+    to_sequence: int
 
 
 def _subscribed(state: _AgentState, region: str, kind: _RegionKind) -> bool:
@@ -661,16 +647,10 @@ class _AgentBoard:
 class Control:
     """The control component's write path, over the board it is given.
 
-    Two stores stand behind it. ``store`` holds the record: the regions, the
-    contributions, and each premise's value. ``run_store`` holds the run: which
-    agents are registered and what each has read, which notifications are
-    outstanding, how they are numbered, when the two deadlines fall, and how
-    the run ended. With no run store named, the run is held in this process
-    and ends with it.
-
-    The audit is the one thing a run knows that is neither. It is what this
-    process observed, and a process that did not take a write did not observe
-    it.
+    The board holds the record and outlives this object where the board is
+    a database. Everything else a run knows, which agents registered, what
+    each is owed, the audit, and the two deadlines, is held here and ends
+    with the process.
     """
 
     def __init__(
@@ -685,14 +665,10 @@ class Control:
         clock: Clock,
         adopt: bool = False,
         on_closed: Callable[[RunOutcome], None] | None = None,
-        run_store: RunStore | None = None,
     ) -> None:
         resolved = limits
         self._board_id = board_id
         self._store: BoardStore = store
-        self._runs: RunStore = (
-            run_store if run_store is not None else InMemoryRunStore()
-        )
         self._reader = _BoundReader(store, board_id)
         self._clock = clock
         self._admission_rule = (
@@ -704,6 +680,9 @@ class Control:
         self._audit: list[AuditEvent] = []
         self._last_sequence = 0
         self._agents: dict[str, _AgentState] = {}
+        self._issued: set[tuple[str, NotificationId]] = set()
+        self._outstanding: dict[tuple[str, NotificationId], _Outstanding] = {}
+        self._next_notification_id = 1
         self._closing: list[RunOutcome] = []
         self._delivery_queue: deque[_Delivery] = deque()
         self._delivering = threading.local()
@@ -715,12 +694,6 @@ class Control:
         self._idle_call: ScheduledCall | None = None
         self._idle_generation = 0
         self._condition = threading.Condition(self._lock)
-        opened = clock.now()
-        self._runs.open_run(
-            board_id,
-            wall_deadline=opened + resolved.wall_clock,
-            idle_deadline=opened + resolved.idle,
-        )
         if adopt:
             # The record already holds these regions, so recording their
             # kinds is all that is left. The sequence continues from what the
@@ -814,12 +787,9 @@ class Control:
                 self._forget_outstanding_locked(agent.name)
                 if returning.window_call is not None:
                     returning.window_call.cancel()
-            # The store decides the cursor, because a returning agent may be
-            # returning to a process that never held it.
-            registered = self._runs.register(
-                self._board_id, agent.name, agent.subscribes_to, agent.writes_to
+            state = _AgentState(
+                declaration=agent, cursor=0 if returning is None else returning.cursor
             )
-            state = _AgentState(declaration=agent, cursor=registered.cursor)
             self._agents[agent.name] = state
             now = self._clock.now()
             for name, kind in self._kinds.items():
@@ -980,14 +950,9 @@ class Control:
             return list(self._audit)
 
     def abort(self, reason: str) -> None:
-        """Closes the run as aborted, naming the agents that had not finished.
-
-        A run already closed keeps its outcome.
-        """
+        """Closes the run as aborted. A run already closed keeps its outcome."""
         with self._lock:
-            self._close_locked(
-                Aborted(reason=reason, unfinished=self._unfinished_locked())
-            )
+            self._close_locked(Aborted(reason=reason))
         self._tell_closed()
 
     def outcome(self) -> RunOutcome | None:
@@ -1019,22 +984,28 @@ class Control:
         """
         acknowledged = NotificationId(notification_id)
         with self._lock:
-            # The cursor advances and every range it covers closes in one
-            # call, because two processes reach this at the same time and a
-            # control component's lock orders only the threads of one.
-            try:
-                answered = self._runs.acknowledge(
-                    self._board_id, agent, int(acknowledged)
-                )
-            except UnknownRunError as unknown:
+            key = (agent, acknowledged)
+            outstanding = self._outstanding.pop(key, None)
+            if outstanding is None:
+                if key in self._issued:
+                    return
                 raise UnknownNotificationError(
                     f"no notification {notification_id} was issued to {agent!r}"
-                ) from unknown
-            if answered is None:
-                return
-            state = self._agents.get(agent)
-            if state is not None:
-                state.cursor = max(state.cursor, answered.cursor)
+                )
+            state = self._agents[agent]
+            state.cursor = max(state.cursor, outstanding.to_sequence)
+            # The cursor is cumulative, so acknowledging this range
+            # acknowledges every range it already covers. Otherwise an agent
+            # that answered the newest of several overlapping notifications
+            # is named unfinished for work it did, and a notification whose
+            # delivery raised holds the run open for ever.
+            covered = [
+                held
+                for held, still in self._outstanding.items()
+                if held[0] == agent and still.to_sequence <= outstanding.to_sequence
+            ]
+            for held in covered:
+                del self._outstanding[held]
             self._audit.append(
                 NotificationAcknowledged(
                     at=self._clock.now(), agent=agent, notification_id=acknowledged
@@ -1155,19 +1126,8 @@ class Control:
             state.window_generation += 1
         regions = frozenset(state.pending)
         state.pending.clear()
-        # The store numbers it, so two processes issuing at the same moment
-        # take two numbers rather than one, and records it outstanding.
-        notification_id = NotificationId(
-            self._runs.issue(
-                self._board_id, state.declaration.name, self._last_sequence
-            )
-        )
-        # The cursor comes from the store rather than from this process,
-        # because the agent may have acknowledged to another one, and a
-        # notification from a stale cursor covers a range it already read.
-        standing = self._runs.registration(self._board_id, state.declaration.name)
-        if standing is not None:
-            state.cursor = max(state.cursor, standing.cursor)
+        notification_id = NotificationId(self._next_notification_id)
+        self._next_notification_id += 1
         notification = Notification(
             notification_id=notification_id,
             board_id=self._board_id,
@@ -1176,12 +1136,14 @@ class Control:
             to_sequence=self._last_sequence,
             regions=regions,
         )
+        key = (state.declaration.name, notification_id)
         # Handing an agent work is an event, so the run does not then close on
         # the agent it just woke. A write already pushed the deadline out
         # before reaching here; a registration pushed nothing, and a
         # registration that hands out no notification never reaches here.
         self._touch_idle_locked()
-        self._runs.note_dispatched(self._board_id, self._last_sequence)
+        self._issued.add(key)
+        self._outstanding[key] = _Outstanding(to_sequence=self._last_sequence)
         self._audit.append(NotificationDispatched(at=now, notification=notification))
         return (state.declaration.notify, notification)
 
@@ -1238,10 +1200,9 @@ class Control:
         if self._idle_call is not None:
             self._idle_call.cancel()
         self._idle_generation += 1
-        until = self._clock.now() + self._limits.idle
-        self._runs.push_idle(self._board_id, until)
         self._idle_call = self._clock.call_at(
-            until, partial(self._idle_passed, self._idle_generation)
+            self._clock.now() + self._limits.idle,
+            partial(self._idle_passed, self._idle_generation),
         )
 
     def _idle_passed(self, generation: int) -> None:
@@ -1249,8 +1210,6 @@ class Control:
         # generation identifies the armed deadline.
         with self._lock:
             if self._outcome is not None or generation != self._idle_generation:
-                return
-            if self._still_busy_locked():
                 return
             predicate = self._termination_predicate
             if predicate is None:
@@ -1266,37 +1225,11 @@ class Control:
         with self._lock:
             if self._outcome is not None or generation != self._idle_generation:
                 return
-            if self._still_busy_locked():
-                return
             if decision is TerminationDecision.COMPLETE:
                 self._close_locked(Settled(unfinished=self._unfinished_locked()))
             else:
                 self._touch_idle_locked()
         self._tell_closed()
-
-    def _still_busy_locked(self) -> bool:
-        """Whether the run saw something this process did not, and re-arms if so.
-
-        Callers hold self._lock. Every event pushes the deadline the store
-        holds, and a process that took none of them has a timer armed from
-        whenever it last saw something. Left to fire, that timer closes a run
-        another process is working, and the store cannot refuse it: closing is
-        conditional on the run being open, and it is.
-
-        So the timer asks the store what the deadline now is, and arms itself
-        for that instead of closing.
-        """
-        _, idle_deadline = self._runs.deadlines(self._board_id)
-        now = self._clock.now()
-        if idle_deadline <= now:
-            return False
-        if self._idle_call is not None:
-            self._idle_call.cancel()
-        self._idle_generation += 1
-        self._idle_call = self._clock.call_at(
-            idle_deadline, partial(self._idle_passed, self._idle_generation)
-        )
-        return True
 
     def _check_completion(self) -> None:
         """Records that something happened, which pushes the idle deadline out.
@@ -1315,11 +1248,6 @@ class Control:
         # admission rule, so a close or a competing writer can land between
         # them and sequencing. This re-check under the lock is what makes
         # the refusals race-free.
-        #
-        # The store is asked as well as this process, because the run may have
-        # closed in another one, and a write admitted here would then land on
-        # a board whose run had ended.
-        self._adopt_closed_locked()
         if self._outcome is not None:
             return self._reject_locked(
                 writer, region, RejectionCause.RUN_CLOSED, "the run has closed"
@@ -1333,50 +1261,18 @@ class Control:
         notification covering everything since its cursor, so nothing it
         was owed is lost by forgetting what the old process held.
         """
-        self._runs.forget(self._board_id, agent_name)
+        for key in [k for k in self._outstanding if k[0] == agent_name]:
+            del self._outstanding[key]
 
     def _unfinished_locked(self) -> frozenset[str]:
         # An agent has not finished when it still holds an unacknowledged
-        # notification. The store answers, because an agent notified by
-        # another process is unfinished here too.
-        return frozenset(held.agent for held in self._runs.outstanding(self._board_id))
+        # notification.
+        holding = {agent for agent, _ in self._outstanding}
+        return frozenset(holding)
 
     def _close_locked(self, outcome: RunOutcome) -> None:
         if self._outcome is not None:
             return
-        # The store decides which close counts. A local timer and a sweep in
-        # another process reach here at the same moment, and a run that ended
-        # twice with two outcomes is a run nothing can report.
-        won = self._runs.close(
-            self._board_id,
-            type(outcome).__name__,
-            getattr(outcome, "unfinished", frozenset()),
-            getattr(outcome, "reason", ""),
-        )
-        if not won:
-            held = self._runs.closed_as(self._board_id)
-            if held is not None:
-                outcome = _outcome_of(held)
-        self._record_closed_locked(outcome)
-
-    def _adopt_closed_locked(self) -> None:
-        """Takes on a closure another process recorded, if there is one.
-
-        Callers hold self._lock. The run ended somewhere else, so this
-        process learns of it by asking rather than by being told, and
-        everything a close does here still has to happen: the timers stop, the
-        pending sets empty, and the caller is told.
-        """
-        if self._outcome is not None:
-            return
-        held = self._runs.closed_as(self._board_id)
-        if held is None:
-            return
-        self._record_closed_locked(_outcome_of(held))
-
-    def _record_closed_locked(self, outcome: RunOutcome) -> None:
-        # Callers hold self._lock. What closing does in this process, once
-        # the store has said which outcome the run ended with.
         self._outcome = outcome
         if self._wall_call is not None:
             self._wall_call.cancel()
@@ -1391,6 +1287,7 @@ class Control:
                 state.window_due = None
                 state.window_generation += 1
             state.pending.clear()
+        self._outstanding.clear()
         self._audit.append(RunClosed(at=self._clock.now(), outcome=outcome))
         self._condition.notify_all()
         self._closing.append(outcome)
