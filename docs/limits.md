@@ -10,7 +10,7 @@ The record is durable and so is the run. What is not is the callback.
 
 | | What, and where it lives |
 | --- | --- |
-| **Run state** | Regions, contributions, premise values and versions, the sequence, idempotency keys, the run's two deadlines and its outcome, and how far each agent has been notified and has answered. All of it is in the store you chose, held in memory by `InMemoryStore` and in the database by `PostgresStore`, through one code path either way. None of it is split between the two. |
+| **Run state** | Regions, contributions, premise values and versions, the sequence, idempotency keys, the run's two deadlines and its outcome, and how far each agent has been notified and has answered. All of it is in the store you chose, held in memory by `InMemoryStore` and in the database by a deployment adapter, through one code path either way. None of it is split between the two. |
 | **Configuration** | The regions, the agent roster, the admission rule, the termination predicate, the limits and the clock. The application hands these to every process, and no store holds any of them. The audit belongs here too, and is deprecated. |
 | **In flight** | Notifications `HttpNotifier` has queued but not yet sent. |
 
@@ -37,18 +37,23 @@ deliver. A notification carries no values, so a repeat costs the wire
 nothing, but it costs an application whose callback does real work. Register
 one name in one place.
 
-## A queued notification does not survive a restart
+## A notification is sent at least once, and may be sent twice
 
-`HttpNotifier` holds its queue in memory. A process that stops loses whatever
-had not been sent. `close` waits up to `close_timeout` in total, then
-abandons what is left and reports each one through `on_failure` before it
-returns.
+The intent to notify is a row written in the same transaction as the
+contribution, so a process that commits a write and stops before delivering
+has not lost it. `Control.relay` sends what is unsent for the agents that
+process holds, and marks a row only after the send returns.
 
-That loss usually costs nothing, because a notification carries no values and
-the
-next one covers the range a lost one would have covered. It costs something
-when the lost one is the last, and the run then waits until its idle limit
-closes it.
+Marking after sending rather than before is what makes delivery at least
+once. A process that sends and stops before marking sends again, so a
+notification may arrive twice. That costs nothing: a notification carries no
+values, the agent reads the board either way, and cumulative acknowledgment
+absorbs the extra identifier.
+
+`HttpNotifier` still holds its own queue in memory, and `close` waits up to
+`close_timeout` before abandoning what is left and reporting each one through
+`on_failure`. What changed is that abandoning it no longer loses the work: the
+row is still on the record and the next relay pass sends it.
 
 ## The audit is deprecated, and unbounded until it goes
 
@@ -190,11 +195,9 @@ hold. Those are yours to measure against your database.
 
 ## What is designed and not built
 
-The transactional outbox. A contribution and the intent to notify are not yet
-written in one transaction, so a process that commits a write and stops
-before delivering loses the notification, which is the limit the section on a
-queued notification describes. The design is the standard one: the intent is
-a row written with the contribution, the writing process sends immediately
-after commit, and a relay picks up whatever the fast path never completed.
+Nothing. Every part of the design in the repository's plan is built: the run's
+deadlines and outcome, how far each agent has been notified and has answered,
+the sweep that closes what nobody is watching, and the outbox that keeps a
+notification a process lost.
 
 

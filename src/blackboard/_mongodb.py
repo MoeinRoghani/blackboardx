@@ -582,8 +582,8 @@ class MongoStore:
 
     def mark_sent(self, board_id: str, agent: str, *, through: int) -> None:
         self._checked()
-        self._database[_OUTBOX].delete_one(
-            {"_id": f"{board_id}\u0000{agent}\u0000{through}"}
+        self._database[_OUTBOX].delete_many(
+            {"board_id": board_id, "agent": agent, "through": {"$lte": through}}
         )
 
     def read_agents(self, board_id: str) -> list[AgentProgress]:

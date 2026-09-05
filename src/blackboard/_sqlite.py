@@ -506,7 +506,7 @@ class SqliteStore:
     def mark_sent(self, board_id: str, agent: str, *, through: int) -> None:
         with self._lock, self._connection:
             self._connection.execute(
-                "DELETE FROM outbox WHERE board_id = ? AND agent = ? AND through = ?",
+                "DELETE FROM outbox WHERE board_id = ? AND agent = ? AND through <= ?",
                 (board_id, agent, through),
             )
 

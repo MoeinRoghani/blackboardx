@@ -581,7 +581,7 @@ class InMemoryStore:
             pending = board.outbox.get(agent)
             if pending is None:
                 return
-            pending.discard(through)
+            pending -= {n for n in pending if n <= through}
             if not pending:
                 del board.outbox[agent]
 

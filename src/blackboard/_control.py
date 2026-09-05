@@ -236,12 +236,17 @@ class BoardStore(Protocol):
         ...
 
     def mark_sent(self, board_id: str, agent: str, *, through: int) -> None:
-        """Records that this notification was sent, so nothing sends it again.
+        """Records that this agent was sent everything through ``through``.
 
-        A row already marked, or one that never existed, changes nothing.
-        Marking after sending rather than before is what makes delivery at
-        least once: a process that sends and stops before marking sends
-        again, and a repeat costs nothing.
+        Removes every row for this agent on this board at or below that
+        sequence, because a notification covers a range and sending it
+        answers every row inside it. That is the same cumulative rule
+        acknowledgment follows.
+
+        A row that never existed changes nothing. Marking after sending
+        rather than before is what makes delivery at least once: a process
+        that sends and stops before marking sends again, and a repeat costs
+        nothing.
         """
         ...
 
@@ -1052,7 +1057,12 @@ class Control:
                     # A key naming two regions is the caller's mistake, so it
                     # raises here as it does in the store. ADR 0016.
                     result = self._store.append(
-                        self._board_id, level, content, idempotency_key, writer=writer
+                        self._board_id,
+                        level,
+                        content,
+                        idempotency_key,
+                        writer=writer,
+                        notify=self._who_hears(level, writer),
                     )
                     if result.repeated:
                         # Nothing reached the board, so nothing about the run
@@ -1115,6 +1125,7 @@ class Control:
                         expected_version,
                         idempotency_key,
                         writer=writer,
+                        notify=self._who_hears(premise, writer),
                     )
                     if isinstance(result, Written) and result.repeated:
                         return result
@@ -1216,6 +1227,53 @@ class Control:
             )
         self._check_completion()
 
+    def relay(self) -> list[str]:
+        """Sends what a write recorded and nothing has sent, and names them.
+
+        A process that took a write and stopped before delivering left the
+        intent on the record. This sends it. Only rows for agents registered
+        here are touched, because a process can reach no other agent.
+
+        A send that raises leaves the row for the next pass, so nothing is
+        marked that was not sent. Call it on whatever schedule suits the
+        deployment, beside :func:`close_expired`.
+        """
+        with self._lock:
+            if self._outcome is not None or not self._agents:
+                return []
+            owed = sorted(
+                {
+                    row.agent
+                    for row in self._store.unsent(_TAIL)
+                    if row.board_id == self._board_id and row.agent in self._agents
+                }
+            )
+            if not owed:
+                return []
+            run = self._store.read_run(self._board_id)
+            if run is None:
+                return []
+            # The row says an agent is owed something and not which regions.
+            # The record says which: everything since that agent's answer,
+            # filtered by what it subscribes to. So a resent notification
+            # names exactly what a first one would have named.
+            self._take_tail_locked(run, only=set(owed))
+            now = self._clock.now()
+            deliveries: list[_Delivery] = []
+            for name in owed:
+                delivery = self._evaluate_dispatch_locked(self._agents[name], now)
+                if delivery is not None:
+                    deliveries.append(delivery)
+        self._deliver(deliveries)
+        return [
+            notification.agent
+            for _, notification in deliveries
+            if not any(
+                row.agent == notification.agent and row.board_id == self._board_id
+                for row in self._store.unsent(_TAIL)
+            )
+        ]
+
     def notify_due(self) -> list[str]:
         """Delivers what this process's agents are owed, and names them.
 
@@ -1258,12 +1316,19 @@ class Control:
         self._deliver(deliveries)
         return [notification.agent for _, notification in deliveries]
 
-    def _take_tail_locked(self, run: RunRecord) -> None:
+    def _take_tail_locked(self, run: RunRecord, only: set[str] | None = None) -> None:
         # Callers hold self._lock. Reads the board since the least advanced
         # agent and folds what is new into each agent's pending set, which is
         # the same set the write path fills. One read serves every agent, and
         # an agent already told of a change skips it.
-        floor = min(state.acknowledged_through for state in self._agents.values())
+        considered = {
+            name: state
+            for name, state in self._agents.items()
+            if only is None or name in only
+        }
+        if not considered:
+            return
+        floor = min(state.acknowledged_through for state in considered.values())
         tail = self._store.read_board(
             self._board_id, from_sequence=floor + 1, limit=_TAIL
         )
@@ -1271,9 +1336,11 @@ class Control:
             return
         self._last_sequence = max(self._last_sequence, tail[-1].sequence)
         now = self._clock.now()
-        for state in self._agents.values():
+        for state in considered.values():
             for change in tail:
-                if change.sequence <= state.notified_through:
+                # A relay is resending what was lost, so what this process
+                # believes it already told the agent does not bound it.
+                if only is None and change.sequence <= state.notified_through:
                     continue
                 if change.writer == state.declaration.name:
                     continue
@@ -1299,6 +1366,19 @@ class Control:
                 state.pending[change.region] = (
                     due if existing is None else min(existing, due)
                 )
+
+    def _who_hears(self, region: str, writer: str) -> frozenset[str]:
+        # Callers hold self._lock. The agents this write should wake, which
+        # the store records beside the contribution so the intent to notify
+        # cannot be lost separately from the write that caused it.
+        kind = self._kinds.get(region)
+        if kind is None:
+            return frozenset()
+        return frozenset(
+            name
+            for name, state in self._agents.items()
+            if name != writer and _subscribed(state, region, kind)
+        )
 
     def _note_region_change(self, region: str, writer: str) -> list[_Delivery]:
         # Callers hold self._lock. Returns the deliveries the caller makes
@@ -1495,8 +1575,21 @@ class Control:
                 # acknowledges, so it is named unfinished when the run
                 # closes; raising here would abort the rest of the batch and
                 # reach an unrelated writer.
+                sent = False
                 with suppress(Exception):
                     notify(notification)
+                    sent = True
+                if sent:
+                    # Marked after the send, never before. A process that
+                    # sends and stops before marking sends again, which is
+                    # at least once; marking first would be at most once and
+                    # would lose exactly what the outbox exists to keep.
+                    with suppress(Exception):
+                        self._store.mark_sent(
+                            self._board_id,
+                            notification.agent,
+                            through=notification.to_sequence,
+                        )
         finally:
             self._delivering.active = False
 
