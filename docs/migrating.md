@@ -17,6 +17,48 @@ returned a history that died the same way. Both answered questions the record no
 Both keep working until the date above, and each warns at run time naming its
 replacement.
 
+## 0.10 to 0.11
+
+Two things changed for anyone who wrote a store: a write names its writer, and
+the run moved onto `BoardStore`. Everything else in the release adds to the
+public surface without moving anything, and an application using a store
+shipped here has nothing to do.
+
+### A write names its writer
+
+`append` and `set` take a `writer` after the idempotency key, and the store
+records it beside an instant stamped by its own clock. Both read back on
+`Contribution`, `PremiseState` and `BoardChange`, and both read as `None` on a
+record an earlier version wrote.
+
+A store that takes no such parameter raises `TypeError` at the first write,
+because the control component passes it by keyword.
+
+### A store carries the run
+
+The run's two deadlines and its outcome were held in `Control`, in the memory
+of the process that opened the run. They are rows now, so any process holding
+the store reads how long a board has been quiet and closes it.
+
+`BoardStore` went from eight methods to thirteen, and no default stands in for
+the five. They are `open_run`, `read_run`, `touch_run`, `close_run` and
+`runs_past_deadline`. `blackboard.conformance.RunConformance` decides if you
+got them right, and the rule they turn on is `close_run`: it answers `True` to
+the one caller that recorded the outcome and `False` to every other. A caller
+that is answered `False` reads the outcome the winner wrote and reports that
+one instead of its own, so two processes reaching a deadline together name the
+same outcome rather than each naming its own. A store that answers `True`
+twice loses that agreement.
+
+No instant crosses this part of the protocol. `open_run` and `touch_run` take
+their limits in seconds and compute the deadlines against the store's own
+clock, and `read_run` returns that clock beside them, so a caller compares two
+instants that came from one place. Agents run as separate services and their
+clocks disagree.
+
+These changes cannot be deprecated. A protocol is satisfied or it is not, and
+a method that is absent is absent at the first call rather than at a warning.
+
 ## 0.7 to 0.8
 
 Two things changed for anyone who wrote a store: a store holds many boards, and
