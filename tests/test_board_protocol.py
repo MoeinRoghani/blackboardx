@@ -153,6 +153,10 @@ def test_the_control_component_drives_the_supplied_board() -> None:
         sequence=2
     )
     assert store.calls == [
+        # What the record already holds is read once, so a region declared
+        # on a board another process opened is recorded rather than written
+        # again.
+        "read_regions",
         "declare:platform",
         "declare:window",
         # The run opens once the regions exist, so its deadlines are set

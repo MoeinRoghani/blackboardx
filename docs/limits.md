@@ -8,11 +8,11 @@ page says so and points at the design.
 
 The record is durable and so is the run. What is not is the callback.
 
-| Held where | What |
+| | What, and where it lives |
 | --- | --- |
-| The database, through the store | Regions, contributions, premise values and versions, the sequence, idempotency keys, the run's two deadlines and its outcome, and how far each agent has been notified and has answered |
-| The process, in `Control` | The registered agents, being their callbacks and their subscriptions, and the audit |
-| The process, in `HttpNotifier` | Notifications queued but not yet sent |
+| **Run state** | Regions, contributions, premise values and versions, the sequence, idempotency keys, the run's two deadlines and its outcome, and how far each agent has been notified and has answered. All of it is in the store you chose, held in memory by `InMemoryStore` and in the database by `PostgresStore`, through one code path either way. None of it is split between the two. |
+| **Configuration** | The regions, the agent roster, the admission rule, the termination predicate, the limits and the clock. The application hands these to every process, and no store holds any of them. The audit belongs here too, and is deprecated. |
+| **In flight** | Notifications `HttpNotifier` has queued but not yet sent. |
 
 A write is served by any process. It lands on the record, pushes the idle
 deadline, and records how far the agents that should hear of it have been

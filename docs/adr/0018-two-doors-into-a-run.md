@@ -4,7 +4,7 @@ Date: 2026-09-02
 
 ## Status
 
-Accepted. ADR 0024 supersedes the reason this record gives for a second door: a run is no longer opened over a record, so `attach_model` is deprecated. What this record decided about a board outliving one process stands.
+Superseded by ADR 0026, which makes `create_model` converge on a board the store already holds, so there is one door rather than two. ADR 0024 had already superseded the reason this record gives for a second door. What this record decided about a board outliving one process stands.
 
 ## Context
 

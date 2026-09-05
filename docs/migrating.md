@@ -87,6 +87,25 @@ agents it woke. Schedule it beside `close_expired`.
 A deployment running one process per board does not need it. That process
 notifies on the write path, so the poll finds nothing.
 
+### `create_model` converges on a board that exists
+
+It raised `DuplicateRegionError` on a board the store already held. It now
+records a region the record holds with the same name and kind rather than
+writing it again, so every replica runs the same call and none has to know
+whether it is the first.
+
+A name held as the other kind still raises `RegionKindError`. An opening
+premise value is written only where the record holds none, because the
+record holds the value and the version it is at.
+
+Code that relied on the refusal to tell an existing board from a new one
+should read the board instead: `store.read_regions` answers with what is
+declared, and an empty list means the board is new.
+
+`attach_model` stays deprecated and its message now names a replacement that
+works. Where it was called on a board that exists, `create_model` with the
+same regions does the same thing.
+
 ### `close_expired` names the agents that did not finish
 
 It passed an empty set, because a sweeper holds no declarations and could not

@@ -205,18 +205,49 @@ class TestWhatAttachingRefuses:
             )
 
 
-def test_creating_over_an_existing_board_is_still_refused() -> None:
-    """The two doors stay separate: one opens a board, one opens a run."""
-    from blackboard import DuplicateRegionError
+def test_creating_over_an_existing_board_converges_on_it() -> None:
+    """One door. A process does not have to know whether it is the first."""
+    store = InMemoryStore()
+    a_finished_run(store)
+    model = create_model(
+        board_id="incident-1",
+        store=store,
+        regions=list(REGIONS),
+        premises={"severity": "unknown"},
+        agents=[],
+        limits=LIMITS,
+    )
+    # The record it converged on, not a fresh board.
+    assert [c.content for c in model.reader.read_level("signals")] == [{"n": 1}]
+
+
+def test_creating_over_a_board_holding_the_other_kind_is_refused() -> None:
+    """A disagreement about the board is not a repeat of the declaration."""
+    from blackboard import Premise, RegionKindError
 
     store = InMemoryStore()
     a_finished_run(store)
-    with pytest.raises(DuplicateRegionError):
+    with pytest.raises(RegionKindError):
         create_model(
             board_id="incident-1",
             store=store,
-            regions=list(REGIONS),
-            premises={"severity": "unknown"},
+            regions=[Premise("findings"), Premise("severity")],
+            premises={"findings": "x", "severity": "unknown"},
             agents=[],
             limits=LIMITS,
         )
+
+
+def test_an_opening_value_does_not_overwrite_the_one_on_the_record() -> None:
+    """It is what a board starts from, not what each process asserts."""
+    store = InMemoryStore()
+    a_finished_run(store)
+    model = create_model(
+        board_id="incident-1",
+        store=store,
+        regions=list(REGIONS),
+        premises={"severity": "unknown"},
+        agents=[],
+        limits=LIMITS,
+    )
+    assert model.reader.read_premise("severity").value == "high"
