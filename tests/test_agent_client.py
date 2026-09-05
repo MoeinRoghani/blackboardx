@@ -268,10 +268,8 @@ class TestWriting:
         self, board: Any, control: Control
     ) -> None:
         board.write("signals", {"n": 1})
-        from blackboard import WriteAccepted
-
-        accepted = [e for e in control.read_audit() if isinstance(e, WriteAccepted)]
-        assert accepted[-1].writer == "triage"
+        (contribution,) = control.reader.read_level("signals")
+        assert contribution.writer == "triage"
 
     def test_a_refused_write_comes_back_as_a_rejection_not_an_exception(
         self, kind: Any
@@ -342,11 +340,11 @@ class TestAcknowledging:
             client.ack(seen[-1].notification_id)
         finally:
             client.close()
-        from blackboard import NotificationAcknowledged
-
-        assert any(
-            isinstance(e, NotificationAcknowledged) for e in control.read_audit()
-        )
+        answered = {
+            p.agent: p.acknowledged_through
+            for p in control._store.read_agents(control.board_id)
+        }
+        assert answered["triage"] == seen[-1].notification_id
 
     def test_a_notification_never_issued_raises_what_control_raises(
         self, board: Any

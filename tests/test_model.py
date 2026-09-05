@@ -14,7 +14,6 @@ from blackboard import (
     Notification,
     Premise,
     PremiseError,
-    PremiseOpened,
     RunClosedError,
     RunLimits,
     Settled,
@@ -77,8 +76,6 @@ class TestCreation:
             board_id="test-board",
             store=InMemoryStore(),
         )
-        opened = [e for e in model.control.read_audit() if isinstance(e, PremiseOpened)]
-        assert [e.premise for e in opened] == ["window"]
         assert model.reader.read_premise("window").value == "w"
 
     def test_the_opening_premises_name_exactly_the_declared_premises(self) -> None:

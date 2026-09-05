@@ -36,7 +36,6 @@ from __future__ import annotations
 import logging
 import random
 import threading
-import warnings
 from collections import deque
 from collections.abc import Callable, Iterable
 from contextlib import suppress
@@ -391,27 +390,6 @@ class Rejected:
     reason: str
 
 
-@dataclass(frozen=True)
-class WriteAccepted:
-    """The audit record of a write that reached the board."""
-
-    at: datetime
-    writer: str
-    region: str
-    sequence: int
-
-
-@dataclass(frozen=True)
-class WriteRejected:
-    """The audit record of a refused write; it never reached the board."""
-
-    at: datetime
-    writer: str
-    region: str
-    cause: RejectionCause
-    reason: str
-
-
 NotificationId = NewType("NotificationId", int)
 """The identifier an acknowledgment names."""
 
@@ -488,23 +466,6 @@ class UnknownNotificationError(BlackboardError):
     """The named notification was never issued to the acknowledging agent."""
 
 
-@dataclass(frozen=True)
-class NotificationDispatched:
-    """The audit record of one notification leaving the control component."""
-
-    at: datetime
-    notification: Notification
-
-
-@dataclass(frozen=True)
-class NotificationAcknowledged:
-    """The audit record of an agent reporting that it stopped."""
-
-    at: datetime
-    agent: str
-    notification_id: NotificationId
-
-
 class RunClosedError(BlackboardError):
     """A declaration or registration reached a run that has closed."""
 
@@ -572,24 +533,6 @@ never returns.
 """
 
 
-@dataclass(frozen=True)
-class PremiseOpened:
-    """The audit record of one premise receiving its opening value."""
-
-    at: datetime
-    premise: str
-    sequence: int
-    version: int
-
-
-@dataclass(frozen=True)
-class RunClosed:
-    """The audit record of the run closing, with its outcome."""
-
-    at: datetime
-    outcome: RunOutcome
-
-
 #: What each outcome is called in the store.
 _CLOSED_AS: dict[type, str] = {
     Settled: "settled",
@@ -606,16 +549,6 @@ def _outcome_of(run: RunRecord) -> RunOutcome:
         return WallClockExpired(unfinished=run.unfinished)
     return Settled(unfinished=run.unfinished)
 
-
-AuditEvent: TypeAlias = (
-    PremiseOpened
-    | WriteAccepted
-    | WriteRejected
-    | NotificationDispatched
-    | NotificationAcknowledged
-    | RunClosed
-)
-"""Every kind of event the audit records."""
 
 _Delivery: TypeAlias = tuple[Callable[[Notification], None], Notification]
 
@@ -805,10 +738,10 @@ class _AgentBoard:
 class Control:
     """The control component's write path, over the board it is given.
 
-    The board holds the record and outlives this object where the board is
-    a database. Everything else a run knows, which agents registered, what
-    each is owed, the audit, and the two deadlines, is held here and ends
-    with the process.
+    The board holds the record and outlives this object. What a run knows,
+    being its two deadlines, its outcome, and how far each agent has been
+    notified and has answered, is on the record too, so this object holds
+    nothing but the configuration it was given.
     """
 
     def __init__(
@@ -835,7 +768,6 @@ class Control:
         self._lock = threading.Lock()
         self._kinds: dict[str, _RegionKind] = {}
         self._batch_windows: dict[str, timedelta] = {}
-        self._audit: list[AuditEvent] = []
         self._last_sequence = 0
         self._agents: dict[str, _AgentState] = {}
         self._closing: list[RunOutcome] = []
@@ -1069,14 +1001,6 @@ class Control:
                         # changed either.
                         return result
                     self._last_sequence = result.sequence
-                    self._audit.append(
-                        WriteAccepted(
-                            at=self._clock.now(),
-                            writer=writer,
-                            region=level,
-                            sequence=result.sequence,
-                        )
-                    )
                     deliveries = self._note_region_change(level, writer)
         self._deliver(deliveries)
         self._check_completion()
@@ -1131,37 +1055,10 @@ class Control:
                         return result
                     if isinstance(result, Written):
                         self._last_sequence = result.sequence
-                        self._audit.append(
-                            WriteAccepted(
-                                at=self._clock.now(),
-                                writer=writer,
-                                region=premise,
-                                sequence=result.sequence,
-                            )
-                        )
                         deliveries = self._note_region_change(premise, writer)
         self._deliver(deliveries)
         self._check_completion()
         return result
-
-    def read_audit(self) -> list[AuditEvent]:
-        """Returns every audit event in the order each occurred.
-
-        Deprecated. The audit answered two questions, and the record now
-        answers one of them: a contribution carries its writer and the instant
-        it was written. What is left is what a log line says, and a log line
-        survives the process where this list does not.
-        """
-        warnings.warn(
-            "Control.read_audit is deprecated and may be removed on or after "
-            "2026-12-05. A contribution carries its writer and the instant it "
-            "was written, and what the audit said besides is written to the "
-            "log under the 'blackboard' logger.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        with self._lock:
-            return list(self._audit)
 
     def abort(self, reason: str) -> None:
         """Closes the run as aborted. A run already closed keeps its outcome."""
@@ -1220,11 +1117,6 @@ class Control:
                 state.acknowledged_through = max(
                     state.acknowledged_through, int(acknowledged)
                 )
-            self._audit.append(
-                NotificationAcknowledged(
-                    at=self._clock.now(), agent=agent, notification_id=acknowledged
-                )
-            )
         self._check_completion()
 
     def relay(self) -> list[str]:
@@ -1475,14 +1367,6 @@ class Control:
                 assert isinstance(result, Written)  # a fresh premise cannot conflict
                 assert result.version is not None  # a premise write carries one
                 self._last_sequence = result.sequence
-                self._audit.append(
-                    PremiseOpened(
-                        at=now,
-                        premise=premise,
-                        sequence=result.sequence,
-                        version=result.version,
-                    )
-                )
                 window = self._batch_windows[premise]
                 due = now + window
                 for state in self._agents.values():
@@ -1532,7 +1416,6 @@ class Control:
             self._board_id, state.declaration.name, through=self._last_sequence
         )
         state.notified_through = max(state.notified_through, self._last_sequence)
-        self._audit.append(NotificationDispatched(at=now, notification=notification))
         return (state.declaration.notify, notification)
 
     def _close_window(self, agent_name: str, generation: int) -> None:
@@ -1710,7 +1593,6 @@ class Control:
         # the unfinished ones as it was written, and an acknowledgment
         # arriving after that still advances a cursor without changing an
         # outcome already stamped.
-        self._audit.append(RunClosed(at=self._clock.now(), outcome=outcome))
         self._condition.notify_all()
         self._closing.append(outcome)
 
@@ -1771,15 +1653,6 @@ class Control:
     def _reject_locked(
         self, writer: str, region: str, cause: RejectionCause, reason: str
     ) -> Rejected:
-        self._audit.append(
-            WriteRejected(
-                at=self._clock.now(),
-                writer=writer,
-                region=region,
-                cause=cause,
-                reason=reason,
-            )
-        )
         return Rejected(cause=cause, reason=reason)
 
 

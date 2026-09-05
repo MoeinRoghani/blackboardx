@@ -11,8 +11,6 @@ from blackboard import (
     Level,
     ManualClock,
     Notification,
-    NotificationAcknowledged,
-    NotificationDispatched,
     NotificationId,
     Premise,
     RunLimits,
@@ -50,7 +48,9 @@ def agent(name: str, recorder: Recorder) -> Agent:
     )
 
 
-def make_control(clock: ManualClock, *agents: Agent) -> Control:
+def make_control(
+    clock: ManualClock, *agents: Agent, store: InMemoryStore | None = None
+) -> Control:
     control = Control(
         regions=[
             Level("application"),
@@ -62,7 +62,7 @@ def make_control(clock: ManualClock, *agents: Agent) -> Control:
         limits=LIMITS,
         clock=clock,
         board_id="test-board",
-        store=InMemoryStore(),
+        store=store if store is not None else InMemoryStore(),
     )
     for declared in agents:
         control.register_agent(declared)
@@ -120,29 +120,21 @@ class TestZeroWindowDispatch:
         assert writer.received == []
         assert len(other.received) == 1
 
-    def test_dispatch_is_audited_before_the_callback_runs(self) -> None:
+    def test_the_agent_is_recorded_as_told_before_the_callback_runs(self) -> None:
+        """So a callback that reads the record sees itself already owing one."""
         clock = ManualClock(start=START)
-        seen_during_callback: list[bool] = []
-        control_holder: list[Control] = []
+        told_by_then: list[int] = []
+        store = InMemoryStore()
 
-        def looks_at_audit(notification: Notification) -> None:
-            audited = any(
-                isinstance(event, NotificationDispatched)
-                and event.notification == notification
-                for event in control_holder[0].read_audit()
-            )
-            seen_during_callback.append(audited)
+        def looks_at_the_record(notification: Notification) -> None:
+            (progress,) = store.read_agents("test-board")
+            told_by_then.append(progress.notified_through)
 
         control = make_control(
-            clock,
-            Agent(
-                name="ocp",
-                notify=looks_at_audit,
-            ),
+            clock, Agent(name="ocp", notify=looks_at_the_record), store=store
         )
-        control_holder.append(control)
         control.set_premise("window", "w", expected_version=0, writer="operator")
-        assert seen_during_callback == [True]
+        assert told_by_then == [1]
 
     def test_a_callback_may_run_its_whole_cycle_inline(self) -> None:
         clock = ManualClock(start=START)
@@ -164,10 +156,6 @@ class TestZeroWindowDispatch:
         control.set_premise("window", "w", expected_version=0, writer="operator")
         (contribution,) = control.reader.read_level("application")
         assert contribution.content == "seen"
-        assert any(
-            isinstance(event, NotificationAcknowledged)
-            for event in control.read_audit()
-        )
 
 
 class TestBatchWindows:
@@ -240,10 +228,9 @@ class TestAcknowledgment:
         first = recorder.received[0].notification_id
         control.ack(first, agent="ocp")
         control.ack(first, agent="ocp")
-        acknowledged = [
-            e for e in control.read_audit() if isinstance(e, NotificationAcknowledged)
-        ]
-        assert len(acknowledged) == 1
+        # The second changes nothing, so the run does not treat it as an event.
+        (progress,) = control._store.read_agents("test-board")
+        assert progress.acknowledged_through == first
 
     def test_a_repeated_ack_does_not_move_the_cursor_again(self) -> None:
         clock = ManualClock(start=START)

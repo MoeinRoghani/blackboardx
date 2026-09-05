@@ -89,6 +89,6 @@ Nothing counts writes or notifications. A count of notifications would limit the
 
 ## After closing
 
-Reads and the audit keep working, so the result stays available.
+Reads keep working, so the result stays available.
 
 A write to a level or a premise comes back `Rejected` with the cause `RUN_CLOSED`, because a write racing the close is ordinary and a caller has to handle it. Registering an agent or declaring a region raises `RunClosedError` instead, because those calls race nothing: a caller that makes one after the run has closed has made a mistake.

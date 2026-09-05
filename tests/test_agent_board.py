@@ -115,16 +115,15 @@ class TestTheInProcessObject:
     def test_it_writes_as_the_agent_it_names(self) -> None:
         control = a_run()
         control.as_agent("netops").write("findings", {"n": 1})
-        from blackboard import WriteAccepted
-
-        accepted = [e for e in control.read_audit() if isinstance(e, WriteAccepted)]
-        assert accepted[-1].writer == "netops"
+        (contribution,) = control.reader.read_level("findings")
+        assert contribution.writer == "netops"
 
     def test_it_acknowledges_as_the_agent_it_names(self) -> None:
         seen: list[Any] = []
+        store = InMemoryStore()
         model = create_model(
             board_id=BOARD,
-            store=InMemoryStore(),
+            store=store,
             regions=[Level("signals")],
             premises={},
             agents=[
@@ -135,11 +134,8 @@ class TestTheInProcessObject:
         )
         model.control.write("signals", {"n": 1}, writer="src")
         model.control.as_agent("triage").ack(seen[-1].notification_id)
-        from blackboard import NotificationAcknowledged
-
-        assert any(
-            isinstance(e, NotificationAcknowledged) for e in model.control.read_audit()
-        )
+        answered = {p.agent: p.acknowledged_through for p in store.read_agents(BOARD)}
+        assert answered["triage"] == seen[-1].notification_id
 
     def test_an_agent_need_not_be_registered_to_write_as_itself(self) -> None:
         control = a_run()

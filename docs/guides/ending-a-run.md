@@ -154,8 +154,9 @@ looked and found nothing are different findings.
 `Settled` and `WallClockExpired` name the agents still holding an
 unacknowledged notification. `Aborted` names none: `abort` closes the run and
 leaves `unfinished` empty, so a caller that stopped a run and wants to know who
-had not answered reads the audit, where each `NotificationDispatched` without a
-matching `NotificationAcknowledged` names one of those agents.
+had not answered asks the store. `store.read_agents` returns each agent with
+how far it was told and how far it answered, and one told further than it has
+answered is one of those agents.
 
 ## Being told instead of asking
 
@@ -178,7 +179,7 @@ closed run from the runs that the service reads.
 
 ## After it closes
 
-Reads and the audit keep working, so the result stays available. A write to a
+Reads keep working, so the result stays available. A write to a
 level or a premise comes back `Rejected` with the cause `RUN_CLOSED`.
 Registering an agent or declaring a region raises `RunClosedError`. [The
 run](../concepts/run.md#after-closing) explains why a write returns and a

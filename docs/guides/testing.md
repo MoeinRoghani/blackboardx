@@ -179,18 +179,24 @@ checked against the record by
 name and by kind, so a test that renames a region in `regions` fails at
 `attach_model` rather than at the first write.
 
-## Assert on the audit, not on timing
+## Assert on the record, not on timing
+
+A refusal is returned to its caller, so assert on what the call answered:
 
 ```python
-from blackboard import WriteAccepted, WriteRejected
+from blackboard import Rejected, RejectionCause
 
-rejected = [e for e in model.control.read_audit() if isinstance(e, WriteRejected)]
-assert [e.reason for e in rejected] == [
-    "a duplicate of a contribution already on the board"
-]
+result = model.control.write("findings", {"n": 1}, writer="triage")
+assert result == Rejected(
+    cause=RejectionCause.ADMISSION,
+    reason="a duplicate of a contribution already on the board",
+)
+assert model.reader.read_level("findings") == []
 ```
 
-The audit records every event in the order it occurred.
+A write that landed is on the board with its writer and its instant, and how
+far each agent has been told and has answered is `store.read_agents`. Both are
+ordered by the sequence, which does not depend on when anything ran.
 
 ## Testing your own adapter
 
