@@ -57,6 +57,7 @@ from blackboard import (
     Premise,
     PremiseState,
     RegionKindError,
+    RunRecord,
     UndeclaredRegionError,
     UnsetPremiseError,
     Written,
@@ -113,6 +114,20 @@ class Bound:
         self, from_sequence: int = 0, limit: int | None = None
     ) -> list[BoardChange]:
         return self.store.read_board(self.board_id, from_sequence, limit)
+
+    def open_run(self, wall_clock: float = 3600.0, idle: float = 1800.0) -> None:
+        self.store.open_run(self.board_id, wall_clock=wall_clock, idle=idle)
+
+    def read_run(self) -> RunRecord | None:
+        return self.store.read_run(self.board_id)
+
+    def touch_run(self, idle: float = 1800.0) -> None:
+        self.store.touch_run(self.board_id, idle=idle)
+
+    def close_run(self, closed_as: str = "settled", reason: str | None = None) -> bool:
+        return self.store.close_run(
+            self.board_id, closed_as=closed_as, reason=reason, unfinished=frozenset()
+        )
 
     def read_regions(self) -> list[Level | Premise]:
         return self.store.read_regions(self.board_id)
@@ -593,6 +608,124 @@ class BoardConformance:
         ready.appended("application", "found it", key="k1", writer="impostor")
         (contribution,) = ready.read_level("application")
         assert contribution.writer == "triage"
+
+
+class RunConformance:
+    """A run's deadlines and outcome, held by the store rather than a process.
+
+    A run closes because nothing happened, and nothing happening means no
+    process is being asked anything about that board. So the two deadlines
+    are instants the store holds and any caller may read, and closing is a
+    write only one caller can win.
+    """
+
+    def test_a_board_with_no_run_reads_as_none(self, ready: Bound) -> None:
+        assert ready.read_run() is None
+
+    def test_opening_a_run_sets_both_deadlines_ahead_of_the_store_s_clock(
+        self, ready: Bound
+    ) -> None:
+        ready.open_run(wall_clock=3600.0, idle=1800.0)
+        run = ready.read_run()
+        assert run is not None
+        assert run.now < run.idle_deadline < run.wall_deadline
+        assert run.closed_as is None
+        assert run.expired is None
+
+    def test_the_clock_that_answers_is_the_store_s(self, ready: Bound) -> None:
+        """A caller compares two instants that came from one clock."""
+        ready.open_run()
+        first = ready.read_run()
+        second = ready.read_run()
+        assert first is not None and second is not None
+        assert first.now <= second.now
+        assert first.idle_deadline == second.idle_deadline
+
+    def test_touching_a_run_pushes_the_idle_deadline_and_leaves_the_wall_clock(
+        self, ready: Bound
+    ) -> None:
+        ready.open_run(wall_clock=3600.0, idle=1.0)
+        before = ready.read_run()
+        assert before is not None
+        ready.touch_run(idle=1800.0)
+        after = ready.read_run()
+        assert after is not None
+        assert after.idle_deadline > before.idle_deadline
+        assert after.wall_deadline == before.wall_deadline
+
+    def test_an_idle_deadline_in_the_past_reads_as_settled(self, ready: Bound) -> None:
+        ready.open_run(wall_clock=3600.0, idle=-1.0)
+        run = ready.read_run()
+        assert run is not None
+        assert run.expired == "settled"
+
+    def test_a_wall_clock_in_the_past_outranks_the_idle_deadline(
+        self, ready: Bound
+    ) -> None:
+        ready.open_run(wall_clock=-1.0, idle=-1.0)
+        run = ready.read_run()
+        assert run is not None
+        assert run.expired == "wall_clock_expired"
+
+    def test_the_first_caller_to_close_wins_and_the_rest_are_told(
+        self, ready: Bound
+    ) -> None:
+        """This is what makes closing once-only without any lock."""
+        ready.open_run()
+        assert ready.close_run("settled") is True
+        assert ready.close_run("settled") is False
+        assert ready.close_run("aborted", reason="too late") is False
+
+    def test_a_closed_run_keeps_the_outcome_the_winner_wrote(
+        self, ready: Bound
+    ) -> None:
+        ready.open_run()
+        ready.store.close_run(
+            ready.board_id,
+            closed_as="aborted",
+            reason="the operator stopped it",
+            unfinished=frozenset({"triage", "netops"}),
+        )
+        run = ready.read_run()
+        assert run is not None
+        assert run.closed_as == "aborted"
+        assert run.reason == "the operator stopped it"
+        assert run.unfinished == frozenset({"triage", "netops"})
+
+    def test_a_closed_run_is_never_expired(self, ready: Bound) -> None:
+        """Expiry asks what to do next, and a closed run needs nothing done."""
+        ready.open_run(wall_clock=-1.0, idle=-1.0)
+        ready.close_run("wall_clock_expired")
+        run = ready.read_run()
+        assert run is not None
+        assert run.expired is None
+
+    def test_touching_a_closed_run_does_not_reopen_it(self, ready: Bound) -> None:
+        ready.open_run()
+        ready.close_run("settled")
+        ready.touch_run()
+        run = ready.read_run()
+        assert run is not None
+        assert run.closed_as == "settled"
+
+    def test_a_run_past_a_deadline_is_found_by_the_sweep(self, ready: Bound) -> None:
+        ready.open_run(wall_clock=3600.0, idle=-1.0)
+        assert ready.board_id in ready.store.runs_past_deadline()
+
+    def test_a_run_inside_its_deadlines_is_not_found(self, ready: Bound) -> None:
+        ready.open_run()
+        assert ready.board_id not in ready.store.runs_past_deadline()
+
+    def test_a_closed_run_is_not_found_again(self, ready: Bound) -> None:
+        ready.open_run(wall_clock=-1.0, idle=-1.0)
+        ready.close_run("wall_clock_expired")
+        assert ready.board_id not in ready.store.runs_past_deadline()
+
+    def test_the_sweep_returns_no_more_than_it_was_asked_for(
+        self, ready: Bound
+    ) -> None:
+        ready.open_run(wall_clock=3600.0, idle=-1.0)
+        assert len(ready.store.runs_past_deadline(limit=1)) <= 1
 
 
 class SharedStoreConformance:

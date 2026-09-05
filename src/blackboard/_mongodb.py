@@ -46,6 +46,7 @@ from blackboard._board import (
     Premise,
     PremiseState,
     RegionKindError,
+    RunRecord,
     UndeclaredRegionError,
     UnsetPremiseError,
     Written,
@@ -60,6 +61,9 @@ _BOARDS = "blackboard_boards"
 _REGIONS = "blackboard_regions"
 _CONTRIBUTIONS = "blackboard_contributions"
 _PREMISES = "blackboard_premises"
+#: Named apart from the collection the withdrawn 0.11.0 created, which held
+#: different fields and did not raise the schema number.
+_RUN_STATE = "blackboard_run_state"
 _SCHEMA = "blackboard_schema"
 
 _LEVEL = "level"
@@ -424,11 +428,108 @@ class MongoStore:
                 self._database[collection].delete_many(named, session=session)
             # The counter is keyed by _id, so it is not named the same way.
             self._database[_BOARDS].delete_one({"_id": board_id}, session=session)
+            self._database[_RUN_STATE].delete_one({"_id": board_id}, session=session)
             return Deleted(
                 board_id=board_id, regions_removed=regions, writes_removed=writes
             )
 
         return self._in_a_transaction(work)
+
+    def open_run(self, board_id: str, *, wall_clock: float, idle: float) -> None:
+        self._checked()
+        # A pipeline update is what lets `$$NOW`, the server's clock, reach
+        # the stored document, so every deadline is set by one clock.
+        self._database[_RUN_STATE].update_one(
+            {"_id": board_id},
+            [
+                {
+                    "$set": {
+                        "idle_deadline": {
+                            "$add": ["$$NOW", int(idle * 1000)],
+                        },
+                        "wall_deadline": {
+                            "$add": ["$$NOW", int(wall_clock * 1000)],
+                        },
+                        "closed_as": None,
+                        "reason": None,
+                        "unfinished": [],
+                    }
+                }
+            ],
+            upsert=True,
+        )
+
+    def read_run(self, board_id: str) -> RunRecord | None:
+        self._checked()
+        found = list(
+            self._database[_RUN_STATE].aggregate(
+                [
+                    {"$match": {"_id": board_id}},
+                    {"$set": {"now": "$$NOW"}},
+                ]
+            )
+        )
+        if not found:
+            return None
+        document = found[0]
+        return RunRecord(
+            now=_instant(document["now"]),  # type: ignore[arg-type]
+            idle_deadline=_instant(document["idle_deadline"]),  # type: ignore[arg-type]
+            wall_deadline=_instant(document["wall_deadline"]),  # type: ignore[arg-type]
+            closed_as=document.get("closed_as"),
+            reason=document.get("reason"),
+            unfinished=frozenset(document.get("unfinished") or ()),
+        )
+
+    def touch_run(self, board_id: str, *, idle: float) -> None:
+        self._checked()
+        self._database[_RUN_STATE].update_one(
+            {"_id": board_id, "closed_as": None},
+            [{"$set": {"idle_deadline": {"$add": ["$$NOW", int(idle * 1000)]}}}],
+        )
+
+    def close_run(
+        self,
+        board_id: str,
+        *,
+        closed_as: str,
+        reason: str | None = None,
+        unfinished: frozenset[str] = frozenset(),
+    ) -> bool:
+        self._checked()
+        outcome = self._database[_RUN_STATE].update_one(
+            {"_id": board_id, "closed_as": None},
+            {
+                "$set": {
+                    "closed_as": closed_as,
+                    "reason": reason,
+                    "unfinished": sorted(unfinished),
+                }
+            },
+        )
+        return outcome.modified_count == 1
+
+    def runs_past_deadline(self, limit: int = 100) -> list[str]:
+        self._checked()
+        found = self._database[_RUN_STATE].aggregate(
+            [
+                {"$match": {"closed_as": None}},
+                {
+                    "$match": {
+                        "$expr": {
+                            "$or": [
+                                {"$gte": ["$$NOW", "$idle_deadline"]},
+                                {"$gte": ["$$NOW", "$wall_deadline"]},
+                            ]
+                        }
+                    }
+                },
+                {"$sort": {"idle_deadline": 1}},
+                {"$limit": limit},
+                {"$project": {"_id": 1}},
+            ]
+        )
+        return [document["_id"] for document in found]
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         self._checked()

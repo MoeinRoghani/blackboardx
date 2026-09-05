@@ -70,7 +70,7 @@ with PostgresStore.from_dsn("postgresql://...") as store:
     ...
 ```
 
-`create_schema` creates five tables and two indexes, all named `blackboard_*` and all `IF NOT EXISTS`, in whatever schema the connection's search path points at. An application that runs its own migrations can issue the same DDL there instead and never call it.
+`create_schema` creates six tables and three indexes, all named `blackboard_*` and all `IF NOT EXISTS`, in whatever schema the connection's search path points at. An application that runs its own migrations can issue the same DDL there instead and never call it.
 
 Agents deployed as separate services hold no connection to the database. They reach the board through the service that holds the store, and the record is what they share. An adapter makes the record durable; it does not make the run durable, because the control component holds the agent registry, the outstanding notifications, and the deadlines in the process. [Running as a service](service.md) states which part is which and what that means for how many replicas hold one board.
 
@@ -169,9 +169,11 @@ Every store call names a board, and every row is scoped by it. Two boards under 
 
 ## An adapter of your own
 
-`BoardStore` is the protocol, and it has eight methods. `declare`, `append` and `set` write. `read_level`, `read_premise`, `read_board` and `read_regions` read. `delete` removes one board. Every method names the board it acts on first.
+`BoardStore` is the protocol, and it has thirteen methods. `declare`, `append` and `set` write. `read_level`, `read_premise`, `read_board` and `read_regions` read. `delete` removes one board. Every method names the board it acts on first.
 
-A store records a region's name and its kind and nothing else, so `read_regions` returns a level or a premise without the batch window it was declared with. The window tells the control component when to notify and is no part of the record. An implementation of those eight is a store, and the control component names no concrete type.
+The remaining five hold the run rather than the record. `open_run` records that a run is open and sets its two deadlines. `read_run` answers with those deadlines and the store's own clock beside them, so a caller decides that a deadline has passed by comparing two instants from one clock rather than trusting its own. `touch_run` pushes the idle deadline out. `close_run` records how the run ended and answers `True` to the one caller that recorded it, which is what closes a run once however many callers reach the deadline together. `runs_past_deadline` answers with the boards whose run is open and past a deadline, for a caller that closes the runs nobody asked about.
+
+A store records a region's name and its kind and nothing else, so `read_regions` returns a level or a premise without the batch window it was declared with. The window tells the control component when to notify and is no part of the record. An implementation of those thirteen is a store, and the control component names no concrete type.
 
 Four rules hold every implementation together, and the conformance suite checks each implementation against all four rules, and checks the deployment adapters against real servers:
 

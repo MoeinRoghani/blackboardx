@@ -62,7 +62,7 @@ in this table, and every page, docstring and identifier uses it in that sense.
 
 | Term | Meaning |
 | --- | --- |
-| **`BoardStore`** | The protocol a store implements: eight methods, three that write, four that read, and one that removes a board. Every one names a board first. |
+| **`BoardStore`** | The protocol a store implements: thirteen methods. Three write the record, four read it, one removes a board, and five hold the run, being its two deadlines and its outcome. Every one names a board first. |
 | **Wire body** | One request or response that crosses between a blackboard and an agent, in `blackboard.wire`. Both halves import them, so one half cannot spell a field differently from the other. `to_json` and `from_json` carry one each way, and `from_json` raises `wire.WireError` on a body that leaves out a field the class requires. |
 | **Client** | What an agent calls a blackboard with, in `blackboard.agent`. Bound to one board and one agent name. |
 | **`AgentBoard`** | One board as one agent sees it: the four reads and the three writes, each without the agent's own name. `BoardClient` satisfies it over HTTP and `Control.as_agent` returns it in process, so an agent body is written once. |
