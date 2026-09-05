@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.13.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.12.0...v0.13.0) (2026-09-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **control:** `Control.read_audit` is removed, with `AuditEvent`, `WriteAccepted`, `WriteRejected`, `NotificationDispatched`, `NotificationAcknowledged`, `PremiseOpened` and `RunClosed`. They were deprecated in 0.11.1 with a removal date of 2026-12-05 and are removed ahead of it. A contribution carries `writer` and `written_at`; `store.read_agents` answers how far each agent was told and answered; `store.read_run` answers the outcome; a rejection is returned to its caller. `docs/migrating.md` has the table.
+
+### Features
+
+* **control:** remove the audit ([#254](https://github.com/MoeinRoghani/blackboardx/issues/254)) ([cc6c02d](https://github.com/MoeinRoghani/blackboardx/commit/cc6c02d8b564a0456bdf916c921f96b3b98e786c)), closes [#253](https://github.com/MoeinRoghani/blackboardx/issues/253)
+
 ## [0.12.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.11.1...v0.12.0) (2026-09-05)
 
 
