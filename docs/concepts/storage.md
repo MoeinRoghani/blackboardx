@@ -173,7 +173,14 @@ Every store call names a board, and every row is scoped by it. Two boards under 
 
 The remaining five hold the run rather than the record. `open_run` records that a run is open and sets its two deadlines. `read_run` answers with those deadlines and the store's own clock beside them, so a caller decides that a deadline has passed by comparing two instants from one clock rather than trusting its own. `touch_run` pushes the idle deadline out. `close_run` records how the run ended and answers `True` to the one caller that recorded it, which is what closes a run once however many callers reach the deadline together. `runs_past_deadline` answers with the boards whose run is open and past a deadline, for a caller that closes the runs nobody asked about.
 
-The last three hold how far each agent has got. `mark_notified` records that an agent has been told everything through a sequence number, and `acknowledge` records how far it has answered, returning the entry as it stood before the call so a first acknowledgment is told from a repeat. `read_agents` answers with both numbers for every agent the board has notified, which is what any process reads to name the agents a closing run did not hear back from. Both numbers only rise, so two processes notifying one agent leave the higher of what they wrote and neither undoes the other.
+The last two hold the outbox. `unsent` answers with the notifications a write
+recorded and nothing has sent, oldest first, and `mark_sent` removes one. The
+rows are written by `append` and `set` from the `notify` they are given, in
+the same transaction as the contribution, which is what makes the intent to
+notify impossible to lose separately from the write that caused it. Marking
+after sending rather than before is what makes delivery at least once.
+
+The three before those hold how far each agent has got. `mark_notified` records that an agent has been told everything through a sequence number, and `acknowledge` records how far it has answered, returning the entry as it stood before the call so a first acknowledgment is told from a repeat. `read_agents` answers with both numbers for every agent the board has notified, which is what any process reads to name the agents a closing run did not hear back from. Both numbers only rise, so two processes notifying one agent leave the higher of what they wrote and neither undoes the other.
 
 A store records a region's name and its kind and nothing else, so `read_regions` returns a level or a premise without the batch window it was declared with. The window tells the control component when to notify and is no part of the record. An implementation of those sixteen is a store, and the control component names no concrete type.
 

@@ -47,6 +47,7 @@ in this table, and every page, docstring and identifier uses it in that sense.
 | --- | --- |
 | **Notification** | The message telling one agent it is out of date. It carries a sequence range and the regions that changed, and no values. |
 | **Batch window** | The interval a change waits before it is due, taken from the region it landed in. Everything an agent has pending is dispatched as one notification when the earliest due instant arrives, so a change to a region with a short window carries with it what a region with a longer window was still holding. A level and a premise each carry a window, and the default of zero dispatches inline. |
+| **Outbox** | The notifications a write recorded and nothing has sent yet. One row per agent the write should wake, written in the same transaction as the contribution, so a process that commits and stops has not lost the intent. Removed when the notification is sent. |
 | **Acknowledgment** | An agent reporting that it has stopped working on one notification. It says nothing about what the agent found, and it covers every notification outstanding for that agent whose range ends at or before the acknowledged notification's range, so an agent that answers only the last one it was sent leaves nothing outstanding. |
 | **Cursor** | An agent's last acknowledged sequence number. |
 | **Subscription** | Which regions wake an agent. Omitting `subscribes_to` subscribes it to every premise and to no level; naming regions subscribes it to exactly those, of either kind. |
@@ -64,7 +65,7 @@ in this table, and every page, docstring and identifier uses it in that sense.
 
 | Term | Meaning |
 | --- | --- |
-| **`BoardStore`** | The protocol a store implements: sixteen methods. Three write the record, four read it, one removes a board, five hold the run, being its two deadlines and its outcome, and three hold how far each agent has been notified and has answered. Every one names a board first. |
+| **`BoardStore`** | The protocol a store implements: eighteen methods. Three write the record, four read it, one removes a board, five hold the run, being its two deadlines and its outcome, three hold how far each agent has been notified and has answered, and two hold the notifications a write recorded and nothing has sent. Every one names a board first. |
 | **Wire body** | One request or response that crosses between a blackboard and an agent, in `blackboard.wire`. Both halves import them, so one half cannot spell a field differently from the other. `to_json` and `from_json` carry one each way, and `from_json` raises `wire.WireError` on a body that leaves out a field the class requires. |
 | **Client** | What an agent calls a blackboard with, in `blackboard.agent`. Bound to one board and one agent name. |
 | **`AgentBoard`** | One board as one agent sees it: the four reads and the three writes, each without the agent's own name. `BoardClient` satisfies it over HTTP and `Control.as_agent` returns it in process, so an agent body is written once. |

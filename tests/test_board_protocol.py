@@ -18,6 +18,7 @@ from blackboard import (
     RunLimits,
     RunRecord,
     TerminationDecision,
+    Unsent,
     Written,
     create_model,
 )
@@ -48,6 +49,7 @@ class RecordingBoard:
         content: object,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written:
         self.calls.append(f"append:{level}")
         return self._inner.append(
@@ -62,6 +64,7 @@ class RecordingBoard:
         expected_version: int,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written | Conflict:
         self.calls.append(f"set:{premise}")
         return self._inner.set(
@@ -102,6 +105,13 @@ class RecordingBoard:
 
     def runs_past_deadline(self, limit: int = 100) -> list[str]:
         return self._inner.runs_past_deadline(limit)
+
+    def unsent(self, limit: int = 100) -> list[Unsent]:
+        return self._inner.unsent(limit)
+
+    def mark_sent(self, board_id: str, agent: str, *, through: int) -> None:
+        self.calls.append(f"mark_sent:{agent}")
+        self._inner.mark_sent(board_id, agent, through=through)
 
     def read_agents(self, board_id: str) -> list[AgentProgress]:
         return self._inner.read_agents(board_id)
@@ -184,7 +194,7 @@ def test_without_one_the_in_memory_board_is_used() -> None:
     assert [c.content for c in model.reader.read_level("platform")] == ["finding"]
 
 
-def test_the_protocol_is_sixteen_methods() -> None:
+def test_the_protocol_is_eighteen_methods() -> None:
     """The documentation counts them. A method added here updates that count.
 
     `docs/concepts/storage.md`, `docs/glossary.md` and `docs/concepts/service.md`
@@ -201,6 +211,8 @@ def test_the_protocol_is_sixteen_methods() -> None:
         "read_board",
         "read_regions",
         "delete",
+        "unsent",
+        "mark_sent",
         "read_agents",
         "mark_notified",
         "acknowledge",

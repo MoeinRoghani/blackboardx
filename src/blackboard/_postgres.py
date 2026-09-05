@@ -46,6 +46,7 @@ from blackboard._board import (
     RegionKindError,
     RunRecord,
     UndeclaredRegionError,
+    Unsent,
     UnsetPremiseError,
     Written,
 )
@@ -109,6 +110,12 @@ CREATE TABLE IF NOT EXISTS blackboard_run_state (
     closed_as     TEXT,
     reason        TEXT,
     unfinished    JSONB
+);
+CREATE TABLE IF NOT EXISTS blackboard_outbox (
+    board_id TEXT   NOT NULL,
+    agent    TEXT   NOT NULL,
+    through  BIGINT NOT NULL,
+    PRIMARY KEY (board_id, agent, through)
 );
 CREATE TABLE IF NOT EXISTS blackboard_agent_progress (
     board_id             TEXT    NOT NULL,
@@ -280,6 +287,7 @@ class PostgresStore:
         content: object,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written:
         self._checked()
         carried = json.dumps(content)
@@ -297,6 +305,7 @@ class PostgresStore:
                 "written_at) VALUES (%s, %s, %s, %s::jsonb, %s, %s, now())",
                 (board_id, sequence, level, carried, idempotency_key, writer),
             )
+            self._enqueue(connection, board_id, notify, sequence)
             return Written(sequence=sequence)
 
     def set(
@@ -307,6 +316,7 @@ class PostgresStore:
         expected_version: int,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written | Conflict:
         self._checked()
         carried = json.dumps(value)
@@ -356,6 +366,7 @@ class PostgresStore:
                             writer,
                         ),
                     )
+                    self._enqueue(connection, board_id, notify, sequence)
                     outcome = Written(sequence=sequence, version=int(updated[0]))
             except _RollBack:
                 pass
@@ -440,6 +451,7 @@ class PostgresStore:
                 "blackboard_regions",
                 "blackboard_run_state",
                 "blackboard_agent_progress",
+                "blackboard_outbox",
                 "blackboard_boards",
             ):
                 connection.execute(
@@ -525,6 +537,39 @@ class PostgresStore:
                 (limit,),
             ).fetchall()
         return [r[0] for r in rows]
+
+    def _enqueue(
+        self, connection: Any, board_id: str, notify: frozenset[str], through: int
+    ) -> None:
+        # Called inside the write's transaction, so the rows commit with the
+        # contribution or not at all. That is the whole point of the outbox.
+        if not notify:
+            return
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO blackboard_outbox (board_id, agent, through) "
+                "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                [(board_id, agent, through) for agent in sorted(notify)],
+            )
+
+    def unsent(self, limit: int = 100) -> list[Unsent]:
+        self._checked()
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT board_id, agent, through FROM blackboard_outbox "
+                "ORDER BY through, board_id, agent LIMIT %s",
+                (limit,),
+            ).fetchall()
+        return [Unsent(board_id=r[0], agent=r[1], through=r[2]) for r in rows]
+
+    def mark_sent(self, board_id: str, agent: str, *, through: int) -> None:
+        self._checked()
+        with self._pool.connection() as connection, connection.transaction():
+            connection.execute(
+                "DELETE FROM blackboard_outbox "
+                "WHERE board_id = %s AND agent = %s AND through = %s",
+                (board_id, agent, through),
+            )
 
     def read_agents(self, board_id: str) -> list[AgentProgress]:
         self._checked()
