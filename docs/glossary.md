@@ -51,6 +51,7 @@ in this table, and every page, docstring and identifier uses it in that sense.
 | **Cursor** | An agent's last acknowledged sequence number. |
 | **Subscription** | Which regions wake an agent. Omitting `subscribes_to` subscribes it to every premise and to no level; naming regions subscribes it to exactly those, of either kind. |
 | **Run** | One model, from creation to close. |
+| **Model** | A handle to a board that lives in the store. It holds nothing: every call reads what it needs, so holding one keeps no run open and caches nothing, and it can be built and discarded on any replica. Dropping it closes nothing. `Model` in the code. |
 | **Attach** | Opening a run over a board the store already holds. `attach_model` declares no region and takes no opening premises, and refuses a board holding no region. `create_model` declares its regions, so it refuses a board that already holds a region of the same name. The record carries over, including how far each agent has been notified and has answered; the agent registry and the audit do not. |
 | **Idle limit** | How long nothing may happen before the run closes. Every write, registration and acknowledgment pushes it out. |
 | **Wall clock limit** | The longest a run may last, whatever else is true. |
