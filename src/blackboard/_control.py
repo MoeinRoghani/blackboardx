@@ -510,6 +510,23 @@ class RunClosed:
     outcome: RunOutcome
 
 
+#: What each outcome is called in the store.
+_CLOSED_AS: dict[type, str] = {
+    Settled: "settled",
+    WallClockExpired: "wall_clock_expired",
+    Aborted: "aborted",
+}
+
+
+def _outcome_of(run: RunRecord) -> RunOutcome:
+    """Builds the outcome a closed run recorded."""
+    if run.closed_as == "aborted":
+        return Aborted(reason=run.reason or "", unfinished=run.unfinished)
+    if run.closed_as == "wall_clock_expired":
+        return WallClockExpired(unfinished=run.unfinished)
+    return Settled(unfinished=run.unfinished)
+
+
 AuditEvent: TypeAlias = (
     PremiseOpened
     | WriteAccepted
@@ -767,6 +784,15 @@ class Control:
         else:
             for region in regions:
                 self.declare(region)
+        # The store holds the deadlines, so a process that did not open this
+        # run still knows when it ends. The timer below stays as the local
+        # path: it closes the run promptly here, and `close_expired` closes
+        # the runs no process is watching.
+        store.open_run(
+            board_id,
+            wall_clock=resolved.wall_clock.total_seconds(),
+            idle=resolved.idle.total_seconds(),
+        )
         self._wall_call = clock.call_at(
             clock.now() + resolved.wall_clock, self._wall_clock_expired
         )
@@ -1270,9 +1296,11 @@ class Control:
 
     def _touch_idle_locked(self) -> None:
         # Callers hold self._lock. Silence is measured from the last event,
-        # so every event pushes the deadline out.
+        # so every event pushes the deadline out, in the store where any
+        # process reads it and on the timer that closes it here.
         if self._outcome is not None:
             return
+        self._store.touch_run(self._board_id, idle=self._limits.idle.total_seconds())
         if self._idle_call is not None:
             self._idle_call.cancel()
         self._idle_generation += 1
@@ -1349,6 +1377,19 @@ class Control:
     def _close_locked(self, outcome: RunOutcome) -> None:
         if self._outcome is not None:
             return
+        # The store decides who closes a run: it answers True to one caller
+        # and False to every other, so a run closes once however many
+        # callers reach the deadline together. A caller that loses adopts
+        # the outcome the winner wrote rather than its own.
+        if not self._store.close_run(
+            self._board_id,
+            closed_as=_CLOSED_AS[type(outcome)],
+            reason=getattr(outcome, "reason", None),
+            unfinished=getattr(outcome, "unfinished", frozenset()),
+        ):
+            written = self._store.read_run(self._board_id)
+            if written is not None and written.closed_as is not None:
+                outcome = _outcome_of(written)
         self._outcome = outcome
         # No agent learns that the run ended, or that it was named unfinished,
         # so this is the blackboard's to say. What an agent already received,
@@ -1447,3 +1488,29 @@ class Control:
             )
         )
         return Rejected(cause=cause, reason=reason)
+
+
+def close_expired(store: BoardStore, limit: int = 100) -> list[str]:
+    """Closes the runs past a deadline that no process is watching, and names them.
+
+    A run closes because nothing happened, so no request is in flight to
+    notice. Any process holding the store may call this: closing is a write
+    only one caller wins, so several callers running it together still close
+    each run once.
+
+    Call it on whatever schedule suits the deployment, being a thread beside
+    the service, a scheduled job, or a test advancing time by hand. The
+    library takes no view. ``limit`` bounds one pass.
+    """
+    closed: list[str] = []
+    for board_id in store.runs_past_deadline(limit):
+        run = store.read_run(board_id)
+        if run is None:
+            continue
+        expired = run.expired
+        if expired is None:
+            continue
+        if store.close_run(board_id, closed_as=expired, unfinished=frozenset()):
+            closed.append(board_id)
+            logger.info("run on %s closed as %s by the sweep", board_id, expired)
+    return closed

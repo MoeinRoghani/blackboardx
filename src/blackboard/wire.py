@@ -182,9 +182,10 @@ class RejectedBody(_Body):
 class ContributionBody(_Body):
     """One contribution read back from a level.
 
-    ``writer`` and ``written_at`` are optional, so an older blackboard that
-    sends neither decodes as ``None`` for both and a newer agent reads it
-    without error. ``written_at`` crosses as an ISO-8601 string.
+    ``writer`` and ``written_at`` are optional, so a body from an older
+    blackboard that carries no such field decodes as ``None`` for both and a
+    newer agent reads it without error. ``written_at`` crosses as an ISO-8601
+    string.
     """
 
     _required: ClassVar[tuple[str, ...]] = ("sequence",)
