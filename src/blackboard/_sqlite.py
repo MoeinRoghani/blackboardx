@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from datetime import datetime
 from typing import Any
 
 from blackboard._board import (
@@ -56,13 +57,17 @@ CREATE TABLE IF NOT EXISTS contributions (
     content         TEXT NOT NULL,
     version         INTEGER,
     idempotency_key TEXT,
+    writer          TEXT,
+    written_at      TEXT,
     PRIMARY KEY (board_id, sequence)
 );
 CREATE TABLE IF NOT EXISTS premises (
     board_id TEXT NOT NULL,
     name     TEXT NOT NULL,
-    value    TEXT,
-    version  INTEGER NOT NULL DEFAULT 0,
+    value      TEXT,
+    version    INTEGER NOT NULL DEFAULT 0,
+    writer     TEXT,
+    written_at TEXT,
     PRIMARY KEY (board_id, name)
 );
 CREATE INDEX IF NOT EXISTS contributions_by_region
@@ -75,10 +80,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS contributions_by_key
 #: Columns added after the first release. A file written by an earlier
 #: version is opened by this one, so they are added where they are absent
 #: rather than assumed.
-_ADDED_COLUMNS = (("version", "INTEGER"), ("idempotency_key", "TEXT"))
+_ADDED_COLUMNS = (
+    ("version", "INTEGER"),
+    ("idempotency_key", "TEXT"),
+    ("writer", "TEXT"),
+    ("written_at", "TEXT"),
+)
+
+#: SQLite's clock, as an ISO-8601 instant in UTC. The store stamps every
+#: write itself, because callers' clocks disagree and the record's do not.
+_NOW = "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now')"
 
 _LEVEL = "level"
 _PREMISE = "premise"
+
+
+def _instant(stored: str | None) -> datetime | None:
+    """Parses a stamped instant, and passes through the None of an old row."""
+    return None if stored is None else datetime.fromisoformat(stored)
 
 
 class SqliteStore:
@@ -145,20 +164,21 @@ class SqliteStore:
 
     def _add_missing_columns(self) -> None:
         # executescript runs its own transaction, so this happens first.
-        present = {
-            row[1]
-            for row in self._connection.execute(
-                "SELECT * FROM pragma_table_info('contributions')"
-            )
-        }
-        if not present:
-            return
-        with self._connection:
-            for name, kind in _ADDED_COLUMNS:
-                if name not in present:
-                    self._connection.execute(
-                        f"ALTER TABLE contributions ADD COLUMN {name} {kind}"
-                    )
+        for table in ("contributions", "premises"):
+            present = {
+                row[1]
+                for row in self._connection.execute(
+                    f"SELECT * FROM pragma_table_info('{table}')"
+                )
+            }
+            if not present:
+                continue
+            with self._connection:
+                for name, kind in _ADDED_COLUMNS:
+                    if name not in present:
+                        self._connection.execute(
+                            f"ALTER TABLE {table} ADD COLUMN {name} {kind}"
+                        )
 
     def _stamp(self, where: str) -> None:
         # Once, when the file opens, so a record this version cannot read is
@@ -201,6 +221,7 @@ class SqliteStore:
         level: str,
         content: object,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written:
         carried = json.dumps(content)
         with self._lock, self._connection:
@@ -211,9 +232,9 @@ class SqliteStore:
             sequence = self._next_sequence(board_id)
             self._connection.execute(
                 "INSERT INTO contributions "
-                "(board_id, sequence, region, content, idempotency_key) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (board_id, sequence, level, carried, idempotency_key),
+                "(board_id, sequence, region, content, idempotency_key, writer, "
+                f"written_at) VALUES (?, ?, ?, ?, ?, ?, {_NOW})",
+                (board_id, sequence, level, carried, idempotency_key, writer),
             )
             return Written(sequence=sequence)
 
@@ -224,6 +245,7 @@ class SqliteStore:
         value: object,
         expected_version: int,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written | Conflict:
         carried = json.dumps(value)
         with self._lock, self._connection:
@@ -240,15 +262,23 @@ class SqliteStore:
                 return Conflict(current_version=current)
             sequence = self._next_sequence(board_id)
             self._connection.execute(
-                "UPDATE premises SET value = ?, version = ? "
-                "WHERE board_id = ? AND name = ?",
-                (carried, current + 1, board_id, premise),
+                "UPDATE premises SET value = ?, version = ?, writer = ?, "
+                f"written_at = {_NOW} WHERE board_id = ? AND name = ?",
+                (carried, current + 1, writer, board_id, premise),
             )
             self._connection.execute(
                 "INSERT INTO contributions "
-                "(board_id, sequence, region, content, version, idempotency_key) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (board_id, sequence, premise, carried, current + 1, idempotency_key),
+                "(board_id, sequence, region, content, version, idempotency_key, "
+                f"writer, written_at) VALUES (?, ?, ?, ?, ?, ?, ?, {_NOW})",
+                (
+                    board_id,
+                    sequence,
+                    premise,
+                    carried,
+                    current + 1,
+                    idempotency_key,
+                    writer,
+                ),
             )
             return Written(sequence=sequence, version=current + 1)
 
@@ -262,37 +292,58 @@ class SqliteStore:
         with self._lock:
             self._require(board_id, level, _LEVEL)
             rows = self._connection.execute(
-                "SELECT sequence, content FROM contributions "
+                "SELECT sequence, content, writer, written_at FROM contributions "
                 "WHERE board_id = ? AND region = ? AND sequence >= ? "
                 "ORDER BY sequence LIMIT ?",
                 (board_id, level, from_sequence, -1 if limit is None else limit),
             ).fetchall()
-        return [Contribution(sequence=r[0], content=json.loads(r[1])) for r in rows]
+        return [
+            Contribution(
+                sequence=r[0],
+                content=json.loads(r[1]),
+                writer=r[2],
+                written_at=_instant(r[3]),
+            )
+            for r in rows
+        ]
 
     def read_premise(self, board_id: str, premise: str) -> PremiseState:
         with self._lock:
             self._require(board_id, premise, _PREMISE)
             row = self._connection.execute(
-                "SELECT value, version FROM premises WHERE board_id = ? AND name = ?",
+                "SELECT value, version, writer, written_at FROM premises "
+                "WHERE board_id = ? AND name = ?",
                 (board_id, premise),
             ).fetchone()
         if int(row[1]) == 0:
             raise UnsetPremiseError(
                 f"the premise {premise!r} has no value until one is written"
             )
-        return PremiseState(value=json.loads(row[0]), version=int(row[1]))
+        return PremiseState(
+            value=json.loads(row[0]),
+            version=int(row[1]),
+            writer=row[2],
+            written_at=_instant(row[3]),
+        )
 
     def read_board(
         self, board_id: str, from_sequence: int = 0, limit: int | None = None
     ) -> list[BoardChange]:
         with self._lock:
             rows = self._connection.execute(
-                "SELECT sequence, region, content FROM contributions "
+                "SELECT sequence, region, content, writer, written_at "
+                "FROM contributions "
                 "WHERE board_id = ? AND sequence >= ? ORDER BY sequence LIMIT ?",
                 (board_id, from_sequence, -1 if limit is None else limit),
             ).fetchall()
         return [
-            BoardChange(sequence=r[0], region=r[1], content=json.loads(r[2]))
+            BoardChange(
+                sequence=r[0],
+                region=r[1],
+                content=json.loads(r[2]),
+                writer=r[3],
+                written_at=_instant(r[4]),
+            )
             for r in rows
         ]
 

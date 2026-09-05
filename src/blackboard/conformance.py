@@ -80,8 +80,14 @@ class Bound:
     def append(self, level: str, content: object, key: str | None = None) -> int:
         return self.appended(level, content, key).sequence
 
-    def appended(self, level: str, content: object, key: str | None = None) -> Written:
-        return self.store.append(self.board_id, level, content, key)
+    def appended(
+        self,
+        level: str,
+        content: object,
+        key: str | None = None,
+        writer: str | None = None,
+    ) -> Written:
+        return self.store.append(self.board_id, level, content, key, writer=writer)
 
     def set(
         self,
@@ -89,8 +95,11 @@ class Bound:
         value: object,
         expected_version: int,
         key: str | None = None,
+        writer: str | None = None,
     ) -> Written | Conflict:
-        return self.store.set(self.board_id, premise, value, expected_version, key)
+        return self.store.set(
+            self.board_id, premise, value, expected_version, key, writer=writer
+        )
 
     def read_level(
         self, level: str, from_sequence: int = 0, limit: int | None = None
@@ -110,6 +119,16 @@ class Bound:
 
     def delete(self) -> Deleted:
         return self.store.delete(self.board_id)
+
+
+def entries(read: list[Contribution]) -> list[tuple[int, object]]:
+    """Projects a level read onto the fields these cases are about."""
+    return [(c.sequence, c.content) for c in read]
+
+
+def changes(read: list[BoardChange]) -> list[tuple[int, str, object]]:
+    """Projects a whole-board read onto the fields these cases are about."""
+    return [(c.sequence, c.region, c.content) for c in read]
 
 
 class BoardConformance:
@@ -150,9 +169,7 @@ class BoardConformance:
         ready.append("application", "a")
         with pytest.raises(DuplicateRegionError):
             ready.declare(Level("application"))
-        assert ready.read_level("application") == [
-            Contribution(sequence=1, content="a")
-        ]
+        assert entries(ready.read_level("application")) == [(1, "a")]
 
     def test_a_region_declared_later_starts_empty(self, ready: Bound) -> None:
         ready.append("application", "a")
@@ -184,17 +201,12 @@ class BoardConformance:
         ready.append("application", "a")
         ready.append("platform", "p")
         ready.append("application", "b")
-        assert ready.read_level("application") == [
-            Contribution(sequence=1, content="a"),
-            Contribution(sequence=3, content="b"),
-        ]
+        assert entries(ready.read_level("application")) == [(1, "a"), (3, "b")]
 
     def test_a_level_read_from_a_bound_is_inclusive(self, ready: Bound) -> None:
         ready.append("application", "a")
         ready.append("application", "b")
-        assert ready.read_level("application", from_sequence=2) == [
-            Contribution(sequence=2, content="b")
-        ]
+        assert entries(ready.read_level("application", from_sequence=2)) == [(2, "b")]
 
     def test_appending_to_a_premise_is_refused(self, ready: Bound) -> None:
         with pytest.raises(RegionKindError):
@@ -211,7 +223,8 @@ class BoardConformance:
         assert ready.set("window", "w2", expected_version=1) == Written(
             sequence=2, version=2
         )
-        assert ready.read_premise("window") == PremiseState(value="w2", version=2)
+        state = ready.read_premise("window")
+        assert (state.value, state.version) == ("w2", 2)
 
     def test_a_stale_version_returns_the_current_one(self, ready: Bound) -> None:
         ready.set("window", "w1", expected_version=0)
@@ -223,7 +236,8 @@ class BoardConformance:
     def test_a_conflict_changes_nothing(self, ready: Bound) -> None:
         ready.set("window", "w1", expected_version=0)
         ready.set("window", "late", expected_version=0)
-        assert ready.read_premise("window") == PremiseState(value="w1", version=1)
+        state = ready.read_premise("window")
+        assert (state.value, state.version) == ("w1", 1)
 
     def test_a_conflict_takes_no_sequence_number(self, ready: Bound) -> None:
         ready.set("window", "w1", expected_version=0)
@@ -233,9 +247,7 @@ class BoardConformance:
     def test_a_conflict_is_absent_from_the_record(self, ready: Bound) -> None:
         ready.set("window", "w1", expected_version=0)
         ready.set("window", "late", expected_version=0)
-        assert ready.read_board() == [
-            BoardChange(sequence=1, region="window", content="w1")
-        ]
+        assert changes(ready.read_board()) == [(1, "window", "w1")]
 
     def test_setting_a_level_is_refused(self, ready: Bound) -> None:
         with pytest.raises(RegionKindError):
@@ -243,7 +255,8 @@ class BoardConformance:
 
     def test_a_premise_may_hold_none(self, ready: Bound) -> None:
         ready.set("window", None, expected_version=0)
-        assert ready.read_premise("window") == PremiseState(value=None, version=1)
+        state = ready.read_premise("window")
+        assert (state.value, state.version) == (None, 1)
 
     # Reading the whole board
 
@@ -251,18 +264,16 @@ class BoardConformance:
         ready.append("application", "a")
         ready.set("window", "w", expected_version=0)
         ready.append("platform", "p")
-        assert ready.read_board() == [
-            BoardChange(sequence=1, region="application", content="a"),
-            BoardChange(sequence=2, region="window", content="w"),
-            BoardChange(sequence=3, region="platform", content="p"),
+        assert changes(ready.read_board()) == [
+            (1, "application", "a"),
+            (2, "window", "w"),
+            (3, "platform", "p"),
         ]
 
     def test_the_record_read_from_a_bound_is_inclusive(self, ready: Bound) -> None:
         ready.append("application", "a")
         ready.append("platform", "p")
-        assert ready.read_board(from_sequence=2) == [
-            BoardChange(sequence=2, region="platform", content="p")
-        ]
+        assert changes(ready.read_board(from_sequence=2)) == [(2, "platform", "p")]
 
     def test_reads_are_snapshots(self, ready: Bound) -> None:
         ready.append("application", "a")
@@ -539,6 +550,50 @@ class BoardConformance:
             board_id=ready.board_id, regions_removed=0, writes_removed=0
         )
 
+    def test_a_contribution_names_its_writer(self, ready: Bound) -> None:
+        ready.appended("application", "found it", writer="triage")
+        (contribution,) = ready.read_level("application")
+        assert contribution.writer == "triage"
+
+    def test_a_write_without_a_writer_records_none(self, ready: Bound) -> None:
+        ready.append("application", "anonymous")
+        (contribution,) = ready.read_level("application")
+        assert contribution.writer is None
+
+    def test_the_store_stamps_the_instant_of_a_write(self, ready: Bound) -> None:
+        """The store's clock, not the caller's: no instant crosses the call."""
+        ready.append("application", "first")
+        ready.append("application", "second")
+        first, second = ready.read_level("application")
+        assert first.written_at is not None
+        assert first.written_at.tzinfo is not None
+        assert second.written_at is not None
+        assert first.written_at <= second.written_at
+
+    def test_a_premise_names_its_writer_and_instant(self, ready: Bound) -> None:
+        ready.set("window", "20:00", expected_version=0, writer="operator")
+        state = ready.read_premise("window")
+        assert state.writer == "operator"
+        assert state.written_at is not None
+        assert state.written_at.tzinfo is not None
+
+    def test_a_change_names_its_writer_and_instant(self, ready: Bound) -> None:
+        ready.appended("application", "a", writer="triage")
+        ready.set("window", "w", expected_version=0, writer="operator")
+        by_region = {change.region: change for change in ready.read_board()}
+        assert by_region["application"].writer == "triage"
+        assert by_region["window"].writer == "operator"
+        assert all(c.written_at is not None for c in by_region.values())
+
+    def test_a_repeated_key_answers_with_the_first_write_and_writer(
+        self, ready: Bound
+    ) -> None:
+        """The second sender's name does not overwrite the first's."""
+        ready.appended("application", "found it", key="k1", writer="triage")
+        ready.appended("application", "found it", key="k1", writer="impostor")
+        (contribution,) = ready.read_level("application")
+        assert contribution.writer == "triage"
+
 
 class SharedStoreConformance:
     """Subclass this and supply a ``store`` fixture. One store, many boards.
@@ -638,9 +693,7 @@ class SharedStoreConformance:
         second.declare(Level("application"))
         first.append("application", "a")
         second.append("application", "b")
-        assert first.read_board() == [
-            BoardChange(sequence=1, region="application", content="a")
-        ]
+        assert changes(first.read_board()) == [(1, "application", "a")]
 
     def test_a_key_writes_once_across_two_views_of_one_board(
         self, same_board_twice: tuple[Bound, Bound]

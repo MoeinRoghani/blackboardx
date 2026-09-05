@@ -45,9 +45,12 @@ class RecordingBoard:
         level: str,
         content: object,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written:
         self.calls.append(f"append:{level}")
-        return self._inner.append(board_id, level, content, idempotency_key)
+        return self._inner.append(
+            board_id, level, content, idempotency_key, writer=writer
+        )
 
     def set(
         self,
@@ -56,10 +59,11 @@ class RecordingBoard:
         value: object,
         expected_version: int,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written | Conflict:
         self.calls.append(f"set:{premise}")
         return self._inner.set(
-            board_id, premise, value, expected_version, idempotency_key
+            board_id, premise, value, expected_version, idempotency_key, writer=writer
         )
 
     def read_level(

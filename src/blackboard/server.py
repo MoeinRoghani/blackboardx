@@ -65,6 +65,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 from urllib.parse import unquote
 
@@ -117,6 +118,11 @@ from blackboard.wire import (
 )
 
 __all__ = ["BoardService", "Request", "Response"]
+
+
+def _iso(instant: datetime | None) -> str | None:
+    """Renders a stored instant as the ISO-8601 string the wire carries."""
+    return None if instant is None else instant.isoformat()
 
 
 #: How one operation is answered, once its path has been matched.
@@ -302,7 +308,12 @@ class BoardService:
             200,
             LevelPage(
                 contributions=[
-                    ContributionBody(sequence=c.sequence, content=c.content)
+                    ContributionBody(
+                        sequence=c.sequence,
+                        content=c.content,
+                        writer=c.writer,
+                        written_at=_iso(c.written_at),
+                    )
                     for c in page
                 ],
                 has_more=more,
@@ -314,7 +325,13 @@ class BoardService:
     ) -> Response:
         state = serving.reader.read_premise(variables["premise"])
         return Response(
-            200, PremiseBody(version=state.version, value=state.value).to_json()
+            200,
+            PremiseBody(
+                version=state.version,
+                value=state.value,
+                writer=state.writer,
+                written_at=_iso(state.written_at),
+            ).to_json(),
         )
 
     def _read_board(
@@ -331,7 +348,11 @@ class BoardService:
             BoardPage(
                 changes=[
                     BoardChangeBody(
-                        sequence=c.sequence, region=c.region, content=c.content
+                        sequence=c.sequence,
+                        region=c.region,
+                        content=c.content,
+                        writer=c.writer,
+                        written_at=_iso(c.written_at),
                     )
                     for c in page
                 ],

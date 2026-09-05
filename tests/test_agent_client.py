@@ -22,12 +22,10 @@ from blackboard import (
     Agent,
     BoardReader,
     Conflict,
-    Contribution,
     Control,
     InMemoryStore,
     Level,
     Premise,
-    PremiseState,
     Reject,
     Rejected,
     RejectionCause,
@@ -207,9 +205,8 @@ class TestReading:
         self, board: Any, control: Control
     ) -> None:
         assert board.read_premise("severity") == control.reader.read_premise("severity")
-        assert board.read_premise("severity") == PremiseState(
-            value="unknown", version=1
-        )
+        state = board.read_premise("severity")
+        assert (state.value, state.version) == ("unknown", 1)
 
     def test_the_board_comes_back_as_changes_in_order(
         self, board: Any, control: Control
@@ -263,9 +260,9 @@ class TestWriting:
     ) -> None:
         outcome = board.write("signals", {"n": 1})
         assert isinstance(outcome, Written)
-        assert control.reader.read_level("signals") == [
-            Contribution(sequence=outcome.sequence, content={"n": 1})
-        ]
+        assert [
+            (c.sequence, c.content) for c in control.reader.read_level("signals")
+        ] == [(outcome.sequence, {"n": 1})]
 
     def test_the_writer_is_the_agent_the_client_was_built_for(
         self, board: Any, control: Control

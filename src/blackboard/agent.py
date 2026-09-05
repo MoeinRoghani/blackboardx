@@ -81,6 +81,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
@@ -289,6 +290,11 @@ def _level_page(status: int, body: object) -> LevelPage:
     return _decode(LevelPage, body)
 
 
+def _instant(stored: str | None) -> datetime | None:
+    """Reads the ISO-8601 instant the wire carries, or the None of an old body."""
+    return None if stored is None else datetime.fromisoformat(stored)
+
+
 def _board_page(status: int, body: object) -> BoardPage:
     _refuse(status, body, expected=(200,))
     return _decode(BoardPage, body)
@@ -297,7 +303,12 @@ def _board_page(status: int, body: object) -> BoardPage:
 def _premise(status: int, body: object) -> PremiseState:
     _refuse(status, body, expected=(200,))
     found = _decode(PremiseBody, body)
-    return PremiseState(value=found.value, version=found.version)
+    return PremiseState(
+        value=found.value,
+        version=found.version,
+        writer=found.writer,
+        written_at=_instant(found.written_at),
+    )
 
 
 def _write_outcome(status: int, body: object) -> Written | Rejected:
@@ -513,7 +524,12 @@ class BoardClient:
                 _read_level_call(self._bound.board_id, level, start, limit)
             )
             found.extend(
-                Contribution(sequence=c.sequence, content=c.content)
+                Contribution(
+                    sequence=c.sequence,
+                    content=c.content,
+                    writer=c.writer,
+                    written_at=_instant(c.written_at),
+                )
                 for c in page.contributions
             )
             if limit is not None:
@@ -534,7 +550,13 @@ class BoardClient:
         while start is not None:
             page = self._send(_read_board_call(self._bound.board_id, start, limit))
             found.extend(
-                BoardChange(sequence=c.sequence, region=c.region, content=c.content)
+                BoardChange(
+                    sequence=c.sequence,
+                    region=c.region,
+                    content=c.content,
+                    writer=c.writer,
+                    written_at=_instant(c.written_at),
+                )
                 for c in page.changes
             )
             if limit is not None:
@@ -673,7 +695,12 @@ class AsyncBoardClient:
                 _read_level_call(self._bound.board_id, level, start, limit)
             )
             found.extend(
-                Contribution(sequence=c.sequence, content=c.content)
+                Contribution(
+                    sequence=c.sequence,
+                    content=c.content,
+                    writer=c.writer,
+                    written_at=_instant(c.written_at),
+                )
                 for c in page.contributions
             )
             if limit is not None:
@@ -696,7 +723,13 @@ class AsyncBoardClient:
                 _read_board_call(self._bound.board_id, start, limit)
             )
             found.extend(
-                BoardChange(sequence=c.sequence, region=c.region, content=c.content)
+                BoardChange(
+                    sequence=c.sequence,
+                    region=c.region,
+                    content=c.content,
+                    writer=c.writer,
+                    written_at=_instant(c.written_at),
+                )
                 for c in page.changes
             )
             if limit is not None:

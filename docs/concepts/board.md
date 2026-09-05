@@ -42,6 +42,19 @@ The sequence number is both a position and an address. Nothing else identifies a
 
 Sequence assignment is the only point at which two writes wait on each other.
 
+## Who wrote it, and when
+
+Every write records the name it carried and the instant the store stamped, so the record answers both questions without a second table to consult.
+
+```python
+contribution.writer  # the name the write named, or None
+contribution.written_at  # the store's clock when it landed
+```
+
+The instant comes from the store rather than from the caller. Agents run as separate services, and two of them disagreeing about the time would make the record unanswerable on a question the sequence cannot settle: the sequence orders writes against each other, and the instant says when in the day one happened.
+
+An opening premise value names no writer, because the application supplied it before any agent registered. A record written by an earlier version of this library carries no name and no instant, and both read as `None`.
+
 ## Reads
 
 Any caller may read anything, at any time. Reads bypass the control component entirely, so they consume no capacity and cannot be refused.

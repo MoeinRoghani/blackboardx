@@ -3,6 +3,7 @@
 import sys
 import threading
 from collections.abc import Iterator
+from datetime import timedelta
 
 import pytest
 
@@ -16,9 +17,11 @@ from blackboard import (
     Premise,
     PremiseState,
     RegionKindError,
+    RunLimits,
     UndeclaredRegionError,
     UnsetPremiseError,
     Written,
+    create_model,
 )
 from blackboard.conformance import Bound
 
@@ -44,6 +47,21 @@ def frequent_thread_switches() -> Iterator[None]:
     sys.setswitchinterval(1e-6)
     yield
     sys.setswitchinterval(interval)
+
+
+def entries(read: list[Contribution]) -> list[tuple[int, object]]:
+    """A level read, projected onto the fields these cases assert about."""
+    return [(c.sequence, c.content) for c in read]
+
+
+def changes(read: list[BoardChange]) -> list[tuple[int, str, object]]:
+    """A whole-board read, projected the same way."""
+    return [(c.sequence, c.region, c.content) for c in read]
+
+
+def state(read: PremiseState) -> tuple[object, int]:
+    """A premise read, projected onto its value and version."""
+    return (read.value, read.version)
 
 
 class TestAppend:
@@ -111,7 +129,7 @@ class TestSet:
         board.set("window", "w1", expected_version=0)
         result = board.set("window", "w2", expected_version=1)
         assert result == Written(sequence=2, version=2)
-        assert board.read_premise("window") == PremiseState(value="w2", version=2)
+        assert state(board.read_premise("window")) == ("w2", 2)
 
     def test_a_stale_version_returns_conflict_with_the_current_version(self) -> None:
         board = make_board()
@@ -124,7 +142,7 @@ class TestSet:
         board = make_board()
         board.set("window", "w1", expected_version=0)
         board.set("window", "late", expected_version=0)
-        assert board.read_premise("window") == PremiseState(value="w1", version=1)
+        assert state(board.read_premise("window")) == ("w1", 1)
 
     def test_a_conflicting_write_takes_no_sequence_number(self) -> None:
         board = make_board()
@@ -136,9 +154,7 @@ class TestSet:
         board = make_board()
         board.set("window", "w1", expected_version=0)
         board.set("window", "late", expected_version=0)
-        assert board.read_board() == [
-            BoardChange(sequence=1, region="window", content="w1")
-        ]
+        assert changes(board.read_board()) == [(1, "window", "w1")]
 
     def test_set_on_a_level_is_refused(self) -> None:
         board = make_board()
@@ -186,18 +202,13 @@ class TestReads:
         board.append("application", "a")
         board.append("platform", "p")
         board.append("application", "b")
-        assert board.read_level("application") == [
-            Contribution(sequence=1, content="a"),
-            Contribution(sequence=3, content="b"),
-        ]
+        assert entries(board.read_level("application")) == [(1, "a"), (3, "b")]
 
     def test_read_level_from_sequence_is_inclusive(self) -> None:
         board = make_board()
         board.append("application", "a")
         board.append("application", "b")
-        assert board.read_level("application", from_sequence=2) == [
-            Contribution(sequence=2, content="b")
-        ]
+        assert entries(board.read_level("application", from_sequence=2)) == [(2, "b")]
 
     def test_content_comes_back_equal_and_detached_from_the_caller(self) -> None:
         board = make_board()
@@ -217,31 +228,25 @@ class TestReads:
         board.append("application", "a")
         board.set("window", "w", expected_version=0)
         board.append("platform", "p")
-        assert board.read_board() == [
-            BoardChange(sequence=1, region="application", content="a"),
-            BoardChange(sequence=2, region="window", content="w"),
-            BoardChange(sequence=3, region="platform", content="p"),
+        assert changes(board.read_board()) == [
+            (1, "application", "a"),
+            (2, "window", "w"),
+            (3, "platform", "p"),
         ]
 
     def test_read_board_from_sequence_is_inclusive(self) -> None:
         board = make_board()
         board.append("application", "a")
         board.append("platform", "p")
-        assert board.read_board(from_sequence=2) == [
-            BoardChange(sequence=2, region="platform", content="p")
-        ]
+        assert changes(board.read_board(from_sequence=2)) == [(2, "platform", "p")]
 
     def test_read_results_are_snapshots_of_internal_state(self) -> None:
         board = make_board()
         board.append("application", "a")
         board.read_level("application").clear()
         board.read_board().clear()
-        assert board.read_level("application") == [
-            Contribution(sequence=1, content="a")
-        ]
-        assert board.read_board() == [
-            BoardChange(sequence=1, region="application", content="a")
-        ]
+        assert entries(board.read_level("application")) == [(1, "a")]
+        assert changes(board.read_board()) == [(1, "application", "a")]
 
 
 class TestDeclarations:
@@ -282,15 +287,48 @@ class TestDeclarations:
         board.append("application", "a")
         with pytest.raises(DuplicateRegionError):
             board.declare(Level("application"))
-        assert board.read_level("application") == [
-            Contribution(sequence=1, content="a")
-        ]
+        assert entries(board.read_level("application")) == [(1, "a")]
         board.set("window", "w", expected_version=0)
         with pytest.raises(DuplicateRegionError):
             board.declare(Premise("window"))
-        assert board.read_premise("window") == PremiseState(value="w", version=1)
+        assert state(board.read_premise("window")) == ("w", 1)
 
     def test_a_declaration_of_neither_kind_is_refused(self) -> None:
         board = make_board()
         with pytest.raises(TypeError):
             board.declare("change")  # type: ignore[arg-type]  # the refusal of an untyped caller's object is the behavior under test
+
+
+class TestTheRecordAnswersWhoAndWhen:
+    """A contribution names its writer and the instant the store stamped."""
+
+    def test_the_control_component_records_the_writer_it_was_given(self) -> None:
+        model = create_model(
+            board_id="b",
+            store=InMemoryStore(),
+            regions=[Level("findings"), Premise("severity")],
+            premises={"severity": "unknown"},
+            limits=RunLimits(
+                wall_clock=timedelta(minutes=5), idle=timedelta(minutes=5)
+            ),
+        )
+        model.control.write("findings", "oom", writer="triage")
+        model.control.set_premise("severity", "high", 1, writer="operator")
+
+        (finding,) = model.reader.read_level("findings")
+        assert finding.writer == "triage"
+        assert finding.written_at is not None
+        assert model.reader.read_premise("severity").writer == "operator"
+
+    def test_an_opening_premise_value_names_no_writer(self) -> None:
+        """The application supplied it, and no agent wrote it."""
+        model = create_model(
+            board_id="b",
+            store=InMemoryStore(),
+            regions=[Premise("severity")],
+            premises={"severity": "unknown"},
+            limits=RunLimits(
+                wall_clock=timedelta(minutes=5), idle=timedelta(minutes=5)
+            ),
+        )
+        assert model.reader.read_premise("severity").writer is None

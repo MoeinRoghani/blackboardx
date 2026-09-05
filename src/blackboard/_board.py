@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import threading
 from dataclasses import dataclass, field, replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 _ZERO_WINDOW = timedelta(0)
@@ -134,27 +134,49 @@ class Conflict:
 
 @dataclass(frozen=True)
 class Contribution:
-    """One unit stored in a level, at its position in the total order."""
+    """One unit stored in a level, at its position in the total order.
+
+    ``writer`` is the name the write carried and ``written_at`` is the
+    store's clock when it landed. Both are ``None`` on a record written
+    before the library recorded them, and ``writer`` is ``None`` for an
+    opening premise value, which the application supplied rather than any
+    agent.
+    """
 
     sequence: int
     content: object
+    writer: str | None = None
+    written_at: datetime | None = None
 
 
 @dataclass(frozen=True)
 class PremiseState:
-    """The current value of a premise and the version its write produced."""
+    """The current value of a premise and the version its write produced.
+
+    ``writer`` and ``written_at`` describe the write that set the current
+    value, and are ``None`` where the record predates them or the value is
+    the opening one.
+    """
 
     value: object
     version: int
+    writer: str | None = None
+    written_at: datetime | None = None
 
 
 @dataclass(frozen=True)
 class BoardChange:
-    """One write to any region, at its position in the total order."""
+    """One write to any region, at its position in the total order.
+
+    ``writer`` and ``written_at`` follow the same rules as on
+    :class:`Contribution`.
+    """
 
     sequence: int
     region: str
     content: object
+    writer: str | None = None
+    written_at: datetime | None = None
 
 
 @dataclass
@@ -235,6 +257,7 @@ class InMemoryStore:
         level: str,
         content: object,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written:
         """Adds one contribution to a level and returns where it landed."""
         carried = _as_json(content)
@@ -245,9 +268,23 @@ class InMemoryStore:
             if done is not None:
                 return done
             board.sequence += 1
-            contributions.append(Contribution(sequence=board.sequence, content=carried))
+            now = datetime.now(UTC)
+            contributions.append(
+                Contribution(
+                    sequence=board.sequence,
+                    content=carried,
+                    writer=writer,
+                    written_at=now,
+                )
+            )
             board.changes.append(
-                BoardChange(sequence=board.sequence, region=level, content=carried)
+                BoardChange(
+                    sequence=board.sequence,
+                    region=level,
+                    content=carried,
+                    writer=writer,
+                    written_at=now,
+                )
             )
             written = Written(sequence=board.sequence)
             if idempotency_key is not None:
@@ -261,6 +298,7 @@ class InMemoryStore:
         value: object,
         expected_version: int,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written | Conflict:
         """Replaces a premise's value under the version the caller expects.
 
@@ -280,11 +318,21 @@ class InMemoryStore:
             if expected_version != current_version:
                 return Conflict(current_version=current_version)
             board.sequence += 1
+            now = datetime.now(UTC)
             board.premises[premise] = PremiseState(
-                value=carried, version=current_version + 1
+                value=carried,
+                version=current_version + 1,
+                writer=writer,
+                written_at=now,
             )
             board.changes.append(
-                BoardChange(sequence=board.sequence, region=premise, content=carried)
+                BoardChange(
+                    sequence=board.sequence,
+                    region=premise,
+                    content=carried,
+                    writer=writer,
+                    written_at=now,
+                )
             )
             written = Written(sequence=board.sequence, version=current_version + 1)
             if idempotency_key is not None:
