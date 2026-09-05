@@ -15,6 +15,7 @@ from blackboard import (
     Premise,
     PremiseState,
     RunLimits,
+    RunRecord,
     TerminationDecision,
     Written,
     create_model,
@@ -74,6 +75,32 @@ class RecordingBoard:
         limit: int | None = None,
     ) -> list[Contribution]:
         return self._inner.read_level(board_id, level, from_sequence, limit)
+
+    def open_run(self, board_id: str, *, wall_clock: float, idle: float) -> None:
+        self.calls.append("open_run")
+        self._inner.open_run(board_id, wall_clock=wall_clock, idle=idle)
+
+    def read_run(self, board_id: str) -> RunRecord | None:
+        return self._inner.read_run(board_id)
+
+    def touch_run(self, board_id: str, *, idle: float) -> None:
+        self._inner.touch_run(board_id, idle=idle)
+
+    def close_run(
+        self,
+        board_id: str,
+        *,
+        closed_as: str,
+        reason: str | None = None,
+        unfinished: frozenset[str] = frozenset(),
+    ) -> bool:
+        self.calls.append("close_run")
+        return self._inner.close_run(
+            board_id, closed_as=closed_as, reason=reason, unfinished=unfinished
+        )
+
+    def runs_past_deadline(self, limit: int = 100) -> list[str]:
+        return self._inner.runs_past_deadline(limit)
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         self.calls.append("read_regions")
@@ -135,7 +162,7 @@ def test_without_one_the_in_memory_board_is_used() -> None:
     assert [c.content for c in model.reader.read_level("platform")] == ["finding"]
 
 
-def test_the_protocol_is_eight_methods() -> None:
+def test_the_protocol_is_thirteen_methods() -> None:
     """The documentation counts them. A method added here updates that count.
 
     `docs/concepts/storage.md`, `docs/glossary.md` and `docs/concepts/service.md`
@@ -152,4 +179,9 @@ def test_the_protocol_is_eight_methods() -> None:
         "read_board",
         "read_regions",
         "delete",
+        "open_run",
+        "read_run",
+        "touch_run",
+        "close_run",
+        "runs_past_deadline",
     }

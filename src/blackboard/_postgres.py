@@ -43,6 +43,7 @@ from blackboard._board import (
     Premise,
     PremiseState,
     RegionKindError,
+    RunRecord,
     UndeclaredRegionError,
     UnsetPremiseError,
     Written,
@@ -96,6 +97,21 @@ ALTER TABLE blackboard_premises
     ADD COLUMN IF NOT EXISTS writer TEXT;
 ALTER TABLE blackboard_premises
     ADD COLUMN IF NOT EXISTS written_at TIMESTAMPTZ;
+-- Named apart from the table the withdrawn 0.11.0 created, which carried
+-- different columns and did not raise the schema number, so a database that
+-- saw that release would answer a query here with a missing column rather
+-- than with the refusal the stamp exists to give.
+CREATE TABLE IF NOT EXISTS blackboard_run_state (
+    board_id      TEXT        NOT NULL PRIMARY KEY,
+    idle_deadline TIMESTAMPTZ NOT NULL,
+    wall_deadline TIMESTAMPTZ NOT NULL,
+    closed_as     TEXT,
+    reason        TEXT,
+    unfinished    JSONB
+);
+CREATE INDEX IF NOT EXISTS blackboard_run_state_open_by_deadline
+    ON blackboard_run_state (idle_deadline)
+    WHERE closed_as IS NULL;
 CREATE INDEX IF NOT EXISTS blackboard_contributions_by_region
     ON blackboard_contributions (board_id, region, sequence);
 CREATE UNIQUE INDEX IF NOT EXISTS blackboard_contributions_by_key
@@ -414,6 +430,7 @@ class PostgresStore:
                 "blackboard_contributions",
                 "blackboard_premises",
                 "blackboard_regions",
+                "blackboard_run_state",
                 "blackboard_boards",
             ):
                 connection.execute(
@@ -424,6 +441,81 @@ class PostgresStore:
                 regions_removed=int(regions[0]),
                 writes_removed=int(writes[0]),
             )
+
+    def open_run(self, board_id: str, *, wall_clock: float, idle: float) -> None:
+        self._checked()
+        with self._pool.connection() as connection, connection.transaction():
+            # now() is the transaction's instant on the server's clock, so
+            # every deadline in the database is set by one clock.
+            connection.execute(
+                "INSERT INTO blackboard_run_state "
+                "(board_id, idle_deadline, wall_deadline) VALUES "
+                "(%s, now() + %s * interval '1 second', "
+                " now() + %s * interval '1 second') "
+                "ON CONFLICT (board_id) DO UPDATE SET "
+                "idle_deadline = EXCLUDED.idle_deadline, "
+                "wall_deadline = EXCLUDED.wall_deadline, "
+                "closed_as = NULL, reason = NULL, unfinished = NULL",
+                (board_id, idle, wall_clock),
+            )
+
+    def read_run(self, board_id: str) -> RunRecord | None:
+        self._checked()
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                "SELECT idle_deadline, wall_deadline, closed_as, reason, "
+                "unfinished, now() FROM blackboard_run_state WHERE board_id = %s",
+                (board_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return RunRecord(
+            now=row[5],
+            idle_deadline=row[0],
+            wall_deadline=row[1],
+            closed_as=row[2],
+            reason=row[3],
+            unfinished=frozenset(row[4] or ()),
+        )
+
+    def touch_run(self, board_id: str, *, idle: float) -> None:
+        self._checked()
+        with self._pool.connection() as connection, connection.transaction():
+            connection.execute(
+                "UPDATE blackboard_run_state "
+                "SET idle_deadline = now() + %s * interval '1 second' "
+                "WHERE board_id = %s AND closed_as IS NULL",
+                (idle, board_id),
+            )
+
+    def close_run(
+        self,
+        board_id: str,
+        *,
+        closed_as: str,
+        reason: str | None = None,
+        unfinished: frozenset[str] = frozenset(),
+    ) -> bool:
+        self._checked()
+        with self._pool.connection() as connection, connection.transaction():
+            updated = connection.execute(
+                "UPDATE blackboard_run_state SET closed_as = %s, reason = %s, "
+                "unfinished = %s::jsonb "
+                "WHERE board_id = %s AND closed_as IS NULL RETURNING board_id",
+                (closed_as, reason, json.dumps(sorted(unfinished)), board_id),
+            ).fetchone()
+        return updated is not None
+
+    def runs_past_deadline(self, limit: int = 100) -> list[str]:
+        self._checked()
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT board_id FROM blackboard_run_state WHERE closed_as IS NULL "
+                "AND (now() >= idle_deadline OR now() >= wall_deadline) "
+                "ORDER BY idle_deadline LIMIT %s",
+                (limit,),
+            ).fetchall()
+        return [r[0] for r in rows]
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         self._checked()

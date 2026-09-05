@@ -55,6 +55,7 @@ from blackboard._board import (
     Premise,
     PremiseState,
     RegionKindError,
+    RunRecord,
     UndeclaredRegionError,
     UnsetPremiseError,
     Written,
@@ -156,6 +157,55 @@ class BoardStore(Protocol):
 
         Nothing in the library calls this. Deleting is a retention decision
         and the control component makes none.
+        """
+        ...
+
+    def open_run(self, board_id: str, *, wall_clock: float, idle: float) -> None:
+        """Records that a run is open over this board, with its two limits.
+
+        Both limits are seconds. The store computes the two deadlines from
+        its own clock, so no instant crosses the call and no caller's clock
+        decides when a run ends.
+        """
+        ...
+
+    def read_run(self, board_id: str) -> RunRecord | None:
+        """Returns the run over this board, or nothing where none was opened.
+
+        The record carries the store's clock alongside the deadlines, so a
+        caller compares two instants that came from one clock.
+        """
+        ...
+
+    def touch_run(self, board_id: str, *, idle: float) -> None:
+        """Pushes the idle deadline out by ``idle`` seconds from now.
+
+        The wall clock is left where it was, because it bounds the whole run
+        rather than the quiet in it. A run already closed is unchanged.
+        """
+        ...
+
+    def close_run(
+        self,
+        board_id: str,
+        *,
+        closed_as: str,
+        reason: str | None = None,
+        unfinished: frozenset[str] = frozenset(),
+    ) -> bool:
+        """Records how the run ended, and says which caller recorded it.
+
+        Answers ``True`` to the one caller that closed the run and ``False``
+        to every other, so a run closes once however many callers reach the
+        deadline together. That is what makes closing safe without a lock.
+        """
+        ...
+
+    def runs_past_deadline(self, limit: int = 100) -> list[str]:
+        """Returns boards whose run is open and past one of its deadlines.
+
+        A run closes because nothing happened, so no request is in flight to
+        notice. This is what a caller polls to close those runs.
         """
         ...
 

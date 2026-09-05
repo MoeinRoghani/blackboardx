@@ -33,6 +33,7 @@ from blackboard._board import (
     Premise,
     PremiseState,
     RegionKindError,
+    RunRecord,
     UndeclaredRegionError,
     UnsetPremiseError,
     Written,
@@ -70,6 +71,14 @@ CREATE TABLE IF NOT EXISTS premises (
     written_at TEXT,
     PRIMARY KEY (board_id, name)
 );
+CREATE TABLE IF NOT EXISTS runs (
+    board_id       TEXT NOT NULL PRIMARY KEY,
+    idle_deadline  TEXT NOT NULL,
+    wall_deadline  TEXT NOT NULL,
+    closed_as      TEXT,
+    reason         TEXT,
+    unfinished     TEXT
+);
 CREATE INDEX IF NOT EXISTS contributions_by_region
     ON contributions (board_id, region, sequence);
 CREATE UNIQUE INDEX IF NOT EXISTS contributions_by_key
@@ -86,6 +95,17 @@ _ADDED_COLUMNS = (
     ("writer", "TEXT"),
     ("written_at", "TEXT"),
 )
+
+#: An instant a given offset after SQLite's clock, for a deadline the store
+#: sets. The offset is built in Python because SQLite's modifier needs an
+#: explicit sign and a negative one concatenated after a plus does not parse.
+_AFTER = "strftime('%Y-%m-%dT%H:%M:%f+00:00', 'now', ?)"
+
+
+def _offset(seconds: float) -> str:
+    """Renders a number of seconds as a SQLite date modifier."""
+    return f"{seconds:+f} seconds"
+
 
 #: SQLite's clock, as an ISO-8601 instant in UTC. The store stamps every
 #: write itself, because callers' clocks disagree and the record's do not.
@@ -355,7 +375,7 @@ class SqliteStore:
             writes = self._connection.execute(
                 "SELECT COUNT(*) FROM contributions WHERE board_id = ?", (board_id,)
             ).fetchone()
-            for table in ("contributions", "premises", "regions"):
+            for table in ("contributions", "premises", "regions", "runs"):
                 self._connection.execute(
                     f"DELETE FROM {table} WHERE board_id = ?", (board_id,)
                 )
@@ -364,6 +384,77 @@ class SqliteStore:
                 regions_removed=int(regions[0]),
                 writes_removed=int(writes[0]),
             )
+
+    def open_run(self, board_id: str, *, wall_clock: float, idle: float) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "INSERT INTO runs "
+                "(board_id, idle_deadline, wall_deadline, closed_as, reason, "
+                " unfinished) VALUES (?, "
+                f"{_AFTER}, {_AFTER}, NULL, NULL, NULL) "
+                "ON CONFLICT(board_id) DO UPDATE SET "
+                f"idle_deadline = {_AFTER}, wall_deadline = {_AFTER}, "
+                "closed_as = NULL, reason = NULL, unfinished = NULL",
+                (
+                    board_id,
+                    _offset(idle),
+                    _offset(wall_clock),
+                    _offset(idle),
+                    _offset(wall_clock),
+                ),
+            )
+
+    def read_run(self, board_id: str) -> RunRecord | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT idle_deadline, wall_deadline, closed_as, reason, unfinished, "
+                f"{_NOW} FROM runs WHERE board_id = ?",
+                (board_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return RunRecord(
+            now=datetime.fromisoformat(row[5]),
+            idle_deadline=datetime.fromisoformat(row[0]),
+            wall_deadline=datetime.fromisoformat(row[1]),
+            closed_as=row[2],
+            reason=row[3],
+            unfinished=frozenset(json.loads(row[4])) if row[4] else frozenset(),
+        )
+
+    def touch_run(self, board_id: str, *, idle: float) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                f"UPDATE runs SET idle_deadline = {_AFTER} "
+                "WHERE board_id = ? AND closed_as IS NULL",
+                (_offset(idle), board_id),
+            )
+
+    def close_run(
+        self,
+        board_id: str,
+        *,
+        closed_as: str,
+        reason: str | None = None,
+        unfinished: frozenset[str] = frozenset(),
+    ) -> bool:
+        with self._lock, self._connection:
+            changed = self._connection.execute(
+                "UPDATE runs SET closed_as = ?, reason = ?, unfinished = ? "
+                "WHERE board_id = ? AND closed_as IS NULL",
+                (closed_as, reason, json.dumps(sorted(unfinished)), board_id),
+            ).rowcount
+        return changed == 1
+
+    def runs_past_deadline(self, limit: int = 100) -> list[str]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT board_id FROM runs WHERE closed_as IS NULL "
+                f"AND ({_NOW} >= idle_deadline OR {_NOW} >= wall_deadline) "
+                "ORDER BY idle_deadline LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [r[0] for r in rows]
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         """Returns the regions declared on one board, with their kinds."""

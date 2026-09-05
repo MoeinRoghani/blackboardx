@@ -133,6 +133,37 @@ class Conflict:
 
 
 @dataclass(frozen=True)
+class RunRecord:
+    """What the store holds about one board's run.
+
+    ``now`` is the store's clock at the moment of the read, so a caller
+    decides that a deadline has passed by comparing two instants that came
+    from the same clock. Pods disagree about the time and the store does not.
+
+    ``closed_as`` is ``None`` while the run is open, and otherwise names the
+    outcome: ``settled``, ``wall_clock_expired`` or ``aborted``.
+    """
+
+    now: datetime
+    idle_deadline: datetime
+    wall_deadline: datetime
+    closed_as: str | None = None
+    reason: str | None = None
+    unfinished: frozenset[str] = frozenset()
+
+    @property
+    def expired(self) -> str | None:
+        """Names the limit that has passed, or nothing while both hold."""
+        if self.closed_as is not None:
+            return None
+        if self.now >= self.wall_deadline:
+            return "wall_clock_expired"
+        if self.now >= self.idle_deadline:
+            return "settled"
+        return None
+
+
+@dataclass(frozen=True)
 class Contribution:
     """One unit stored in a level, at its position in the total order.
 
@@ -189,6 +220,19 @@ class _BoardState:
     changes: list[BoardChange] = field(default_factory=list)
     #: Every idempotency key this board has written, and what it produced.
     keys: dict[str, tuple[str, Written]] = field(default_factory=dict)
+    #: The run over this board, once one is opened.
+    run: _RunState | None = None
+
+
+@dataclass
+class _RunState:
+    """One board's run, as the in-memory store holds it."""
+
+    idle_deadline: datetime
+    wall_deadline: datetime
+    closed_as: str | None = None
+    reason: str | None = None
+    unfinished: frozenset[str] = frozenset()
 
 
 def _already_written(
@@ -389,6 +433,68 @@ class InMemoryStore:
                 regions_removed=len(board.levels) + len(board.premises),
                 writes_removed=len(board.changes),
             )
+
+    def open_run(self, board_id: str, *, wall_clock: float, idle: float) -> None:
+        with self._lock:
+            board = self._board(board_id)
+            now = datetime.now(UTC)
+            board.run = _RunState(
+                idle_deadline=now + timedelta(seconds=idle),
+                wall_deadline=now + timedelta(seconds=wall_clock),
+            )
+
+    def read_run(self, board_id: str) -> RunRecord | None:
+        with self._lock:
+            board = self._boards.get(board_id)
+            run = None if board is None else board.run
+            if run is None:
+                return None
+            return RunRecord(
+                now=datetime.now(UTC),
+                idle_deadline=run.idle_deadline,
+                wall_deadline=run.wall_deadline,
+                closed_as=run.closed_as,
+                reason=run.reason,
+                unfinished=run.unfinished,
+            )
+
+    def touch_run(self, board_id: str, *, idle: float) -> None:
+        with self._lock:
+            board = self._boards.get(board_id)
+            run = None if board is None else board.run
+            if run is None or run.closed_as is not None:
+                return
+            run.idle_deadline = datetime.now(UTC) + timedelta(seconds=idle)
+
+    def close_run(
+        self,
+        board_id: str,
+        *,
+        closed_as: str,
+        reason: str | None = None,
+        unfinished: frozenset[str] = frozenset(),
+    ) -> bool:
+        with self._lock:
+            board = self._boards.get(board_id)
+            run = None if board is None else board.run
+            if run is None or run.closed_as is not None:
+                return False
+            run.closed_as = closed_as
+            run.reason = reason
+            run.unfinished = unfinished
+            return True
+
+    def runs_past_deadline(self, limit: int = 100) -> list[str]:
+        with self._lock:
+            now = datetime.now(UTC)
+            found = [
+                board_id
+                for board_id, board in self._boards.items()
+                if board.run is not None
+                and board.run.closed_as is None
+                and (now >= board.run.idle_deadline or now >= board.run.wall_deadline)
+            ]
+        return found[:limit]
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         """Returns the regions declared on one board, with their kinds."""
