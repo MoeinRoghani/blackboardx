@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 from blackboard import (
+    AgentProgress,
     BoardChange,
     BoardReader,
     BoardStore,
@@ -102,6 +103,19 @@ class RecordingBoard:
     def runs_past_deadline(self, limit: int = 100) -> list[str]:
         return self._inner.runs_past_deadline(limit)
 
+    def read_agents(self, board_id: str) -> list[AgentProgress]:
+        return self._inner.read_agents(board_id)
+
+    def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
+        self.calls.append(f"mark_notified:{agent}")
+        self._inner.mark_notified(board_id, agent, through=through)
+
+    def acknowledge(
+        self, board_id: str, agent: str, *, through: int
+    ) -> AgentProgress | None:
+        self.calls.append(f"acknowledge:{agent}")
+        return self._inner.acknowledge(board_id, agent, through=through)
+
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         self.calls.append("read_regions")
         return self._inner.read_regions(board_id)
@@ -166,7 +180,7 @@ def test_without_one_the_in_memory_board_is_used() -> None:
     assert [c.content for c in model.reader.read_level("platform")] == ["finding"]
 
 
-def test_the_protocol_is_thirteen_methods() -> None:
+def test_the_protocol_is_sixteen_methods() -> None:
     """The documentation counts them. A method added here updates that count.
 
     `docs/concepts/storage.md`, `docs/glossary.md` and `docs/concepts/service.md`
@@ -183,6 +197,9 @@ def test_the_protocol_is_thirteen_methods() -> None:
         "read_board",
         "read_regions",
         "delete",
+        "read_agents",
+        "mark_notified",
+        "acknowledge",
         "open_run",
         "read_run",
         "touch_run",

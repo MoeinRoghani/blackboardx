@@ -17,7 +17,7 @@ Read [what is durable and what is not](#what-is-durable-and-what-is-not) before 
 | Retention | Deciding when a finished run's record goes | `store.delete`, when you call it |
 | Agents | Independent deployments | no |
 
-The package ships `PostgresStore` and `MongoStore` for a deployment and `SqliteStore` for one machine, all satisfying the `BoardStore` protocol. Against any other database the thirteen methods are yours to write: four read the record, three write to it, one removes a board, and five hold the run. Every rule they are held to maps onto ordinary primitives. [Storage](storage.md) covers what each has to guarantee.
+The package ships `PostgresStore` and `MongoStore` for a deployment and `SqliteStore` for one machine, all satisfying the `BoardStore` protocol. Against any other database the sixteen methods are yours to write: four read the record, three write to it, one removes a board, five hold the run, and three hold how far each agent has been notified and has answered. Every rule they are held to maps onto ordinary primitives. [Storage](storage.md) covers what each has to guarantee.
 
 ## What is durable and what is not
 

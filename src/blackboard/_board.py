@@ -164,6 +164,30 @@ class RunRecord:
 
 
 @dataclass(frozen=True)
+class AgentProgress:
+    """How far one agent has been told, and how far it has answered.
+
+    Both are sequence numbers on this board, so they are comparable with a
+    contribution's ``sequence`` and with each other. An agent is unfinished
+    when it has been told further than it has answered, which is what any
+    process reads to name the agents a closing run did not hear back from.
+
+    Both only ever rise. Two processes notifying one agent leave the higher
+    of what they wrote, so neither can undo the other and no lock is needed
+    to keep them ordered.
+    """
+
+    agent: str
+    notified_through: int
+    acknowledged_through: int
+
+    @property
+    def outstanding(self) -> bool:
+        """True while the agent owes an answer for what it was told."""
+        return self.notified_through > self.acknowledged_through
+
+
+@dataclass(frozen=True)
 class Contribution:
     """One unit stored in a level, at its position in the total order.
 
@@ -222,6 +246,16 @@ class _BoardState:
     keys: dict[str, tuple[str, Written]] = field(default_factory=dict)
     #: The run over this board, once one is opened.
     run: _RunState | None = None
+    #: How far each agent has been notified and has acknowledged.
+    agents: dict[str, _AgentProgress] = field(default_factory=dict)
+
+
+@dataclass
+class _AgentProgress:
+    """One agent's two watermarks, as the in-memory store holds them."""
+
+    notified_through: int = 0
+    acknowledged_through: int = 0
 
 
 @dataclass
@@ -495,6 +529,42 @@ class InMemoryStore:
                 and (now >= board.run.idle_deadline or now >= board.run.wall_deadline)
             ]
         return found[:limit]
+
+    def read_agents(self, board_id: str) -> list[AgentProgress]:
+        with self._lock:
+            board = self._boards.get(board_id)
+            if board is None:
+                return []
+            return [
+                AgentProgress(
+                    agent=name,
+                    notified_through=progress.notified_through,
+                    acknowledged_through=progress.acknowledged_through,
+                )
+                for name, progress in board.agents.items()
+            ]
+
+    def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
+        with self._lock:
+            board = self._board(board_id)
+            progress = board.agents.setdefault(agent, _AgentProgress())
+            progress.notified_through = max(progress.notified_through, through)
+
+    def acknowledge(
+        self, board_id: str, agent: str, *, through: int
+    ) -> AgentProgress | None:
+        with self._lock:
+            board = self._boards.get(board_id)
+            progress = None if board is None else board.agents.get(agent)
+            if progress is None or through > progress.notified_through:
+                return None
+            prior = AgentProgress(
+                agent=agent,
+                notified_through=progress.notified_through,
+                acknowledged_through=progress.acknowledged_through,
+            )
+            progress.acknowledged_through = max(progress.acknowledged_through, through)
+            return prior
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         """Returns the regions declared on one board, with their kinds."""
