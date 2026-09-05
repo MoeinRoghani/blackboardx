@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from blackboard import (
+    SCHEMA_VERSION,
     Agent,
     InMemoryStore,
     Level,
@@ -22,8 +23,11 @@ from blackboard import (
     Premise,
     Reject,
     RunLimits,
+    SchemaVersionError,
+    close_expired,
     create_model,
 )
+from blackboard._schema import stamp_to_write
 
 LOGGER = "blackboard"
 
@@ -117,4 +121,80 @@ class TestWhatIsNotLogged:
         with caplog.at_level(logging.DEBUG, logger=LOGGER):
             model.control.write("findings", "oom", writer="collector")
             model.control.ack(held[-1].notification_id, agent="triage")
+        assert caplog.records == []
+
+
+class _StoreThatFails(InMemoryStore):
+    """A store whose run reads raise for one board, and work for the rest."""
+
+    def __init__(self, failing: str) -> None:
+        super().__init__()
+        self._failing = failing
+
+    def read_run(self, board_id: str) -> Any:
+        if board_id == self._failing:
+            raise RuntimeError("the connection went away")
+        return super().read_run(board_id)
+
+
+class TestTheStoreFailingUnderTheSweep:
+    """A scheduled sweep has no caller, so a failure there reaches nobody."""
+
+    def test_a_board_that_raises_does_not_stop_the_sweep(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        store = _StoreThatFails("board-b")
+        for board_id in ("board-a", "board-b", "board-c"):
+            store.declare(board_id, Level("findings"))
+            store.open_run(board_id, wall_clock=3600.0, idle=-1.0)
+
+        with caplog.at_level(logging.ERROR, logger="blackboard"):
+            closed = close_expired(store)
+
+        assert sorted(closed) == ["board-a", "board-c"], "the others still close"
+        assert any("board-b" in r.getMessage() for r in caplog.records)
+
+    def test_the_failure_is_logged_as_an_error(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        store = _StoreThatFails("board-b")
+        store.declare("board-b", Level("findings"))
+        store.open_run("board-b", wall_clock=3600.0, idle=-1.0)
+
+        with caplog.at_level(logging.ERROR, logger="blackboard"):
+            close_expired(store)
+
+        (record,) = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert "board-b" in record.getMessage()
+        assert record.exc_info is not None, "the cause travels with the line"
+
+
+class TestARecordThisVersionCannotRead:
+    def test_a_refusal_is_logged_before_it_raises(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The caller sees the exception; a scheduled job may see neither."""
+        with (
+            caplog.at_level(logging.ERROR, logger="blackboard"),
+            pytest.raises(SchemaVersionError),
+        ):
+            stamp_to_write(SCHEMA_VERSION + 1, where="the test database")
+        (record,) = caplog.records
+        assert "the test database" in record.getMessage()
+
+    def test_stamping_a_record_forward_is_logged(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.INFO, logger="blackboard"):
+            assert stamp_to_write(SCHEMA_VERSION - 1, where="the test database") == (
+                SCHEMA_VERSION
+            )
+        (record,) = caplog.records
+        assert str(SCHEMA_VERSION) in record.getMessage()
+
+    def test_a_record_already_at_this_schema_says_nothing(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.INFO, logger="blackboard"):
+            assert stamp_to_write(SCHEMA_VERSION, where="the test database") is None
         assert caplog.records == []

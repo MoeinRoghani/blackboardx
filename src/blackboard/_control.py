@@ -1687,14 +1687,22 @@ def close_expired(store: BoardStore, limit: int = 100) -> list[str]:
     """
     closed: list[str] = []
     for board_id in store.runs_past_deadline(limit):
-        run = store.read_run(board_id)
-        if run is None:
+        # A sweep has no caller waiting on it, so a store that fails here
+        # reaches nobody unless this says so. One board failing is also no
+        # reason to leave the rest of the pass undone.
+        try:
+            run = store.read_run(board_id)
+            if run is None:
+                continue
+            expired = run.expired
+            if expired is None:
+                continue
+            unfinished = _unfinished(store, board_id)
+            won = store.close_run(board_id, closed_as=expired, unfinished=unfinished)
+        except Exception:
+            logger.exception("the sweep could not close the run on %s", board_id)
             continue
-        expired = run.expired
-        if expired is None:
-            continue
-        unfinished = _unfinished(store, board_id)
-        if store.close_run(board_id, closed_as=expired, unfinished=unfinished):
+        if won:
             closed.append(board_id)
             logger.info(
                 "run on %s closed as %s by the sweep%s",
