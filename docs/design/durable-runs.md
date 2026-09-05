@@ -1,81 +1,60 @@
 # A run that lives in the database
 
-**Status: a design, not a thing that exists.** Nothing here is in the library.
-What the library does hold, and where, is in
-[What this version does not do](../limits.md).
+**Status: built.** What this document proposed is in the library. It is kept
+because the reasoning is still the reasoning, and because the parts it got
+wrong are worth having on the record.
 
-This replaces an earlier document that described a blackboard service, an
-agent client, and an HTTP surface. All three are now built, and the surface
-they were built with is in `blackboard.wire` and
-[ADR 0014](../adr/0014-the-agent-facing-protocol.md), not here. What that
-document described and the library still lacks is the part below.
+The decisions are in
+[ADR 0024](../adr/0024-the-run-is-in-the-store.md),
+[ADR 0025](../adr/0025-the-identifier-is-the-range.md) and
+[ADR 0026](../adr/0026-one-door-into-a-board.md). What the library holds and
+where is in [What this version does not do](../limits.md).
 
-## What is missing
+## What was missing, and is not now
 
-The board is durable and the run is not. `Control` holds the registered
-agents, the outstanding notifications, the audit, and the two deadlines in
-process memory, so one board is served by one process at a time and losing
-that process ends the run against a record that survives it.
+The board was durable and the run was not. `Control` held the registered
+agents, what each was owed, the audit and the two deadlines in process
+memory, so one board was served by one process at a time and losing that
+process ended the run against a record that survived it.
 
-A durable run means a replacement replica picking up where the last one
-stopped, and it means any replica serving any board, so a pod keeps nothing
-between requests.
+A run's deadlines, its outcome, and how far each agent has been notified and
+has answered are now rows. Any process reads them, closes a run that has gone
+quiet, and names the agents it did not hear back from.
 
-## What would move into the store
+## Where this document was wrong
 
-| Table | Holds | Exists |
-| --- | --- | --- |
-| `regions` | The named regions of a board and their kind | yes |
-| `premises` | The current value and version of each premise | yes |
-| `contributions` | Every write, with its sequence, region, version, and idempotency key | yes |
-| `boards` | One row per board: its sequence counter | partly; no status, outcome, or limits |
-| `agents` | Each registered agent: callback address, subscriptions, write permissions, cursor | no |
-| `notifications` | Every notification issued, delivered or not, acknowledged or not | no |
-| `audit` | Every event, in the order each occurred | no |
+**It proposed a second store.** Live coordination was to go in a `RunStore`
+backed by Redis while the record stayed in a `BoardStore`. Two stores cannot
+commit together, so a write could land and its deadline fail to move. The
+library has one store and one transaction instead, which is the reason the
+dual write does not arise.
 
-The three that do not exist are exactly the three `Control` holds in memory.
-The `boards` row would gain the run's status, its outcome, and its two limits,
-so that a replica reading it learns what the run is and when it ends.
+**It proposed an audit table.** Every event of a run, written hot and read
+cold. There is none. What it recorded is answered two other ways: a
+contribution carries its writer and the instant the store stamped, and
+everything else is a log line. `Control.read_audit` is deprecated and may be
+removed on or after 2026-12-05.
 
-## What would replace the timers
+**It proposed storing each agent's callback address, subscriptions and
+permissions.** Those are configuration, which the application hands to every
+replica the way it hands the regions, the limits and the admission rule. A
+store holds run state; it does not hold a callback.
 
-`Control` arms a timer for the wall clock and another for the idle limit,
-which is why they die with the process. A durable run cannot hold a timer, so
-the deadlines become columns and a sweep reads them.
+## What is still to build
 
-Every replica would run the same loop, taking rows with
-`FOR UPDATE SKIP LOCKED` so that no two act on the same row and none waits on
-another:
+The transactional outbox. A contribution and the intent to notify are not yet
+written in one transaction, so a process that commits a write and stops
+before delivering loses the notification.
 
-| Query | Action |
-| --- | --- |
-| Boards past their wall clock limit | Close as `WallClockExpired` |
-| Boards silent for their idle limit | Close as `Settled`, naming any agent that did not finish |
-| Notifications undelivered past a delivery timeout | Record the agent unreachable and stop retrying |
-| Notifications undelivered within it | Attempt delivery again |
-
-The last two would move `HttpNotifier`'s queue into the database with them,
-which is what makes a queued notification survive a restart.
-
-## What would not change
+## What did not change
 
 The model. Regions, admission, subscription, notification, and the three
 outcomes behave the same whether a run is held in a process or in a database,
 because none of them depends on where the run is held.
 
-A notification would still carry no values, so a delivery attempted twice
-still costs nothing.
+A notification still carries no values, so a delivery attempted twice still
+costs nothing.
 
-`contributions.sequence` would still be taken by incrementing a counter row
-inside the writing transaction rather than from a database sequence. A
-database sequence does not roll back, and a gap is a hole in a record whose
-numbers are addresses.
-
-## Why it is not built
-
-It is a large change to the control component and to every store, and the
-deployment it enables, several replicas behind one board, is not one the
-maintainer has needed. The deployment that works today, one board to one
-replica and routing by board identifier, is documented in
-[Running as a service](../concepts/service.md) rather than left to be
-discovered.
+A write still takes its sequence by incrementing a counter inside the writing
+transaction rather than from a database sequence. A database sequence does not
+roll back, and a gap is a hole in a record whose numbers are addresses.

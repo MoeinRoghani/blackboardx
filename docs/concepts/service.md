@@ -29,6 +29,11 @@ A store makes the **record** durable. It does not make the **run** durable, and 
 | **Configuration** | The regions, the agent roster, the admission rule, the termination predicate, the limits and the clock. Every replica is given these, the way every replica is given the same image and the same environment. |
 | **In flight** | Notifications `HttpNotifier` has queued but not yet sent. |
 
+A `Model` is a handle to a board that lives in the store, not the board
+itself. It holds nothing, so holding one keeps no run open, caches no
+registry, and reserves nothing; build one where convenient and discard it.
+The name invites the other reading, which is why it is said here.
+
 Replicas are identical, so each is given the same configuration and each reads the same run state. A second replica therefore measures silence from the same instant, closes the run on the same deadline, knows which agents are owed an answer, and holds the same roster with the same addresses. A write is served by whichever replica receives it, and that replica notifies on the write path.
 
 `Control.notify_due` covers what the write path cannot. It reads what has landed since each agent last answered and delivers it, so a change taken while a replica was starting, or one whose delivery was lost, still reaches the agent. A run inside one process finds nothing to do there. Schedule it beside `close_expired`.

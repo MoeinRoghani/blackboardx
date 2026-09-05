@@ -49,16 +49,27 @@ from blackboard._control import (
 
 @dataclass(frozen=True)
 class Model:
-    """A running shared solution model: its read handle and its control component.
+    """A handle to a board that lives in the store: its reader and its control.
+
+    **It holds nothing.** Every call reads what it needs from the store, so
+    holding one keeps no run open, caches no registry, and reserves nothing.
+    Build one wherever it is convenient, on any process, and discard it; the
+    board is unaffected either way. Dropping the last one closes nothing,
+    because a run ends on its deadlines or on ``control.abort`` and on nothing
+    else.
+
+    The name invites the opposite reading, so it is said plainly here. The
+    same shape appears elsewhere: a boto3 ``Bucket`` is a handle to something
+    living in S3 rather than a copy of it, and a LangGraph graph is stateless
+    with the thread identifier travelling in the config on every call.
 
     Board reads go to ``reader`` directly, consume no control capacity, and
     cannot be refused. Writes, acknowledgments, and lifecycle calls go
     through ``control``.
 
     ``reader`` is ``control.reader``, and is a field of its own so a component
-    that only reads takes the reader alone. ``board_id`` names the board this
-    run opened, so a registry keyed by it does not have to repeat the string
-    the caller passed.
+    that only reads takes the reader alone. ``board_id`` names the board, so a
+    registry keyed by it does not have to repeat the string the caller passed.
     """
 
     board_id: str
