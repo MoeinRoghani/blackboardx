@@ -34,6 +34,7 @@ concurrent duplicates rather than preventing them.
 from __future__ import annotations
 
 import logging
+import random
 import threading
 import warnings
 from collections import deque
@@ -1711,3 +1712,103 @@ def close_expired(store: BoardStore, limit: int = 100) -> list[str]:
                 (", unfinished " + ", ".join(sorted(unfinished)) if unfinished else ""),
             )
     return closed
+
+
+class Sweep:
+    """Calls :func:`close_expired` on an interval, on a thread of its own.
+
+    A convenience, the way ``HttpNotifier`` is a convenience over the wire
+    protocol. The library ships the mechanism and the application owns the
+    loop: a scheduled job, a serverless invocation, or a thread beside the
+    service are all equally supported, and this is only the last of those
+    written out so an application does not have to.
+
+    ``interval`` is the seconds between passes. ``jitter`` spreads the first
+    pass over a fraction of that interval, chosen once when the sweep starts,
+    so replicas that started together do not query together for ever after.
+    Pass ``jitter=0.0`` for a test that wants the first pass promptly.
+
+    A pass that raises is logged and the loop continues. A loop that died on
+    one failure would leave every later run open, which is the failure the
+    sweep exists to prevent.
+    """
+
+    def __init__(
+        self,
+        store: BoardStore,
+        *,
+        interval: float = 30.0,
+        limit: int = 100,
+        jitter: float = 1.0,
+    ) -> None:
+        if interval <= 0:
+            raise ValueError(
+                f"interval is a positive number of seconds, not {interval}"
+            )
+        if limit < 1:
+            raise ValueError(f"limit is at least 1, not {limit}")
+        if not 0.0 <= jitter <= 1.0:
+            raise ValueError(f"jitter is a fraction between 0 and 1, not {jitter}")
+        self._store = store
+        self._interval = interval
+        self._limit = limit
+        self._jitter = jitter
+        self._stopping = threading.Event()
+        self._passed = threading.Condition()
+        self._passes = 0
+        self._thread: threading.Thread | None = None
+
+    @property
+    def running(self) -> bool:
+        """True between ``start`` and ``close``."""
+        return self._thread is not None and self._thread.is_alive()
+
+    def start(self) -> None:
+        """Starts the thread. Starting a running sweep does nothing."""
+        if self.running:
+            return
+        self._stopping.clear()
+        self._thread = threading.Thread(
+            target=self._run, name="blackboard-sweep", daemon=True
+        )
+        self._thread.start()
+
+    def close(self) -> None:
+        """Stops the thread and waits for the pass in flight to finish."""
+        self._stopping.set()
+        thread, self._thread = self._thread, None
+        if thread is not None:
+            thread.join()
+
+    def wait_for_pass(self, timeout: float, passes: int = 1) -> bool:
+        """Blocks until this many passes have run. True if they did.
+
+        For a test that needs a pass to have happened before it asserts.
+        """
+        target = passes
+        with self._passed:
+            return self._passed.wait_for(lambda: self._passes >= target, timeout)
+
+    def __enter__(self) -> Sweep:
+        self.start()
+        return self
+
+    def __exit__(self, *exception: object) -> None:
+        self.close()
+
+    def _run(self) -> None:
+        first = self._interval * self._jitter * random.random()
+        if self._stopping.wait(first):
+            return
+        while not self._stopping.is_set():
+            try:
+                close_expired(self._store, self._limit)
+            except Exception:
+                # The store failed the query itself, not one board. Say so and
+                # keep the loop, because nothing else will sweep.
+                logger.exception("a sweep pass failed")
+            with self._passed:
+                self._passes += 1
+                self._passed.notify_all()
+            if self._stopping.wait(self._interval):
+                return
