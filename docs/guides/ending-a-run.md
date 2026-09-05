@@ -97,6 +97,25 @@ If every caller runs it on the same interval they will tend to arrive
 together, which wastes queries rather than breaking anything. Draw each wait
 from a range, the way the delivery backoff already does.
 
+`Sweep` is that loop written out, for an application that would otherwise
+write the same thread:
+
+```python
+from blackboard import Sweep
+
+with Sweep(store) as sweep:  # every thirty seconds, on a thread of its own
+    serve_until_shutdown()
+```
+
+It spreads its first pass over the interval, so replicas that started together
+do not query together afterwards. A pass that raises is logged and the loop
+continues, because a loop that died on one failure would leave every later run
+open. Closing it waits for the pass in flight.
+
+It is a convenience over `close_expired` and nothing more, the way
+`HttpNotifier` is a convenience over the wire protocol. An application with a
+scheduler of its own calls the function and ignores this.
+
 ## Closing by hand
 
 A caller may close a run outright.
