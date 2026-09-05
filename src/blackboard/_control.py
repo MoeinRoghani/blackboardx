@@ -814,18 +814,34 @@ class Control:
         self._idle_call: ScheduledCall | None = None
         self._idle_generation = 0
         self._condition = threading.Condition(self._lock)
-        if adopt:
-            # The record already holds these regions, so recording their
-            # kinds is all that is left. The sequence continues from what the
-            # record ends at, or a notification would cover a range that has
-            # already been read.
-            for region in regions:
-                self._record_kind(region)
-            written = store.read_board(board_id)
-            self._last_sequence = written[-1].sequence if written else 0
-        else:
-            for region in regions:
-                self.declare(region)
+        # A declaration converges rather than being made once. A region the
+        # record already holds with the same kind is recorded and not
+        # written again, so any process builds this over a board another
+        # already opened. A name held as the other kind is still refused:
+        # that is a disagreement about the board and not a repeat.
+        held = {region.name: region for region in store.read_regions(board_id)}
+        for region in regions:
+            standing = held.get(region.name)
+            if standing is None:
+                if not adopt:
+                    store.declare(board_id, region)
+                    self._record_kind(region)
+                    continue
+                raise UndeclaredRegionError(
+                    f"{region.name!r} is not declared on {board_id!r}"
+                )
+            if type(standing) is not type(region):
+                raise RegionKindError(
+                    f"{region.name!r} is a "
+                    f"{'level' if isinstance(standing, Level) else 'premise'}"
+                    f" on {board_id!r}, and was declared here as a "
+                    f"{'level' if isinstance(region, Level) else 'premise'}"
+                )
+            self._record_kind(region)
+        # The sequence continues from what the record ends at, or a
+        # notification would cover a range that has already been read.
+        written = store.read_board(board_id)
+        self._last_sequence = written[-1].sequence if written else 0
         # The store holds the deadlines, so a process that did not open this
         # run still knows when it ends. The timer below stays as the local
         # path: it closes the run promptly here, and `close_expired` closes
@@ -1332,7 +1348,17 @@ class Control:
                     )
                 raise PremiseError("; ".join(parts))
             now = self._clock.now()
+            standing = {
+                name
+                for name, kind in self._kinds.items()
+                if kind is _RegionKind.PREMISE and self._has_value(name)
+            }
             for premise, value in premises.items():
+                if premise in standing:
+                    # The record already holds a value and the version it is
+                    # at. An opening value is what a board starts from, not
+                    # what every process asserts on arrival.
+                    continue
                 result = self._store.set(
                     self._board_id, premise, value, expected_version=0
                 )
