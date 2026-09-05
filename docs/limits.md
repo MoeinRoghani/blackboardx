@@ -10,9 +10,14 @@ The board is durable and the run is not.
 
 | Held where | What |
 | --- | --- |
-| The database, through the store | Regions, contributions, premise values and versions, the sequence, idempotency keys |
-| The process, in `Control` | The registered agents, outstanding notifications, the audit, the idle and wall clock timers |
+| The database, through the store | Regions, contributions, premise values and versions, the sequence, idempotency keys, and the run's two deadlines and its outcome |
+| The process, in `Control` | The registered agents, outstanding notifications, the audit, every agent's cursor |
 | The process, in `HttpNotifier` | Notifications queued but not yet sent |
+
+The run's deadlines and its outcome moved to the store, so any process holding
+the store closes a run that has gone quiet, through `close_expired`. What is
+left in the process is what decides who is notified, and until that moves a
+write is still servable only where the run was opened.
 
 A second replica holding its own `Control` for the same board knows no agent
 that the first registered, owes no notification that the first dispatched, and

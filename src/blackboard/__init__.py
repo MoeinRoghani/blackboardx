@@ -65,6 +65,7 @@ from blackboard._control import (
     WallClockExpired,
     WriteAccepted,
     WriteRejected,
+    close_expired,
     reader_for,
 )
 from blackboard._model import Model, attach_model, create_model
@@ -136,6 +137,7 @@ __all__ = [
     "WriteRejected",
     "Written",
     "attach_model",
+    "close_expired",
     "create_model",
     "reader_for",
 ]

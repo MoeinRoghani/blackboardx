@@ -72,6 +72,31 @@ Choose the wall clock by how long the work is allowed to take. An idle limit
 shorter than the gap between events would end such a run, and would end every
 slower run with it, which is the failure the idle limit is sized against.
 
+## Closing a run no process is watching
+
+A run closes because nothing happened, so no request is in flight to notice.
+The process that opened the run notices through its own timer. Every other
+process notices by asking the store.
+
+```python
+from blackboard import close_expired
+
+closed = close_expired(store)  # names the boards it closed
+```
+
+Call it on whatever schedule suits the deployment, being a thread beside the
+service, a scheduled job, or a test advancing time by hand. This library takes
+no view on where it runs.
+
+Several callers running it together is safe. Recording an outcome is a write
+only one caller wins, so a run closes once, one outcome is recorded and one
+`on_closed` fires, however many callers reach the deadline in the same instant.
+That is also why no lock and no elected leader appears anywhere.
+
+If every caller runs it on the same interval they will tend to arrive
+together, which wastes queries rather than breaking anything. Draw each wait
+from a range, the way the delivery backoff already does.
+
 ## Closing by hand
 
 A caller may close a run outright.

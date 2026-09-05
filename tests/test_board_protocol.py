@@ -141,6 +141,10 @@ def test_the_control_component_drives_the_supplied_board() -> None:
     assert store.calls == [
         "declare:platform",
         "declare:window",
+        # The run opens once the regions exist, so its deadlines are set
+        # before the opening premise values are written. Those writes are
+        # events like any other and push the idle deadline out again.
+        "open_run",
         "set:window",
         "append:platform",
     ]

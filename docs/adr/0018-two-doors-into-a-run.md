@@ -4,7 +4,7 @@ Date: 2026-09-02
 
 ## Status
 
-Accepted.
+Accepted. ADR 0024 supersedes the reason this record gives for a second door: a run is no longer opened over a record, so `attach_model` is deprecated. What this record decided about a board outliving one process stands.
 
 ## Context
 
