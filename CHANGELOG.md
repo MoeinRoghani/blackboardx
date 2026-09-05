@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.11.1](https://github.com/MoeinRoghani/blackboardx/compare/v0.10.1...v0.11.1) (2026-09-05)
+
+
+### Features
+
+* **board:** a contribution carries its writer and the instant it was written ([#227](https://github.com/MoeinRoghani/blackboardx/issues/227)) ([252bd33](https://github.com/MoeinRoghani/blackboardx/commit/252bd33ec0197e68ebc4518b544213e05beb9599)), closes [#224](https://github.com/MoeinRoghani/blackboardx/issues/224)
+* **control:** a run any process can close ([#231](https://github.com/MoeinRoghani/blackboardx/issues/231)) ([26c6a9e](https://github.com/MoeinRoghani/blackboardx/commit/26c6a9e709c52b8890bf93ab1504d234101a4127))
+* **control:** deprecate the two names the in-process run left behind ([#229](https://github.com/MoeinRoghani/blackboardx/issues/229)) ([d135134](https://github.com/MoeinRoghani/blackboardx/commit/d135134104b215f45fbc1764ec2cc2ea335633e3))
+* **storage:** a run's deadlines and outcome live in the store ([#230](https://github.com/MoeinRoghani/blackboardx/issues/230)) ([1f780fe](https://github.com/MoeinRoghani/blackboardx/commit/1f780fe01e08019d43ab34bf78c92084bfdd8208))
+
+
+### Documentation
+
+* say which version number PyPI will not take ([#232](https://github.com/MoeinRoghani/blackboardx/issues/232)) ([17479e9](https://github.com/MoeinRoghani/blackboardx/commit/17479e9bd2945693531a695931cdf53ee5e72f2c))
+
 ## [0.10.1](https://github.com/MoeinRoghani/blackboardx/compare/v0.10.0...v0.10.1) (2026-09-04)
 
 
