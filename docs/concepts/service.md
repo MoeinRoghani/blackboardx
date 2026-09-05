@@ -25,13 +25,13 @@ A store makes the **record** durable. It does not make the **run** durable, and 
 
 | Held where | What |
 | --- | --- |
-| The database, through the store | Regions, contributions, premise values and versions, the sequence, idempotency keys |
-| The process, in `Control` | The registered agents, their cursors, outstanding notifications, the notification identifiers, the audit, the idle and wall clock timers |
+| The database, through the store | Regions, contributions, premise values and versions, the sequence, idempotency keys, the run's two deadlines and its outcome, and how far each agent has been notified and has answered |
+| The process, in `Control` | The registered agents, being their callbacks and subscriptions, and the audit |
 | The process, in `HttpNotifier` | Notifications queued but not yet sent |
 
-A `Control` lives in one process. A second replica holding its own `Control` for the same board knows no agent that the first replica registered, owes no notification that the first replica dispatched, and measures silence from its own start. Losing the replica that holds a board's `Control` ends that board's run: the record survives and the run does not resume.
+A second replica reads all of the left column, so it measures silence from the same instant, closes the run on the same deadline, and knows which agents are owed an answer. What it does not have is a callback for an agent that registered elsewhere, because a callback is not a thing a database holds.
 
-So one board is written through one `Control` in one process at a time. Writes are scaled by putting different boards on different replicas and routing by board identifier.
+So a write is served by any replica, and the replica an agent registered with is the one that wakes it. That process calls `notify_due` on whatever schedule suits the deployment, which reads what has landed since each of its agents last answered and delivers it. A write taken in the same process notifies inline and needs no poll.
 
 Reads are not bound that way. `BoardService` takes the store as well as the registry, and answers the four `GET` operations from the record whenever the replica holds no run for the board, so any replica holding the store answers a read for any board in that store. A board that the store never held answers 404 in both cases, so a mistyped identifier is not answered with an empty board. The audit is the one read that stays with the run, because it lives in the process and no operation on the wire exposes it.
 
@@ -86,13 +86,14 @@ model = attach_model(
 
 | Carries over | Starts again |
 | --- | --- |
-| The regions and their kinds | The registered agents |
-| Every contribution | Their cursors |
-| Premise values and their versions | The outstanding notifications |
-| The sequence counter | The audit |
-| The idempotency keys | The notification identifiers, numbered again from one |
+| The regions and their kinds | The registered agents, being their callbacks and their subscriptions |
+| Every contribution | The audit |
+| Premise values and their versions | |
+| The sequence counter | |
+| The idempotency keys | |
+| How far each agent has been notified and has answered | |
 
-An agent registered against the attached run is woken as an agent joining a run already under way, with one notification covering everything on the board, which is what an agent that lost its own memory of the run needs. Work that the agent had finished but not acknowledged is done again unless its writes carried idempotency keys. Those keys are on the record, so a repeat answers with the first write's sequence and adds nothing.
+An agent registered against the attached run resumes from what it answered, because that number is on the record rather than in the process that told it. Work it had finished and acknowledged is not done again. Work it had finished without acknowledging is, unless its writes carried idempotency keys; those keys are on the record, so a repeat answers with the first write's sequence and adds nothing.
 
 ## The path a call takes
 

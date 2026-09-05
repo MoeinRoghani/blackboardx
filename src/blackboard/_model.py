@@ -183,14 +183,13 @@ def attach_model(
     is refused naming the region.
 
     What the record holds carries over: the regions, the contributions, the
-    premise values and their versions, the sequence, and the idempotency
-    keys. What the process held does not, because it died with it: the agent
-    registry, the outstanding notifications, the audit, every agent's cursor,
-    and the notification identifiers, which start again at one.
+    premise values and their versions, the sequence, the idempotency keys,
+    and how far each agent has been notified and has answered. What the
+    process held does not: the agent registry and the audit.
 
-    So an agent registered against the attached run is woken as one joining a
-    run already under way, covering everything on the board, which is what an
-    agent that lost its own memory of the run needs.
+    So an agent registered against the attached run resumes from what it
+    answered rather than being told the whole board again, and an agent that
+    had answered everything is registered without being woken.
     """
     warnings.warn(
         "attach_model is deprecated and may be removed on or after 2026-12-05. "
