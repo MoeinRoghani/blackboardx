@@ -4,46 +4,38 @@ Every limit here is a limit of the library as it stands, checked against the
 code rather than remembered. Where something is designed and not built, this
 page says so and points at the design.
 
-## A run lives in one process
+## An agent is woken by the process it registered with
 
-The board is durable and the run is not.
+The record is durable and so is the run. What is not is the callback.
 
 | Held where | What |
 | --- | --- |
-| The database, through the store | Regions, contributions, premise values and versions, the sequence, idempotency keys, and the run's two deadlines and its outcome |
-| The process, in `Control` | The registered agents, outstanding notifications, the audit, every agent's cursor |
+| The database, through the store | Regions, contributions, premise values and versions, the sequence, idempotency keys, the run's two deadlines and its outcome, and how far each agent has been notified and has answered |
+| The process, in `Control` | The registered agents, being their callbacks and their subscriptions, and the audit |
 | The process, in `HttpNotifier` | Notifications queued but not yet sent |
 
-The run's deadlines and its outcome moved to the store, so any process holding
-the store closes a run that has gone quiet, through `close_expired`. What is
-left in the process is what decides who is notified, and until that moves a
-write is still servable only where the run was opened.
+A write is served by any process. It lands on the record, pushes the idle
+deadline, and records how far the agents that should hear of it have been
+told. A process that never registered an agent still knows that agent is
+owed an answer, and `close_expired` names it when the run closes.
 
-A second replica holding its own `Control` for the same board knows no agent
-that the first registered, owes no notification that the first dispatched, and
-measures
-silence from its own start. Losing the replica that holds a run ends that run:
-the record survives and the run does not resume.
+What that process cannot do is reach the agent. A callback is a Python
+object, so the process an agent registered with is the only one that can call
+it. That process finds the work by reading the record, through
+`Control.notify_due`, which delivers what its own agents are owed and names
+them. Call it on whatever schedule suits the deployment, beside
+`close_expired`. A write taken in the same process notifies inline and needs
+no poll, so a run inside one process never calls it.
 
-So one board is served by one `Control` in one process at a time for
-**writing**. Scale by putting different boards on different replicas and
-routing writes by board identifier, not by putting more replicas behind one
-board.
+The delay between a write on one replica and the agent hearing of it is
+therefore the poll interval plus whatever is left of the region's batch
+window. Choose the interval and the idle limit together: a run whose idle
+limit is shorter than the poll interval can settle before the poll notices.
 
-Reads are exempt. Give `BoardService` the store and any replica answers a read
-for any board in it, with a run open or without one, because a read needs the
-record
-rather than the run. The audit is the one read that is not exempt: it lives
-in the process and no operation on the wire exposes it.
-
-A replacement replica opens a run over the record with `attach_model`, which
-carries the record and not the run: the registry, the outstanding
-notifications, the audit, the cursors and the notification identifiers all
-start again. Work that an agent had finished but not acknowledged is done twice
-unless the agent's writes carry idempotency keys.
-
-[Running as a service](concepts/service.md) covers the deployment that follows
-from this. A run that resumes rather than restarts is designed and not built.
+Two replicas holding the same agent name both hold a callback, and both
+deliver. A notification carries no values, so a repeat costs the wire
+nothing, but it costs an application whose callback does real work. Register
+one name in one place.
 
 ## A queued notification does not survive a restart
 
@@ -192,10 +184,11 @@ hold. Those are yours to measure against your database.
 
 ## What is designed and not built
 
-A run whose state lives in the database rather than in a process, so that a
-replacement replica resumes rather than restarts. That means the registered
-agents, the outstanding notifications, the audit, and the deadlines moving
-into the store alongside the record, and a sweep that closes runs whose limits
-have passed.
+The transactional outbox. A contribution and the intent to notify are not yet
+written in one transaction, so a process that commits a write and stops
+before delivering loses the notification, which is the limit the section on a
+queued notification describes. The design is the standard one: the intent is
+a row written with the contribution, the writing process sends immediately
+after commit, and a relay picks up whatever the fast path never completed.
 
 

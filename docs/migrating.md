@@ -47,6 +47,53 @@ holds a store to the concurrent cases as well as the ordinary ones.
 
 The schema number rises to 3.
 
+### A notification is identified by the range it covers
+
+The identifier was a counter starting at one in each process. It is now the
+sequence the notification's range ends at, because a counter in one process
+cannot be allocated from another and the cumulative rule compared nothing
+else.
+
+Three things follow, and each is visible without a store of your own.
+
+Two agents told of one write now carry one identifier. It names the work
+rather than the delivery, and each agent answers for itself. Code asserting
+that identifiers increase by one per delivery is asserting the old counter.
+
+Identifiers no longer start at one on a new run over an existing board. They
+continue from the board's sequence, which is what makes them agree across
+processes.
+
+An acknowledgment naming a sequence in the range an agent was told, but not
+one exactly issued to it, is now accepted as a claim of progress rather than
+refused. One outside that range still raises `UnknownNotificationError`.
+
+### A cursor survives the process
+
+How far an agent answered is on the record, so an agent registering against a
+process that never saw it resumes from there instead of being told the whole
+board again. Work it had finished and acknowledged is not done twice.
+
+An agent that had answered everything is now registered without being woken.
+It was previously handed a notification whose range started after it ended.
+
+### `notify_due` is how a write reaches an agent elsewhere
+
+A process serving writes for a board whose agents registered with another
+process reaches them through `Control.notify_due`. It reads what has landed
+since each of its own agents last answered and delivers it, and it names the
+agents it woke. Schedule it beside `close_expired`.
+
+A deployment running one process per board does not need it. That process
+notifies on the write path, so the poll finds nothing.
+
+### `close_expired` names the agents that did not finish
+
+It passed an empty set, because a sweeper holds no declarations and could not
+work out who was owed an answer. Both numbers are on the record now, so a run
+closed by the sweep names the same unfinished agents a run closed in process
+does.
+
 ## 0.10 to 0.11
 
 Two things changed for anyone who wrote a store: a write names its writer, and

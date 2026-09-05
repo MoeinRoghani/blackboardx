@@ -57,10 +57,10 @@ class TestRegisteringAgain:
 
         second: list[Notification] = []
         model.control.register_agent(Agent(name="ocp", notify=second.append))
-        # It acknowledged everything, so the notification it gets on returning
-        # covers only what has happened since, which is nothing.
-        (again,) = second
-        assert again.from_sequence == 3
+        # It acknowledged everything, so there is nothing since its cursor
+        # and it is registered without being woken. A notification covering
+        # nothing would name a range that starts after it ends.
+        assert second == []
 
     def test_it_hears_about_what_it_missed_while_it_was_gone(self) -> None:
         first: list[Notification] = []

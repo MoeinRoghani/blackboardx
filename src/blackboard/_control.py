@@ -65,6 +65,11 @@ from blackboard._clock import Clock, ScheduledCall
 
 logger = logging.getLogger(__name__)
 
+#: How much of the board one poll reads. A page short of the board leaves
+#: the rest for the next poll, because the cursor it advances is the agent's
+#: and not the reader's.
+_TAIL = 1000
+
 
 class BoardStore(Protocol):
     """The operations the control component performs on a store.
@@ -583,16 +588,16 @@ _Delivery: TypeAlias = tuple[Callable[[Notification], None], Notification]
 @dataclass
 class _AgentState:
     declaration: Agent
-    cursor: int
+    #: How far this agent has been told, and how far it has answered. Both
+    #: are the store's numbers, cached here so the write path does not read
+    #: them back. Both only rise, so a stale one is behind and never ahead:
+    #: it costs a repeated notification, which the wire contract makes free.
+    notified_through: int = 0
+    acknowledged_through: int = 0
     pending: dict[str, datetime] = field(default_factory=dict)
     window_call: ScheduledCall | None = None
     window_due: datetime | None = None
     window_generation: int = 0
-
-
-@dataclass
-class _Outstanding:
-    to_sequence: int
 
 
 def _subscribed(state: _AgentState, region: str, kind: _RegionKind) -> bool:
@@ -798,9 +803,6 @@ class Control:
         self._audit: list[AuditEvent] = []
         self._last_sequence = 0
         self._agents: dict[str, _AgentState] = {}
-        self._issued: set[tuple[str, NotificationId]] = set()
-        self._outstanding: dict[tuple[str, NotificationId], _Outstanding] = {}
-        self._next_notification_id = 1
         self._closing: list[RunOutcome] = []
         self._delivery_queue: deque[_Delivery] = deque()
         self._delivering = threading.local()
@@ -910,12 +912,25 @@ class Control:
                         "be permitted to write to a level"
                     )
             returning = self._agents.get(agent.name)
-            if returning is not None:
-                self._forget_outstanding_locked(agent.name)
-                if returning.window_call is not None:
-                    returning.window_call.cancel()
+            if returning is not None and returning.window_call is not None:
+                returning.window_call.cancel()
+            # How far this agent answered is on the record, so an agent
+            # returning to a process that never saw it resumes where it left
+            # off rather than being told the board again. What it was still
+            # holding is handed to it below, because whatever the previous
+            # process dispatched did not reach it.
+            answered = next(
+                (
+                    progress.acknowledged_through
+                    for progress in self._store.read_agents(self._board_id)
+                    if progress.agent == agent.name
+                ),
+                0,
+            )
             state = _AgentState(
-                declaration=agent, cursor=0 if returning is None else returning.cursor
+                declaration=agent,
+                notified_through=answered,
+                acknowledged_through=answered,
             )
             self._agents[agent.name] = state
             now = self._clock.now()
@@ -1125,35 +1140,119 @@ class Control:
         error.
         """
         acknowledged = NotificationId(notification_id)
+        # The store holds how far this agent has answered, so an
+        # acknowledgment is served by any process and not only the one that
+        # issued it. The call is outside the lock: it is a round trip, and
+        # nothing local is consulted to decide it.
+        prior = self._store.acknowledge(
+            self._board_id, agent, through=int(acknowledged)
+        )
+        if prior is None:
+            raise UnknownNotificationError(
+                f"no notification {notification_id} was issued to {agent!r}"
+            )
+        # A repeat changes nothing, and is told from a first answer by what
+        # the store held before this call. The identifier is the end of the
+        # range it covers, so answering a wider range answers every narrower
+        # one with it.
+        if prior.acknowledged_through >= int(acknowledged):
+            return
         with self._lock:
-            key = (agent, acknowledged)
-            outstanding = self._outstanding.pop(key, None)
-            if outstanding is None:
-                if key in self._issued:
-                    return
-                raise UnknownNotificationError(
-                    f"no notification {notification_id} was issued to {agent!r}"
+            state = self._agents.get(agent)
+            if state is not None:
+                state.acknowledged_through = max(
+                    state.acknowledged_through, int(acknowledged)
                 )
-            state = self._agents[agent]
-            state.cursor = max(state.cursor, outstanding.to_sequence)
-            # The cursor is cumulative, so acknowledging this range
-            # acknowledges every range it already covers. Otherwise an agent
-            # that answered the newest of several overlapping notifications
-            # is named unfinished for work it did, and a notification whose
-            # delivery raised holds the run open for ever.
-            covered = [
-                held
-                for held, still in self._outstanding.items()
-                if held[0] == agent and still.to_sequence <= outstanding.to_sequence
-            ]
-            for held in covered:
-                del self._outstanding[held]
             self._audit.append(
                 NotificationAcknowledged(
                     at=self._clock.now(), agent=agent, notification_id=acknowledged
                 )
             )
         self._check_completion()
+
+    def notify_due(self) -> list[str]:
+        """Delivers what this process's agents are owed, and names them.
+
+        A write taken by one process reaches the agents registered with
+        another here. The process that took the write records that it
+        landed and nothing about who should hear of it; the process holding
+        an agent is the only one that can reach it, so it is the one that
+        reads the record and decides.
+
+        A run inside one process never needs this. That process notifies on
+        the write path and closes its own windows on a timer, so this
+        finds nothing to do. Call it on whatever schedule suits the
+        deployment, beside ``close_expired``.
+        """
+        deliveries: list[_Delivery] = []
+        with self._lock:
+            if self._outcome is not None:
+                return []
+            run = self._store.read_run(self._board_id)
+            if run is None:
+                return []
+            # The run is read before the agents are, so a process holding
+            # none still learns that the run it was serving has closed.
+            if run.closed_as is not None:
+                self._close_locked(_outcome_of(run))
+                closed = True
+            elif not self._agents:
+                return []
+            else:
+                closed = False
+                self._take_tail_locked(run)
+                now = self._clock.now()
+                for state in self._agents.values():
+                    delivery = self._evaluate_dispatch_locked(state, now)
+                    if delivery is not None:
+                        deliveries.append(delivery)
+        if closed:
+            self._tell_closed()
+            return []
+        self._deliver(deliveries)
+        return [notification.agent for _, notification in deliveries]
+
+    def _take_tail_locked(self, run: RunRecord) -> None:
+        # Callers hold self._lock. Reads the board since the least advanced
+        # agent and folds what is new into each agent's pending set, which is
+        # the same set the write path fills. One read serves every agent, and
+        # an agent already told of a change skips it.
+        floor = min(state.acknowledged_through for state in self._agents.values())
+        tail = self._store.read_board(
+            self._board_id, from_sequence=floor + 1, limit=_TAIL
+        )
+        if not tail:
+            return
+        self._last_sequence = max(self._last_sequence, tail[-1].sequence)
+        now = self._clock.now()
+        for state in self._agents.values():
+            for change in tail:
+                if change.sequence <= state.notified_through:
+                    continue
+                if change.writer == state.declaration.name:
+                    continue
+                kind = self._kinds.get(change.region)
+                if kind is None or not _subscribed(state, change.region, kind):
+                    continue
+                # The window is measured from when the write landed, which
+                # the store stamped, and the store answers with its own clock
+                # beside it. Subtracting one from the other gives what is
+                # left of the window as a duration, which is what this
+                # process can hold against its own clock.
+                stamped = change.written_at
+                left = (
+                    self._batch_windows[change.region]
+                    if stamped is None
+                    else max(
+                        stamped + self._batch_windows[change.region] - run.now,
+                        timedelta(0),
+                    )
+                )
+                due = now + left
+                existing = state.pending.get(change.region)
+                state.pending[change.region] = (
+                    due if existing is None else min(existing, due)
+                )
 
     def _note_region_change(self, region: str, writer: str) -> list[_Delivery]:
         # Callers hold self._lock. Returns the deliveries the caller makes
@@ -1184,6 +1283,12 @@ class Control:
         # a change is due; arms or re-arms the batch window when the
         # earliest due instant is ahead.
         if not state.pending:
+            return None
+        if self._last_sequence <= state.acknowledged_through:
+            # Everything on the board is behind this agent's answer, so the
+            # range would start after it ended. A returning agent that had
+            # answered everything is registered without being woken.
+            state.pending.clear()
             return None
         earliest = min(state.pending.values())
         if earliest <= now:
@@ -1268,24 +1373,29 @@ class Control:
             state.window_generation += 1
         regions = frozenset(state.pending)
         state.pending.clear()
-        notification_id = NotificationId(self._next_notification_id)
-        self._next_notification_id += 1
+        # The identifier is the end of the range the notification covers.
+        # A board's sequence is the one number every process already agrees
+        # on, so two processes never have to agree on a counter: two
+        # notifications carrying one identifier carry one instruction, and
+        # one acknowledgment answers both.
+        notification_id = NotificationId(self._last_sequence)
         notification = Notification(
             notification_id=notification_id,
             board_id=self._board_id,
             agent=state.declaration.name,
-            from_sequence=state.cursor + 1,
+            from_sequence=state.acknowledged_through + 1,
             to_sequence=self._last_sequence,
             regions=regions,
         )
-        key = (state.declaration.name, notification_id)
         # Handing an agent work is an event, so the run does not then close on
         # the agent it just woke. A write already pushed the deadline out
         # before reaching here; a registration pushed nothing, and a
         # registration that hands out no notification never reaches here.
         self._touch_idle_locked()
-        self._issued.add(key)
-        self._outstanding[key] = _Outstanding(to_sequence=self._last_sequence)
+        self._store.mark_notified(
+            self._board_id, state.declaration.name, through=self._last_sequence
+        )
+        state.notified_through = max(state.notified_through, self._last_sequence)
         self._audit.append(NotificationDispatched(at=now, notification=notification))
         return (state.declaration.notify, notification)
 
@@ -1398,21 +1508,12 @@ class Control:
             )
         return None
 
-    def _forget_outstanding_locked(self, agent_name: str) -> None:
-        """Drops what an agent was holding, because it is no longer there.
-
-        Callers hold self._lock. A returning agent is told again, in one
-        notification covering everything since its cursor, so nothing it
-        was owed is lost by forgetting what the old process held.
-        """
-        for key in [k for k in self._outstanding if k[0] == agent_name]:
-            del self._outstanding[key]
-
     def _unfinished_locked(self) -> frozenset[str]:
-        # An agent has not finished when it still holds an unacknowledged
-        # notification.
-        holding = {agent for agent, _ in self._outstanding}
-        return frozenset(holding)
+        # An agent has not finished when it has been told further than it has
+        # answered. The store holds both numbers, so this names the agents no
+        # process in the deployment heard back from rather than the ones this
+        # one is waiting on.
+        return _unfinished(self._store, self._board_id)
 
     def _close_locked(self, outcome: RunOutcome) -> None:
         if self._outcome is not None:
@@ -1456,7 +1557,10 @@ class Control:
                 state.window_due = None
                 state.window_generation += 1
             state.pending.clear()
-        self._outstanding.clear()
+        # What each agent was owed stays on the record. The outcome named
+        # the unfinished ones as it was written, and an acknowledgment
+        # arriving after that still advances a cursor without changing an
+        # outcome already stamped.
         self._audit.append(RunClosed(at=self._clock.now(), outcome=outcome))
         self._condition.notify_all()
         self._closing.append(outcome)
@@ -1530,6 +1634,19 @@ class Control:
         return Rejected(cause=cause, reason=reason)
 
 
+def _unfinished(store: BoardStore, board_id: str) -> frozenset[str]:
+    """Names the agents told further than they have answered.
+
+    Any process may ask, because both numbers are on the record rather than
+    in whichever process did the telling.
+    """
+    return frozenset(
+        progress.agent
+        for progress in store.read_agents(board_id)
+        if progress.outstanding
+    )
+
+
 def close_expired(store: BoardStore, limit: int = 100) -> list[str]:
     """Closes the runs past a deadline that no process is watching, and names them.
 
@@ -1550,7 +1667,13 @@ def close_expired(store: BoardStore, limit: int = 100) -> list[str]:
         expired = run.expired
         if expired is None:
             continue
-        if store.close_run(board_id, closed_as=expired, unfinished=frozenset()):
+        unfinished = _unfinished(store, board_id)
+        if store.close_run(board_id, closed_as=expired, unfinished=unfinished):
             closed.append(board_id)
-            logger.info("run on %s closed as %s by the sweep", board_id, expired)
+            logger.info(
+                "run on %s closed as %s by the sweep%s",
+                board_id,
+                expired,
+                (", unfinished " + ", ".join(sorted(unfinished)) if unfinished else ""),
+            )
     return closed

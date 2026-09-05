@@ -81,6 +81,12 @@ class TestDeclarations:
 
 class TestZeroWindowDispatch:
     def test_a_premise_write_notifies_every_agent_at_once(self) -> None:
+        """One write, one range, so both agents are told the same thing.
+
+        The identifier is the end of the range, so two agents told of one
+        write carry one identifier. It names the work rather than the
+        delivery, and each agent answers for itself.
+        """
         clock = ManualClock(start=START)
         first, second = Recorder(), Recorder()
         control = make_control(clock, agent("ocp", first), agent("git", second))
@@ -88,13 +94,13 @@ class TestZeroWindowDispatch:
         expected = [
             Notification(
                 board_id="test-board",
-                notification_id=NotificationId(nid),
+                notification_id=NotificationId(1),
                 agent=name,
                 from_sequence=1,
                 to_sequence=1,
                 regions=frozenset({"window"}),
             )
-            for nid, name in ((1, "ocp"), (2, "git"))
+            for name in ("ocp", "git")
         ]
         assert first.received == [expected[0]]
         assert second.received == [expected[1]]
