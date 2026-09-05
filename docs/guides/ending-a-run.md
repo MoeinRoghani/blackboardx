@@ -1,7 +1,15 @@
 # End a run
 
-Three things end a run, and the outcome the run produces names which of the
-three ended it.
+Three things end a run, and the outcome names which of the three it was.
+
+| What ends it | Outcome | Names unfinished agents |
+| --- | --- | --- |
+| Nothing has happened for the idle limit | `Settled` | Yes |
+| The wall clock limit passed | `WallClockExpired` | Yes |
+| The application called `abort` | `Aborted` | No |
+
+The first three sections take those in turn. The rest is who does the closing,
+how the outcome is read, and what a closed run still answers.
 
 ## Silence
 
@@ -72,6 +80,14 @@ Choose the wall clock by how long the work is allowed to take. An idle limit
 shorter than the gap between events would end such a run, and would end every
 slower run with it, which is the failure the idle limit is sized against.
 
+## Closing by hand
+
+A caller may close a run outright.
+
+```python
+model.control.abort("the operator stopped the investigation")
+```
+
 ## Closing a run no process is watching
 
 A run closes because nothing happened, so no request is in flight to notice.
@@ -116,14 +132,6 @@ It is a convenience over `close_expired` and nothing more, the way
 `HttpNotifier` is a convenience over the wire protocol. An application with a
 scheduler of its own calls the function and ignores this.
 
-## Closing by hand
-
-A caller may close a run outright.
-
-```python
-model.control.abort("the operator stopped the investigation")
-```
-
 ## Reading the outcome
 
 ```python
@@ -161,7 +169,7 @@ answered is one of those agents.
 ## Being told instead of asking
 
 `wait_closed` blocks the calling thread. A caller that would rather be told
-gives `create_model` or `attach_model` an `on_closed` callback.
+gives `create_model` an `on_closed` callback.
 
 ```python
 model = create_model(..., on_closed=record_the_outcome)
@@ -191,7 +199,7 @@ registration raises.
 it
 receives a `BoardReader` and answers a `TerminationDecision`.
 
-`on_closed`, on `create_model` and `attach_model`, is called once with the
+`on_closed`, on `create_model`, is called once with the
 `RunOutcome` when the run ends, on whichever thread ended it. It is how a
 service holding many runs learns that one finished, where `outcome` answers
 when it is asked and `wait_closed` waits for the run to close.

@@ -11,11 +11,10 @@ framework and opens no socket.
 
 ## Mounting it
 
-One `Control` serves one board, so the service holds the runs it is
-responsible for and `control_for` finds the run that a request names.
-
-Give it the store as well, and a read is answered from the record when no run
-is held, so any replica answers a read for any board that the store holds:
+`BoardService` turns one request into one answer. It takes the store, so every
+replica answers a read for any board the store holds, and a callable that finds
+the `Control` a request names, so a write reaches the configuration that board
+was created with.
 
 ```python
 service = BoardService(control_for=runs.get, store=store, prefix="/v1")
@@ -29,7 +28,9 @@ reads are answered from, for a caller that wants one of its own without a run.
 It
 has the four read operations and nothing else.
 
-`on_open` and `on_closed` on `create_model` and `attach_model` are how `runs`
+### Finding the control a request names
+
+`on_open` and `on_closed` on `create_model` are how `runs`
 fills and empties:
 
 ```python
@@ -52,6 +53,8 @@ comes from the call that opened the run.
 `on_open` runs before the first agent is woken, which matters because waking
 an agent runs its callback on this thread: without that ordering, an agent that
 reads back through this service meets 404 for the board that is being created.
+
+### One route, whatever the framework
 
 === "FastAPI"
 

@@ -66,6 +66,29 @@ contribution.
 
 An agent is never woken by its own write.
 
+## What acknowledging means
+
+Acknowledging a notification also acknowledges every notification you were sent
+whose range ends at or before that notification's range. The cursor is
+cumulative, so answering the widest range answers the narrower ones inside it,
+and an agent that reads to the board's end has to acknowledge only the last
+identifier it holds.
+
+The cumulative cursor also covers the notification you never received. You
+cannot acknowledge by name a notification you never received. A delivery that
+raised an exception is suppressed, so one agent's failure does not reach an
+unrelated writer, and the notification that it carried never reaches you. Your
+next acknowledgment covers it.
+
+Acknowledging means the agent has stopped working on that notification. It does
+not mean the agent found anything, and it does not mean the agent will not be
+woken again.
+
+A run that closes on silence or on the wall clock names every agent still
+holding a notification in its outcome's `unfinished`. A run that a caller
+aborted leaves `unfinished` empty, because `abort` closes the run without
+collecting the agents still holding one.
+
 ## Joining a run
 
 Name the agent when the run is created, which is how agents normally arrive.
@@ -134,29 +157,6 @@ Acknowledgment is everything the control component learns about how an agent
 ran. The control component records what the agent wrote, because it sequenced
 those writes itself, and it learns nothing about how long the work took, its
 success or failure, or where it happened. It never kills an agent.
-
-## What acknowledging means
-
-Acknowledging a notification also acknowledges every notification you were sent
-whose range ends at or before that notification's range. The cursor is
-cumulative, so answering the widest range answers the narrower ones inside it,
-and an agent that reads to the board's end has to acknowledge only the last
-identifier it holds.
-
-The cumulative cursor also covers the notification you never received. You
-cannot acknowledge by name a notification you never received. A delivery that
-raised an exception is suppressed, so one agent's failure does not reach an
-unrelated writer, and the notification that it carried never reaches you. Your
-next acknowledgment covers it.
-
-Acknowledging means the agent has stopped working on that notification. It does
-not mean the agent found anything, and it does not mean the agent will not be
-woken again.
-
-A run that closes on silence or on the wall clock names every agent still
-holding a notification in its outcome's `unfinished`. A run that a caller
-aborted leaves `unfinished` empty, because `abort` closes the run without
-collecting the agents still holding one.
 
 ## An agent in its own service
 

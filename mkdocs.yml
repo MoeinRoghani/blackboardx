@@ -9,6 +9,7 @@ theme:
   features:
     - navigation.tabs
     - navigation.sections
+    - navigation.indexes
     - navigation.top
     - toc.follow
     - content.code.copy
@@ -38,13 +39,15 @@ nav:
       - Storage: concepts/storage.md
       - Running as a service: concepts/service.md
   - Guides:
-      - Write an agent: guides/writing-an-agent.md
-      - Serve a blackboard over HTTP: guides/serving-a-blackboard.md
-      - Notify agents over HTTP: guides/notifying-agents.md
-      - Write an admission rule: guides/admission-rules.md
-      - End a run: guides/ending-a-run.md
-      - Test an application: guides/testing.md
-      - A model as the agent's expertise:
+      - guides/index.md
+      - How to:
+          - Write an agent: guides/writing-an-agent.md
+          - Write an admission rule: guides/admission-rules.md
+          - End a run: guides/ending-a-run.md
+          - Serve a blackboard over HTTP: guides/serving-a-blackboard.md
+          - Notify agents over HTTP: guides/notifying-agents.md
+          - Test an application: guides/testing.md
+      - Integrations:
           - Let a model decide: guides/deciding-with-a-model.md
           - Use the board inside LangChain: guides/langchain.md
   - Reference:

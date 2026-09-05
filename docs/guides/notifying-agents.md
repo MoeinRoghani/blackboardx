@@ -8,6 +8,8 @@ network, and the control component knows nothing about networks: it calls
 `HttpNotifier` supplies that callable. It puts the notification on a queue and
 returns, and a worker sends the notification.
 
+## Wiring it up
+
 ```
 pip install 'blackboardx[notifier]'
 ```
@@ -40,6 +42,8 @@ with HttpNotifier() as notifier:
     )
     model.control.wait_closed()
 ```
+
+## Closing a lane and closing the notifier
 
 Keep the notifier open for as long as the runs that use it are open. Closing it
 stops
