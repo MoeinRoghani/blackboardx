@@ -4,6 +4,10 @@ The board holds what the agents write, gives every write a position in a single 
 
 The board never opens what it holds. A contribution's content belongs to the application that wrote it, and reading that content takes the expertise of the agent that produced it, and the board does not have that expertise.
 
+It decides nothing. What decides is [the control component](control.md); how
+long the board is written to is [the run](run.md); and where what it holds is
+kept is [storage](storage.md).
+
 ## The two kinds of region
 
 A board is divided into named regions, which the application declares. Every region is one of two kinds, because the information on a board is of two kinds: what the work was given, and what the agents worked out from it.

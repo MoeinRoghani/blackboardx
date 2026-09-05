@@ -1,6 +1,16 @@
 # The control component
 
-An agent decides its own work. Every other decision belongs here: who is notified, which writes are admitted, and when the run ends.
+An agent decides its own work. Every other decision belongs here.
+
+| Decision | Section |
+| --- | --- |
+| Whether a proposed write reaches the board | [Admission](#admission) |
+| Which agents hear that it did, and how soon | [Notification](#notification), [What wakes an agent](#what-wakes-an-agent), [Batch windows](#batch-windows) |
+| How a notification reaches an agent | [Delivery](#delivery) |
+| When the run ends | [The run](run.md) |
+
+It sits between the agents and [the board](board.md): a write goes through it,
+and a read does not.
 
 How an agent reaches its decision is outside this component and outside the library. An agent that runs an algorithm and an agent that asks a language model reach the control component through the same calls, and it treats their writes alike. [Let a model decide](../guides/deciding-with-a-model.md) covers the agent that asks a language model.
 
@@ -92,11 +102,18 @@ The control component holds no lock while it invokes the agent's callback. A not
 
 A callback may run the whole agent cycle inline, so a test can drive several agents on one thread. A callback that raises is contained: the rest of the batch is delivered and the writer keeps its result.
 
-## The audit
+## What is written down, and where
 
-Every event is recorded in the order it occurred: opening premise values, accepted and rejected writes, dispatches, acknowledgments, and the closing state. Events that reached the board carry their sequence number; a rejected write never reached it and carries none. A conflict is not recorded, because it wrote nothing, and a repeated idempotency key is not recorded, because it added nothing.
+The control component keeps no history of its own. Everything it decided is
+readable from [the store](storage.md):
 
-The record holds what happened. A contribution carries its writer and the instant the store stamped, so the board says who wrote what and when without a second history beside it. How far each agent has been told and has answered is on the record too, through `store.read_agents`, and the run's outcome through `store.read_run`. [Running as a service](service.md) covers what is held where.
+| The question | What answers it |
+| --- | --- |
+| Who wrote this, and when | The contribution's `writer` and `written_at` |
+| Was this write refused, and why | The `Rejected` returned to the caller that made it |
+| How far has this agent been told, and has it answered | `store.read_agents` |
+| How did the run end, and who did not finish | `store.read_run` |
+| What was never delivered | `store.unsent` |
 
-`NotificationId` names one notification. It is an `int` underneath, and
-`Control.ack` takes a `NotificationId` or an `int`.
+`NotificationId` names one notification. It is the sequence its range ends at,
+an `int` underneath, and `Control.ack` takes either.

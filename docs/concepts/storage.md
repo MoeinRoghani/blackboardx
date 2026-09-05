@@ -9,7 +9,37 @@ store = PostgresStore(pool)
 store.read_premise("incident-4471", "window")
 ```
 
-## What to pass
+## What a store holds
+
+Everything a run needs, in one place. The obvious split is the record here and
+the run somewhere else, and it loses things that look like run state and are
+not, because they outlive the run that produced them.
+
+| Kind | What | Lives |
+| --- | --- | --- |
+| **The answer** | Regions, contributions, premise values and their versions, the sequence, idempotency keys | As long as the board |
+| **The outcome** | How the run ended, and which agents did not finish | As long as the board |
+| **The coordination** | The two deadlines, how far each agent has been notified and has answered, and the notifications a write recorded and nothing has sent | Until the run closes, then as its record |
+
+All three are in the store, and there is no second one. A write and the
+deadline it pushes and the intent to notify it records commit together or not
+at all, so there is no moment where one landed and another did not.
+
+Nothing above is named after a database. The store is described by operations
+on `BoardStore`; one adapter implements them with tables and a sequence,
+another with collections and a conditional update, and
+[the conformance suite](#an-adapter-of-your-own) holds both to the same
+behaviour.
+
+What a store does **not** hold is the configuration an application supplies:
+the regions it declares, the agents it names, the admission rule, the
+termination predicate, the limits and the clock. Those are arguments to
+[`create_model`](run.md), given to every process that serves the board.
+
+What is on the board and what a region is are [the board](board.md). What
+decides during a run is [the control component](control.md).
+
+## Choosing a store
 
 | Store | Where records live | Use it for |
 | --- | --- | --- |
@@ -107,6 +137,103 @@ with MongoStore.from_uri("mongodb://...", "incidents") as store:
 
 `MongoStore` requires a replica set or a sharded cluster. Every write spans more than one document, which on MongoDB is a session transaction, and a standalone server runs none. Production MongoDB is a replica set and Atlas is always a replica set. Against a standalone server the first write raises and says why, rather than running the record under weaker rules than it needs.
 
+## In memory
+
+`InMemoryStore` is a test double. Nothing it holds outlives the process, and two processes running the same code share nothing, so it cannot back a deployment or a run whose result must survive a restart. It exists so a unit test needs no file.
+
+## Many boards, one database
+
+Every store call names a board, and every row is scoped by it. Two boards under different identifiers share the tables and see none of each other's writes, sequence numbers included, so one database serving many concurrent runs is the ordinary case rather than a workaround. Moving from a file to a server changes the store that is constructed and nothing else.
+
+## Reading a board in pieces
+
+A read is bounded below by a sequence number and above by a count:
+
+```python
+cursor = 0
+while True:
+    page = store.read_level(board_id, "platform", from_sequence=cursor, limit=100)
+    if not page:
+        break
+    handle(page)
+    cursor = page[-1].sequence + 1
+```
+
+The sequence number is the cursor. An offset would shift when a concurrent write landed between two reads, and a sequence number does not, so a reader never skips a contribution or sees one twice. A read that names no limit returns everything from the bound.
+
+`read_regions` names what a board holds, which a process that did not create the board needs before it can read anything:
+
+```python
+for region in store.read_regions(board_id):
+    print(region.name, type(region).__name__)
+```
+
+Every store call names the board, and a caller reading one board repeats that name at every call. `reader_for` binds the board once and returns a `BoardReader`, the same four reads without the identifier:
+
+```python
+from blackboard import reader_for
+
+board = reader_for(store, "incident-4471")
+board.read_premise("window")
+board.read_level("platform", from_sequence=0, limit=100)
+```
+
+A read needs the record and not the run, so a process holding the store serves a read for any board in the store, with a run open or without one. Writing needs a `Control`.
+## What wrote this record
+
+Each of the three stores that keep a record on disk stamps it with a schema number and checks that number when it opens. A record written for a schema that this version cannot read is refused at that point, with a sentence naming both numbers, rather than at whichever query first touches the piece that changed.
+
+```
+SchemaVersionError: this database holds a record written for schema 2, and
+this version of blackboardx reads 1. Upgrade blackboardx to a version that
+reads it.
+```
+
+The number counts changes to the physical schema rather than releases. Most releases change nothing, and a check that fires on every release is a check nobody can leave on. `blackboard.SCHEMA_VERSION` is what this version reads.
+
+`SqliteStore` checks when the file opens. `PostgresStore` and `MongoStore` check before their first operation as well as when `create_schema` or `create_indexes` runs, because an application pointed at a database it did not create never calls those.
+
+A record written before stamps existed carries no stamp. It is stamped rather than refused, since everything that the earlier versions wrote is readable by this version.
+
+The library never stamps a record with a lower schema number than the one it already carries. An older version would then read fields a newer one wrote and take them at face value, which is the failure the stamp exists to prevent.
+
+## Writing once, over a network that may repeat
+
+A write that crosses a network can be sent twice. The client sends it, the connection drops before the answer arrives, and the client cannot tell if the board took it. Sending it again would append the contribution twice, and a level holding one finding twice is not the same board: an agent counting them counts wrong, and an admission rule reading them decides wrong.
+
+An idempotency key fixes that. The caller names the write, and the store writes it once:
+
+```python
+outcome = store.append(board_id, "findings", {"cause": "a bad deploy"}, "write-8f21")
+if outcome.repeated:
+    ...  # an earlier attempt had already landed; this one added nothing
+```
+
+The key is stored on the contribution row rather than beside it. One insert writes the row and its key together, so they cannot disagree, and the uniqueness of the key is the database's to enforce rather than the adapter's to remember. Two processes writing under one key are therefore safe.
+
+A key names one write on one board. The same key on another board is another write, because no two boards share a record. The key is part of that record rather than of the run, so a run that attaches to a board answers a key that the board already holds with the write that key produced. A key sent for a region it did not name before raises `IdempotencyKeyError`, since that is a mistake rather than a retry. A key sent again for the region it did name returns the first write, whatever content comes with it, so a retry sends what it sent before.
+
+`SqliteStore` and `PostgresStore` add the columns to a table written by an earlier version rather than assuming them, and `MongoStore` indexes the key only where a key is present, so documents written before keys existed do not collide.
+
+## Removing a board
+
+A store holds many boards, and `delete` removes one:
+
+```python
+gone = store.delete("incident-4471")
+log.info(
+    "removed %d writes across %d regions", gone.writes_removed, gone.regions_removed
+)
+```
+
+A delete removes everything or nothing. The regions, the record, the premise values, and the sequence counter go together in one transaction, so a board declared again under that identifier follows a board that is wholly gone rather than one that is half there. The same identifier declared again starts its sequence at 1, and the idempotency keys that the old board wrote are free to be used again.
+
+`delete` answers with a `Deleted`, naming the board and carrying `regions_removed` and `writes_removed`. A delete of a board that the store never held names nothing rather than failing, so a delete that runs twice is safe and a retention job needs no lookup first.
+
+**Nothing in the library calls it.** Deleting is a retention decision and the control component makes none: a run that closes deletes no board, and no board expires.
+
+**Close the run first.** A `Control` still serving the board goes on writing to a record that is no longer there, and the store cannot see that it is running. `control.outcome()` returning something other than `None` is how you know a run has closed.
+
 ## What holds across processes
 
 Every board owes two guarantees, and a deployment has to hold them between processes rather than only between the threads of one process.
@@ -116,6 +243,59 @@ Every board owes two guarantees, and a deployment has to hold them between proce
 Postgres and MongoDB keep the sequence gapless differently. Postgres blocks a second writer on the row lock the increment acquires and holds to commit, so writes to one board serialise. MongoDB does not block: it aborts one of two contending transactions and labels the failure transient, so the adapter runs the write again through the driver's retrying transaction, and a premise write puts its version guard before the counter so a losing write never contends for it at all.
 
 **A premise write is a conditional update on the version.** Two writers naming the same version produce one winner and one `Conflict`, no matter which process reaches the record first, and the conflict takes no sequence number.
+
+## An adapter of your own
+
+`BoardStore` is the protocol, and it has eighteen methods. `declare`, `append` and `set` write. `read_level`, `read_premise`, `read_board` and `read_regions` read. `delete` removes one board. Every method names the board it acts on first.
+
+The remaining five hold the run rather than the record. `open_run` records that a run is open and sets its two deadlines. `read_run` answers with those deadlines and the store's own clock beside them, so a caller decides that a deadline has passed by comparing two instants from one clock rather than trusting its own. `touch_run` pushes the idle deadline out. `close_run` records how the run ended and answers `True` to the one caller that recorded it, which is what closes a run once however many callers reach the deadline together. `runs_past_deadline` answers with the boards whose run is open and past a deadline, for a caller that closes the runs nobody asked about.
+
+The last two hold the outbox. `unsent` answers with the notifications a write
+recorded and nothing has sent, oldest first, and `mark_sent` removes one. The
+rows are written by `append` and `set` from the `notify` they are given, in
+the same transaction as the contribution, which is what makes the intent to
+notify impossible to lose separately from the write that caused it. Marking
+after sending rather than before is what makes delivery at least once.
+
+The three before those hold how far each agent has got. `mark_notified` records that an agent has been told everything through a sequence number, and `acknowledge` records how far it has answered, returning the entry as it stood before the call so a first acknowledgment is told from a repeat. `read_agents` answers with both numbers for every agent the board has notified, which is what any process reads to name the agents a closing run did not hear back from. Both numbers only rise, so two processes notifying one agent leave the higher of what they wrote and neither undoes the other.
+
+A store records a region's name and its kind and nothing else, so `read_regions` returns a level or a premise without the batch window it was declared with. The window tells the control component when to notify and is no part of the record. An implementation of those eighteen is a store, and the control component names no concrete type.
+
+Four rules hold every implementation together, and the conformance suite checks each implementation against all four rules, and checks the deployment adapters against real servers:
+
+- **One counter.** Every write to any region takes the next number from a single sequence. The number is the position in the total order and the address of the write.
+- **Bounded reads.** A level read and a whole-board read take a maximum count, and a reader continues from one past the last sequence it received. A sequence number is the cursor rather than an offset, because an offset shifts when a concurrent write lands.
+- **Version-guarded premise writes.** A premise write names the version it expects to replace. If that is not the current version, the write returns `Conflict` carrying the current version, takes no sequence number, and changes nothing.
+- **A key writes once.** A write may carry an `idempotency_key`. A key that the store has already written answers with what that write produced, marked `repeated`, and adds nothing. A key that named a different region raises `IdempotencyKeyError`. A conflicting premise write stores nothing, so it uses up no key. Keys belong to one board.
+
+The suite ships with the package, so it holds your store to the same cases it holds the library's four stores to:
+
+```
+pip install 'blackboardx[conformance]'
+```
+
+```python
+import pytest
+from blackboard.conformance import BoardConformance, SharedStoreConformance
+
+from myapp.storage import CassandraStore
+
+
+class TestCassandraStore(BoardConformance):
+    @pytest.fixture
+    def store(self):
+        return CassandraStore(session)
+
+
+class TestCassandraHoldsManyBoards(SharedStoreConformance):
+    @pytest.fixture
+    def store(self):
+        return CassandraStore(session)
+```
+
+The four stores that the library ships are held to that module rather than to a copy of it, so what you run is what the library runs. Reading the rules above and reimplementing them is not the same as running the suite: a store that gives each region its own counter passes a reading of the prose and fails six cases here.
+
+Content crosses the protocol as JSON, because a deployed board crosses a process boundary. A tuple that is written comes back as a list, and content that JSON cannot carry raises `TypeError` before anything is stored. Every implementation behaves this way, including the in-memory one, so a test cannot pass against content a deployment would refuse.
 
 ## Moving a database written by 0.4.0
 
@@ -159,153 +339,3 @@ ALTER TABLE regions_migrated RENAME TO regions;
 
 A later release gave every write an idempotency key. Holding it needs a column on the two SQL stores, and keeping it unique needs an index on each of the three stores that keep a record. `SqliteStore` adds both when it opens the file. `create_schema` adds them on Postgres and `create_indexes` adds the index on MongoDB. Both calls leave what is already there alone, so the call for your database is run once after the rename above. Until `create_schema` has run, a Postgres write fails in the driver naming the missing column.
 
-## Many boards, one database
-
-Every store call names a board, and every row is scoped by it. Two boards under different identifiers share the tables and see none of each other's writes, sequence numbers included, so one database serving many concurrent runs is the ordinary case rather than a workaround. Moving from a file to a server changes the store that is constructed and nothing else.
-
-## In memory
-
-`InMemoryStore` is a test double. Nothing it holds outlives the process, and two processes running the same code share nothing, so it cannot back a deployment or a run whose result must survive a restart. It exists so a unit test needs no file.
-
-## An adapter of your own
-
-`BoardStore` is the protocol, and it has sixteen methods. `declare`, `append` and `set` write. `read_level`, `read_premise`, `read_board` and `read_regions` read. `delete` removes one board. Every method names the board it acts on first.
-
-The remaining five hold the run rather than the record. `open_run` records that a run is open and sets its two deadlines. `read_run` answers with those deadlines and the store's own clock beside them, so a caller decides that a deadline has passed by comparing two instants from one clock rather than trusting its own. `touch_run` pushes the idle deadline out. `close_run` records how the run ended and answers `True` to the one caller that recorded it, which is what closes a run once however many callers reach the deadline together. `runs_past_deadline` answers with the boards whose run is open and past a deadline, for a caller that closes the runs nobody asked about.
-
-The last two hold the outbox. `unsent` answers with the notifications a write
-recorded and nothing has sent, oldest first, and `mark_sent` removes one. The
-rows are written by `append` and `set` from the `notify` they are given, in
-the same transaction as the contribution, which is what makes the intent to
-notify impossible to lose separately from the write that caused it. Marking
-after sending rather than before is what makes delivery at least once.
-
-The three before those hold how far each agent has got. `mark_notified` records that an agent has been told everything through a sequence number, and `acknowledge` records how far it has answered, returning the entry as it stood before the call so a first acknowledgment is told from a repeat. `read_agents` answers with both numbers for every agent the board has notified, which is what any process reads to name the agents a closing run did not hear back from. Both numbers only rise, so two processes notifying one agent leave the higher of what they wrote and neither undoes the other.
-
-A store records a region's name and its kind and nothing else, so `read_regions` returns a level or a premise without the batch window it was declared with. The window tells the control component when to notify and is no part of the record. An implementation of those sixteen is a store, and the control component names no concrete type.
-
-Four rules hold every implementation together, and the conformance suite checks each implementation against all four rules, and checks the deployment adapters against real servers:
-
-- **One counter.** Every write to any region takes the next number from a single sequence. The number is the position in the total order and the address of the write.
-- **Bounded reads.** A level read and a whole-board read take a maximum count, and a reader continues from one past the last sequence it received. A sequence number is the cursor rather than an offset, because an offset shifts when a concurrent write lands.
-- **Version-guarded premise writes.** A premise write names the version it expects to replace. If that is not the current version, the write returns `Conflict` carrying the current version, takes no sequence number, and changes nothing.
-- **A key writes once.** A write may carry an `idempotency_key`. A key that the store has already written answers with what that write produced, marked `repeated`, and adds nothing. A key that named a different region raises `IdempotencyKeyError`. A conflicting premise write stores nothing, so it uses up no key. Keys belong to one board.
-
-The suite ships with the package, so it holds your store to the same cases it holds the library's four stores to:
-
-```
-pip install 'blackboardx[conformance]'
-```
-
-```python
-import pytest
-from blackboard.conformance import BoardConformance, SharedStoreConformance
-
-from myapp.storage import CassandraStore
-
-
-class TestCassandraStore(BoardConformance):
-    @pytest.fixture
-    def store(self):
-        return CassandraStore(session)
-
-
-class TestCassandraHoldsManyBoards(SharedStoreConformance):
-    @pytest.fixture
-    def store(self):
-        return CassandraStore(session)
-```
-
-The four stores that the library ships are held to that module rather than to a copy of it, so what you run is what the library runs. Reading the rules above and reimplementing them is not the same as running the suite: a store that gives each region its own counter passes a reading of the prose and fails six cases here.
-
-Content crosses the protocol as JSON, because a deployed board crosses a process boundary. A tuple that is written comes back as a list, and content that JSON cannot carry raises `TypeError` before anything is stored. Every implementation behaves this way, including the in-memory one, so a test cannot pass against content a deployment would refuse.
-
-## Writing once, over a network that may repeat
-
-A write that crosses a network can be sent twice. The client sends it, the connection drops before the answer arrives, and the client cannot tell if the board took it. Sending it again would append the contribution twice, and a level holding one finding twice is not the same board: an agent counting them counts wrong, and an admission rule reading them decides wrong.
-
-An idempotency key fixes that. The caller names the write, and the store writes it once:
-
-```python
-outcome = store.append(board_id, "findings", {"cause": "a bad deploy"}, "write-8f21")
-if outcome.repeated:
-    ...  # an earlier attempt had already landed; this one added nothing
-```
-
-The key is stored on the contribution row rather than beside it. One insert writes the row and its key together, so they cannot disagree, and the uniqueness of the key is the database's to enforce rather than the adapter's to remember. Two processes writing under one key are therefore safe.
-
-A key names one write on one board. The same key on another board is another write, because no two boards share a record. The key is part of that record rather than of the run, so a run that attaches to a board answers a key that the board already holds with the write that key produced. A key sent for a region it did not name before raises `IdempotencyKeyError`, since that is a mistake rather than a retry. A key sent again for the region it did name returns the first write, whatever content comes with it, so a retry sends what it sent before.
-
-`SqliteStore` and `PostgresStore` add the columns to a table written by an earlier version rather than assuming them, and `MongoStore` indexes the key only where a key is present, so documents written before keys existed do not collide.
-
-## What wrote this record
-
-Each of the three stores that keep a record on disk stamps it with a schema number and checks that number when it opens. A record written for a schema that this version cannot read is refused at that point, with a sentence naming both numbers, rather than at whichever query first touches the piece that changed.
-
-```
-SchemaVersionError: this database holds a record written for schema 2, and
-this version of blackboardx reads 1. Upgrade blackboardx to a version that
-reads it.
-```
-
-The number counts changes to the physical schema rather than releases. Most releases change nothing, and a check that fires on every release is a check nobody can leave on. `blackboard.SCHEMA_VERSION` is what this version reads.
-
-`SqliteStore` checks when the file opens. `PostgresStore` and `MongoStore` check before their first operation as well as when `create_schema` or `create_indexes` runs, because an application pointed at a database it did not create never calls those.
-
-A record written before stamps existed carries no stamp. It is stamped rather than refused, since everything that the earlier versions wrote is readable by this version.
-
-The library never stamps a record with a lower schema number than the one it already carries. An older version would then read fields a newer one wrote and take them at face value, which is the failure the stamp exists to prevent.
-
-## Removing a board
-
-A store holds many boards, and `delete` removes one:
-
-```python
-gone = store.delete("incident-4471")
-log.info(
-    "removed %d writes across %d regions", gone.writes_removed, gone.regions_removed
-)
-```
-
-A delete removes everything or nothing. The regions, the record, the premise values, and the sequence counter go together in one transaction, so a board declared again under that identifier follows a board that is wholly gone rather than one that is half there. The same identifier declared again starts its sequence at 1, and the idempotency keys that the old board wrote are free to be used again.
-
-`delete` answers with a `Deleted`, naming the board and carrying `regions_removed` and `writes_removed`. A delete of a board that the store never held names nothing rather than failing, so a delete that runs twice is safe and a retention job needs no lookup first.
-
-**Nothing in the library calls it.** Deleting is a retention decision and the control component makes none: a run that closes deletes no board, and no board expires.
-
-**Close the run first.** A `Control` still serving the board goes on writing to a record that is no longer there, and the store cannot see that it is running. `control.outcome()` returning something other than `None` is how you know a run has closed.
-
-## Reading a board in pieces
-
-A read is bounded below by a sequence number and above by a count:
-
-```python
-cursor = 0
-while True:
-    page = store.read_level(board_id, "platform", from_sequence=cursor, limit=100)
-    if not page:
-        break
-    handle(page)
-    cursor = page[-1].sequence + 1
-```
-
-The sequence number is the cursor. An offset would shift when a concurrent write landed between two reads, and a sequence number does not, so a reader never skips a contribution or sees one twice. A read that names no limit returns everything from the bound.
-
-`read_regions` names what a board holds, which a process that did not create the board needs before it can read anything:
-
-```python
-for region in store.read_regions(board_id):
-    print(region.name, type(region).__name__)
-```
-
-Every store call names the board, and a caller reading one board repeats that name at every call. `reader_for` binds the board once and returns a `BoardReader`, the same four reads without the identifier:
-
-```python
-from blackboard import reader_for
-
-board = reader_for(store, "incident-4471")
-board.read_premise("window")
-board.read_level("platform", from_sequence=0, limit=100)
-```
-
-A read needs the record and not the run, so a process holding the store serves a read for any board in the store, with a run open or without one. Writing needs a `Control`.
