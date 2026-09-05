@@ -70,6 +70,12 @@ so this library says none of them again. It logs a run closing with its
 outcome and the agents that did not finish, and a notification that never
 arrived after its attempts, because no agent can log what it never received.
 
+It also logs what only the store layer sees: a record written for a schema
+this version cannot read, a record stamped forward to this one, and a store
+that failed under `close_expired`. A sweep has no caller waiting on it, so a
+failure there reaches nobody unless the library says so. One board failing
+does not end the pass; the sweep logs it and closes the rest.
+
 Every line goes to the `blackboard` logger through the standard library, and
 the application configures the handlers and the format.
 

@@ -17,7 +17,11 @@ can leave on.
 
 from __future__ import annotations
 
+import logging
+
 from blackboard._board import BlackboardError
+
+logger = logging.getLogger("blackboard")
 
 #: The schema this version of the library reads and writes.
 #:
@@ -49,11 +53,26 @@ def stamp_to_write(found: int | None, *, where: str) -> int | None:
     if found is None:
         return SCHEMA_VERSION
     if found > SCHEMA_VERSION:
+        # The caller of an ordinary operation sees this raised. A scheduled
+        # sweep has no caller, and a store opened at start-up may raise into
+        # a place nobody is reading, so it is said here as well.
+        logger.error(
+            "%s holds a record written for schema %d, and this version reads %d",
+            where,
+            found,
+            SCHEMA_VERSION,
+        )
         raise SchemaVersionError(
             f"{where} holds a record written for schema {found},"
             f" and this version of blackboardx reads {SCHEMA_VERSION}."
             " Upgrade blackboardx to a version that reads it."
         )
     if found < SCHEMA_VERSION:
+        logger.info(
+            "%s holds a record written for schema %d, stamping it %d",
+            where,
+            found,
+            SCHEMA_VERSION,
+        )
         return SCHEMA_VERSION
     return None
