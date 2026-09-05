@@ -12,9 +12,7 @@ from blackboard import (
     ManualClock,
     Model,
     Notification,
-    NotificationDispatched,
     Premise,
-    PremiseOpened,
     RunLimits,
     create_model,
 )
@@ -56,14 +54,13 @@ class TestNamingAgentsAtCreation:
         assert notification.regions == frozenset({"window"})
         assert notification.from_sequence == 1
 
-    def test_the_premises_open_before_any_agent_is_premiseed(self) -> None:
-        model = a_model([Agent(name="ocp", notify=lambda n: None)])
-        events = model.control.read_audit()
-        opened = next(i for i, e in enumerate(events) if isinstance(e, PremiseOpened))
-        dispatched = next(
-            i for i, e in enumerate(events) if isinstance(e, NotificationDispatched)
-        )
-        assert opened < dispatched
+    def test_the_premises_open_before_any_agent_is_registered(self) -> None:
+        """So the notification an agent gets covers the opening values."""
+        seen: list[Notification] = []
+        model = a_model([Agent(name="ocp", notify=seen.append)])
+        (told,) = seen
+        assert told.from_sequence == 1, "it covers the board from its first write"
+        assert model.reader.read_premise("window").value is not None
 
     def test_naming_none_leaves_the_run_with_no_agents(self) -> None:
         model = a_model()

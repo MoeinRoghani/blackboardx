@@ -69,22 +69,26 @@ class TestAttachModel:
         assert re.search(r"\d{4}-\d{2}-\d{2}", said)
 
 
-class TestReadAudit:
-    def test_it_warns_and_still_answers(self) -> None:
+class TestTheAuditIsGone:
+    def test_read_audit_no_longer_exists(self) -> None:
+        """Removed rather than deprecated further. It cost memory per write."""
         model = a_board(InMemoryStore())
-        model.control.write("findings", "oom", writer="triage")
-        with pytest.warns(DeprecationWarning) as caught:
-            events = model.control.read_audit()
-        assert events
-        assert len(caught) == 1
+        assert not hasattr(model.control, "read_audit")
 
-    def test_the_warning_names_a_replacement_and_a_date(self) -> None:
-        model = a_board(InMemoryStore())
-        with pytest.warns(DeprecationWarning) as caught:
-            model.control.read_audit()
-        said = str(caught[0].message)
-        assert REMOVAL in said
-        assert "log" in said.lower()
+    def test_the_event_classes_no_longer_exist(self) -> None:
+        import blackboard
+
+        for name in (
+            "AuditEvent",
+            "WriteAccepted",
+            "WriteRejected",
+            "NotificationDispatched",
+            "NotificationAcknowledged",
+            "PremiseOpened",
+            "RunClosed",
+        ):
+            assert not hasattr(blackboard, name), name
+            assert name not in blackboard.__all__, name
 
 
 def test_neither_warning_fires_on_the_path_that_replaces_it() -> None:

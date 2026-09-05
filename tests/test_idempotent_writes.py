@@ -19,7 +19,6 @@ from blackboard import (
     ManualClock,
     Premise,
     RunLimits,
-    WriteAccepted,
     Written,
     create_model,
 )
@@ -56,12 +55,11 @@ class TestTheControlComponent:
         assert again == Written(sequence=first.sequence, repeated=True)
         assert len(control.reader.read_level("signals")) == 1
 
-    def test_a_repeat_is_absent_from_the_audit(self) -> None:
+    def test_a_repeat_reaches_the_board_once(self) -> None:
         control = build()
         control.write("signals", {"n": 1}, "k1", writer="triage")
         control.write("signals", {"n": 1}, "k1", writer="triage")
-        accepted = [e for e in control.read_audit() if isinstance(e, WriteAccepted)]
-        assert len(accepted) == 1
+        assert len(control.reader.read_level("signals")) == 1
 
     def test_a_repeat_wakes_nobody(self) -> None:
         woken: list[Any] = []

@@ -7,15 +7,33 @@ working in.
 
 | Name | Replaced by | May be removed on or after |
 | --- | --- | --- |
-| `attach_model` | `create_model`, which opens a board once; every later operation reads what it needs from the store | 2026-12-05 |
-| `Control.read_audit` | A contribution's `writer` and `written_at` for who and when; the `blackboard` logger for the rest | 2026-12-05 |
+| `attach_model` | `create_model`, which converges on a board the store already holds | 2026-12-05 |
 
-Both exist because the run lived in one process's memory. `attach_model` opened
-a run over a record whose run had died with its process, and `read_audit`
-returned a history that died the same way. Both answered questions the record now answers itself.
+It exists because the run lived in one process's memory: it opened a run over
+a record whose run had died with its process. `create_model` answers that
+itself now. It keeps working until the date above, and warns at run time
+naming its replacement.
 
-Both keep working until the date above, and each warns at run time naming its
-replacement.
+## Removed ahead of its date
+
+`Control.read_audit` and the six event classes it returned were deprecated on
+5 September 2026 with a removal date of 2026-12-05, and removed the same day
+in 0.13.0 instead. The window was cut short deliberately, and it is recorded
+here rather than left to be noticed.
+
+Two things decided it. The deprecation was twelve hours old, so nothing could
+have been built against it. And the audit was not merely dead surface: it
+built one object per write, without bound, in every run of a released
+version.
+
+| Was | Is |
+| --- | --- |
+| `Control.read_audit` | The record for who and when; the `blackboard` logger for the rest |
+| `WriteAccepted`, `WriteRejected` | A contribution carries `writer` and `written_at`. A rejection is returned to its caller. |
+| `NotificationDispatched`, `NotificationAcknowledged` | `store.read_agents` answers how far each agent has been told and has answered |
+| `PremiseOpened` | The premise's value and version on the record |
+| `RunClosed` | `store.read_run` answers the outcome, and the run closing is logged |
+| `AuditEvent` | Nothing. There is no audit. |
 
 ## 0.11 to 0.12
 

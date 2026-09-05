@@ -15,7 +15,6 @@ from blackboard import (
     Premise,
     Rejected,
     RejectionCause,
-    RunClosed,
     RunClosedError,
     RunLimits,
     Settled,
@@ -198,7 +197,6 @@ class TestAbortAndAfterClose:
         with pytest.raises(RunClosedError):
             control.register_agent(declaration("late", Recorder()))
         assert control.reader.read_premise("window").value == "w"
-        assert any(isinstance(e, RunClosed) for e in control.read_audit())
 
     def test_the_idle_timer_does_not_fire_after_close(self) -> None:
         clock = ManualClock(start=START)

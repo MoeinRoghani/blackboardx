@@ -55,18 +55,6 @@ absorbs the extra identifier.
 `on_failure`. What changed is that abandoning it no longer loses the work: the
 row is still on the record and the next relay pass sends it.
 
-## The audit is deprecated, and unbounded until it goes
-
-`Control.read_audit` returns every event of the run, with no bound and no
-cursor. A long run holds every event in the process and hands back all of them
-at once, and nothing writes the audit to the store, so it dies with the
-process.
-
-It is deprecated and may be removed on or after 2026-12-05. What it recorded
-is answered two other ways. A contribution carries its writer and the instant
-it was written, so the record says who wrote what and when. Everything else it
-held is written to the log.
-
 ## The library logs only what a caller cannot see
 
 The rule is one line: an agent knows what it wrote, what it was refused, what

@@ -29,7 +29,7 @@ state = control.reader.read_premise("window")
 control.set_premise("window", "20:00-22:00", state.version, writer="ocp")
 ```
 
-The name reaches the rule on the proposal, and it reaches the audit on the event. No write call checks that the name was registered, so an operator or a scheduled job writes the way an agent does. `Control.as_agent(name)` returns the board as that agent sees it, with the name already bound, and an agent body is written against that view.
+The name reaches the rule on the proposal, and it reaches the record on the contribution. No write call checks that the name was registered, so an operator or a scheduled job writes the way an agent does. `Control.as_agent(name)` returns the board as that agent sees it, with the name already bound, and an agent body is written against that view.
 
 Refusals come back as values, because a refusal can race correct agent code. A caller defect raises instead.
 
@@ -96,11 +96,7 @@ A callback may run the whole agent cycle inline, so a test can drive several age
 
 Every event is recorded in the order it occurred: opening premise values, accepted and rejected writes, dispatches, acknowledgments, and the closing state. Events that reached the board carry their sequence number; a rejected write never reached it and carries none. A conflict is not recorded, because it wrote nothing, and a repeated idempotency key is not recorded, because it added nothing.
 
-The audit holds that each event occurred. The contributions stay on the board. The audit and the contributions together reconstruct the run, and only the contributions survive the process, so an audit that has to outlive the run is written out before the run closes. [Running as a service](service.md) covers what is held where.
-
-`AuditEvent` is the union of the six: `PremiseOpened`, `WriteAccepted`,
-`WriteRejected`, `NotificationDispatched`, `NotificationAcknowledged` and
-`RunClosed`. `read_audit` returns them in the order each occurred.
+The record holds what happened. A contribution carries its writer and the instant the store stamped, so the board says who wrote what and when without a second history beside it. How far each agent has been told and has answered is on the record too, through `store.read_agents`, and the run's outcome through `store.read_run`. [Running as a service](service.md) covers what is held where.
 
 `NotificationId` names one notification. It is an `int` underneath, and
 `Control.ack` takes a `NotificationId` or an `int`.
