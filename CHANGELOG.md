@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.12.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.11.1...v0.12.0) (2026-09-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **storage:** `BoardStore` gains `unsent` and `mark_sent`, and `append` and `set` gain a `notify` argument. A store written against 0.11 no longer satisfies the protocol. Implement the two, accept and record `notify` on both writes, and run `blackboard.conformance.OutboxConformance` against your store.
+* **control:** `create_model` converges on a board the store already holds instead of raising `DuplicateRegionError`. A region declared with the same name and kind is recorded rather than written again, and an opening premise value is written only where the record holds none. Code relying on the refusal to tell an existing board from a new one should read `store.read_regions` instead. A name held as the other kind still raises `RegionKindError`.
+* **control:** a notification's identifier is the sequence its range ends at rather than a per-process counter starting at one. Two agents told of one write now carry one identifier, identifiers do not restart at one on a new run over an existing board, and an acknowledgment naming a sequence inside the range an agent was told is accepted rather than refused. Code asserting that identifiers increase by one per delivery is asserting the counter this removes. `docs/migrating.md` covers each.
+* **storage:** `BoardStore` gains `read_agents`, `mark_notified` and `acknowledge`, and none has a default. A store written against 0.11 no longer satisfies the protocol and fails `mypy` at the seam, then raises on the first call. Implement the three, run `blackboard.conformance.AgentConformance` against your store, and read `docs/migrating.md` for what each has to guarantee. The schema number rises to 3, so a database written by 0.11 is upgraded on open and one written by 0.12 is refused by 0.11.
+
+### Features
+
+* **control:** a sweep loop the application can start and forget ([#246](https://github.com/MoeinRoghani/blackboardx/issues/246)) ([977ca83](https://github.com/MoeinRoghani/blackboardx/commit/977ca83cc2f9620ed795a07a79d001b4703283a4)), closes [#245](https://github.com/MoeinRoghani/blackboardx/issues/245)
+* **control:** a write on any process reaches an agent on another ([#238](https://github.com/MoeinRoghani/blackboardx/issues/238)) ([86fde70](https://github.com/MoeinRoghani/blackboardx/commit/86fde700bad31d4a54a1c150920521033313b0c9)), closes [#237](https://github.com/MoeinRoghani/blackboardx/issues/237)
+* **control:** log what only the store layer can see ([#242](https://github.com/MoeinRoghani/blackboardx/issues/242)) ([59825a0](https://github.com/MoeinRoghani/blackboardx/commit/59825a0a63b21e875069f56b5c4336c5352201e2)), closes [#241](https://github.com/MoeinRoghani/blackboardx/issues/241)
+* **control:** one door into a board ([#240](https://github.com/MoeinRoghani/blackboardx/issues/240)) ([c2b3196](https://github.com/MoeinRoghani/blackboardx/commit/c2b3196e4df1aa6916ca10ffe9c8961a54e15b9f)), closes [#239](https://github.com/MoeinRoghani/blackboardx/issues/239)
+* **delivery:** a notification the process lost is sent by the relay ([#250](https://github.com/MoeinRoghani/blackboardx/issues/250)) ([453c695](https://github.com/MoeinRoghani/blackboardx/commit/453c695e92418e4bdcd00d523e65a2d4a35135e7)), closes [#249](https://github.com/MoeinRoghani/blackboardx/issues/249)
+* **storage:** a write records the intent to notify ([#248](https://github.com/MoeinRoghani/blackboardx/issues/248)) ([1e0b4a8](https://github.com/MoeinRoghani/blackboardx/commit/1e0b4a8ee1f92ef15055bc99b687c696ff79cc5f)), closes [#247](https://github.com/MoeinRoghani/blackboardx/issues/247)
+* **storage:** the store holds how far each agent has got ([#236](https://github.com/MoeinRoghani/blackboardx/issues/236)) ([f6bc88e](https://github.com/MoeinRoghani/blackboardx/commit/f6bc88e61501b48ea4786918a6f6c0961dfcfcbd)), closes [#235](https://github.com/MoeinRoghani/blackboardx/issues/235)
+
+
+### Documentation
+
+* a model is a handle, not the board ([#244](https://github.com/MoeinRoghani/blackboardx/issues/244)) ([d4e527d](https://github.com/MoeinRoghani/blackboardx/commit/d4e527d66e471d11c7290aff12f54fdfdf472b68)), closes [#243](https://github.com/MoeinRoghani/blackboardx/issues/243)
+* the pages that the outbox made wrong ([#252](https://github.com/MoeinRoghani/blackboardx/issues/252)) ([302c5ae](https://github.com/MoeinRoghani/blackboardx/commit/302c5aeaafb53cdf50f9968a485d0f95efaa9a0a)), closes [#251](https://github.com/MoeinRoghani/blackboardx/issues/251)
+* what 0.11 asks of anyone who wrote a store ([#233](https://github.com/MoeinRoghani/blackboardx/issues/233)) ([dbe8803](https://github.com/MoeinRoghani/blackboardx/commit/dbe8803d72d5136446ccae19bcd6f2594b5d5ba4))
+
 ## [0.11.1](https://github.com/MoeinRoghani/blackboardx/compare/v0.10.1...v0.11.1) (2026-09-05)
 
 
