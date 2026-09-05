@@ -139,6 +139,36 @@ service build them from those objects rather than from a string of their own.
 Mount the prefix that you gave `BoardService`; the rest of each path is the
 library's.
 
+### Creating a board is not one of them
+
+There are seven, and none creates a board. `create_model` is a function you
+call, not an operation an agent calls, and it could not be one: its arguments
+include the admission rule, the termination predicate and each agent's
+`notify` callback, and a request body carries no callable.
+
+So a service that creates boards on request mounts an endpoint of its own,
+receives whatever its callers send, and calls `create_model` with the rules
+taken from its own code:
+
+```python
+@app.post("/incidents")
+def open_incident(body: dict) -> dict:
+    model = create_model(
+        board_id=body["incident_id"],
+        store=store,
+        regions=REGIONS_FOR[body["kind"]],
+        premises={"severity": body["severity"]},
+        limits=LIMITS,
+        admission_rule=no_duplicate_findings,
+        termination_predicate=until_a_cause_is_agreed,
+    )
+    return {"board_id": model.board_id}
+```
+
+The regions, the rules and the limits come from the application, whether
+hardcoded, chosen by a template per kind of work, or looked up. Which of those
+is right is the application's decision and no part of this library.
+
 The two reads that return a page take `limit` and `from_sequence` as query
 parameters. A read that names no `limit` answers with
 `blackboard.wire.DEFAULT_LIMIT` rows, which is 100. A `limit` above
