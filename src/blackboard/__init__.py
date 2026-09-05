@@ -13,6 +13,7 @@ names in ``__all__``; every other name is internal.
 from typing import TYPE_CHECKING, Any
 
 from blackboard._board import (
+    AgentProgress,
     BlackboardError,
     BoardChange,
     Conflict,
@@ -83,6 +84,7 @@ __all__ = [
     "AdmissionRule",
     "Agent",
     "AgentBoard",
+    "AgentProgress",
     "AuditEvent",
     "BlackboardError",
     "BoardChange",

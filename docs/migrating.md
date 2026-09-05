@@ -17,6 +17,36 @@ returned a history that died the same way. Both answered questions the record no
 Both keep working until the date above, and each warns at run time naming its
 replacement.
 
+## 0.11 to 0.12
+
+One thing changed, and only for anyone who wrote a store: `BoardStore` holds
+how far each agent has been notified and has answered. An application using a
+store shipped here has nothing to do.
+
+### The store holds how far each agent has got
+
+How far an agent had been told lived in the process that told it. A process
+that takes a write is not always the process an agent registered with, so that
+number belonged to neither of them.
+
+`BoardStore` went from thirteen methods to sixteen, and no default stands in
+for the three. `mark_notified` records that an agent has been told everything
+through a sequence number. `acknowledge` records how far it has answered and
+returns the entry as it stood before the call, which is how a first
+acknowledgment is told from a repeat without a second read. `read_agents`
+answers with both numbers for every agent the board has notified.
+
+Both numbers are sequence numbers on the board and both only rise. Two
+processes notifying one agent leave the higher of what they wrote, whichever
+order they arrive in, so neither undoes the other and no lock orders them.
+`acknowledge` is the one place a compare-and-set is load-bearing: of several
+callers naming one sequence, exactly one is answered with an entry below it.
+
+`blackboard.conformance.AgentConformance` decides if you got them right, and
+holds a store to the concurrent cases as well as the ordinary ones.
+
+The schema number rises to 3.
+
 ## 0.10 to 0.11
 
 Two things changed for anyone who wrote a store: a write names its writer, and

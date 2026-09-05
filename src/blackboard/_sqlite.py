@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import Any
 
 from blackboard._board import (
+    AgentProgress,
     BoardChange,
     Conflict,
     Contribution,
@@ -78,6 +79,13 @@ CREATE TABLE IF NOT EXISTS runs (
     closed_as      TEXT,
     reason         TEXT,
     unfinished     TEXT
+);
+CREATE TABLE IF NOT EXISTS agent_progress (
+    board_id             TEXT    NOT NULL,
+    agent                TEXT    NOT NULL,
+    notified_through     INTEGER NOT NULL DEFAULT 0,
+    acknowledged_through INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (board_id, agent)
 );
 CREATE INDEX IF NOT EXISTS contributions_by_region
     ON contributions (board_id, region, sequence);
@@ -375,7 +383,13 @@ class SqliteStore:
             writes = self._connection.execute(
                 "SELECT COUNT(*) FROM contributions WHERE board_id = ?", (board_id,)
             ).fetchone()
-            for table in ("contributions", "premises", "regions", "runs"):
+            for table in (
+                "contributions",
+                "premises",
+                "regions",
+                "runs",
+                "agent_progress",
+            ):
                 self._connection.execute(
                     f"DELETE FROM {table} WHERE board_id = ?", (board_id,)
                 )
@@ -455,6 +469,57 @@ class SqliteStore:
                 (limit,),
             ).fetchall()
         return [r[0] for r in rows]
+
+    def read_agents(self, board_id: str) -> list[AgentProgress]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT agent, notified_through, acknowledged_through "
+                "FROM agent_progress WHERE board_id = ? ORDER BY agent",
+                (board_id,),
+            ).fetchall()
+        return [
+            AgentProgress(
+                agent=str(r[0]),
+                notified_through=int(r[1]),
+                acknowledged_through=int(r[2]),
+            )
+            for r in rows
+        ]
+
+    def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "INSERT INTO agent_progress "
+                "(board_id, agent, notified_through, acknowledged_through) "
+                "VALUES (?, ?, ?, 0) "
+                "ON CONFLICT (board_id, agent) DO UPDATE SET "
+                "notified_through = MAX(notified_through, excluded.notified_through)",
+                (board_id, agent, through),
+            )
+
+    def acknowledge(
+        self, board_id: str, agent: str, *, through: int
+    ) -> AgentProgress | None:
+        # The read and the write are one transaction, so the entry returned
+        # is the one this call raised and not one a concurrent caller left.
+        with self._lock, self._connection:
+            row = self._connection.execute(
+                "SELECT notified_through, acknowledged_through FROM agent_progress "
+                "WHERE board_id = ? AND agent = ?",
+                (board_id, agent),
+            ).fetchone()
+            if row is None or through > int(row[0]):
+                return None
+            self._connection.execute(
+                "UPDATE agent_progress SET acknowledged_through = "
+                "MAX(acknowledged_through, ?) WHERE board_id = ? AND agent = ?",
+                (through, board_id, agent),
+            )
+            return AgentProgress(
+                agent=agent,
+                notified_through=int(row[0]),
+                acknowledged_through=int(row[1]),
+            )
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         """Returns the regions declared on one board, with their kinds."""

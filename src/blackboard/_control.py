@@ -46,6 +46,7 @@ from functools import partial
 from typing import NewType, Protocol, TypeAlias, runtime_checkable
 
 from blackboard._board import (
+    AgentProgress,
     BlackboardError,
     BoardChange,
     Conflict,
@@ -206,6 +207,45 @@ class BoardStore(Protocol):
 
         A run closes because nothing happened, so no request is in flight to
         notice. This is what a caller polls to close those runs.
+        """
+        ...
+
+    def read_agents(self, board_id: str) -> list[AgentProgress]:
+        """Returns how far each agent on this board has been told and answered.
+
+        One entry per agent the board has notified, in any order. A board
+        that has notified nobody returns nothing rather than refusing.
+
+        Each entry is internally consistent, so ``acknowledged_through`` never
+        exceeds ``notified_through`` on a row that comes back. The entries are
+        not read as one snapshot across agents, and nothing needs them to be.
+        """
+        ...
+
+    def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
+        """Records that the agent has been told everything through ``through``.
+
+        Creates the entry where none exists. A ``through`` below what is
+        already recorded changes nothing, so two processes notifying one
+        agent leave the higher of the two whichever order they arrive in.
+        That is what makes notifying from more than one process safe without
+        a lock.
+        """
+        ...
+
+    def acknowledge(
+        self, board_id: str, agent: str, *, through: int
+    ) -> AgentProgress | None:
+        """Records the agent's answer, and returns the entry as it stood before.
+
+        Answers ``None`` where the agent has no entry, and where ``through``
+        is beyond what the agent was told. Both mean the acknowledgment names
+        a range the store never handed out.
+
+        ``acknowledged_through`` only rises, so of several callers naming one
+        ``through`` exactly one is answered with an entry below it. That is
+        how a first acknowledgment is told from a repeat without a second
+        read.
         """
         ...
 

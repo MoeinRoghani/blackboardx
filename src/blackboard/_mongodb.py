@@ -36,6 +36,7 @@ from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.errors import OperationFailure
 
 from blackboard._board import (
+    AgentProgress,
     BoardChange,
     Conflict,
     Contribution,
@@ -64,6 +65,7 @@ _PREMISES = "blackboard_premises"
 #: Named apart from the collection the withdrawn 0.11.0 created, which held
 #: different fields and did not raise the schema number.
 _RUN_STATE = "blackboard_run_state"
+_AGENT_PROGRESS = "blackboard_agent_progress"
 _SCHEMA = "blackboard_schema"
 
 _LEVEL = "level"
@@ -429,6 +431,9 @@ class MongoStore:
             # The counter is keyed by _id, so it is not named the same way.
             self._database[_BOARDS].delete_one({"_id": board_id}, session=session)
             self._database[_RUN_STATE].delete_one({"_id": board_id}, session=session)
+            self._database[_AGENT_PROGRESS].delete_many(
+                {"board_id": board_id}, session=session
+            )
             return Deleted(
                 board_id=board_id, regions_removed=regions, writes_removed=writes
             )
@@ -530,6 +535,56 @@ class MongoStore:
             ]
         )
         return [document["_id"] for document in found]
+
+    def read_agents(self, board_id: str) -> list[AgentProgress]:
+        self._checked()
+        found = self._database[_AGENT_PROGRESS].find({"board_id": board_id})
+        return [
+            AgentProgress(
+                agent=document["agent"],
+                notified_through=int(document["notified_through"]),
+                acknowledged_through=int(document["acknowledged_through"]),
+            )
+            for document in found
+        ]
+
+    def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
+        self._checked()
+        self._database[_AGENT_PROGRESS].update_one(
+            {"_id": f"{board_id}\u0000{agent}"},
+            {
+                "$max": {"notified_through": through},
+                "$setOnInsert": {
+                    "board_id": board_id,
+                    "agent": agent,
+                    "acknowledged_through": 0,
+                },
+            },
+            upsert=True,
+        )
+
+    def acknowledge(
+        self, board_id: str, agent: str, *, through: int
+    ) -> AgentProgress | None:
+        self._checked()
+        # One document, one atomic update, and the document as it stood
+        # before it. The filter carries the refusal, so an acknowledgment
+        # beyond what was notified matches nothing and returns None.
+        prior = self._database[_AGENT_PROGRESS].find_one_and_update(
+            {
+                "_id": f"{board_id}\u0000{agent}",
+                "notified_through": {"$gte": through},
+            },
+            {"$max": {"acknowledged_through": through}},
+            return_document=ReturnDocument.BEFORE,
+        )
+        if prior is None:
+            return None
+        return AgentProgress(
+            agent=agent,
+            notified_through=int(prior["notified_through"]),
+            acknowledged_through=int(prior["acknowledged_through"]),
+        )
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         self._checked()

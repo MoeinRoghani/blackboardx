@@ -87,7 +87,7 @@ def test_the_public_modules_are_the_seven_the_reference_lists() -> None:
     assert public == {"agent", "conformance", "delivery", "server", "tools", "wire"}
 
 
-def test_postgres_creates_the_six_tables_the_storage_page_names() -> None:
+def test_postgres_creates_the_seven_tables_the_storage_page_names() -> None:
     """`docs/concepts/storage.md` says how many, and a reader counts them."""
     import re
     from pathlib import Path
@@ -104,6 +104,7 @@ def test_postgres_creates_the_six_tables_the_storage_page_names() -> None:
         "blackboard_contributions",
         "blackboard_premises",
         "blackboard_run_state",
+        "blackboard_agent_progress",
     ]
 
 

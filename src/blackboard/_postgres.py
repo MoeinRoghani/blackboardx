@@ -33,6 +33,7 @@ from psycopg.errors import UniqueViolation
 from psycopg_pool import ConnectionPool as _PsycopgPool
 
 from blackboard._board import (
+    AgentProgress,
     BoardChange,
     Conflict,
     Contribution,
@@ -108,6 +109,13 @@ CREATE TABLE IF NOT EXISTS blackboard_run_state (
     closed_as     TEXT,
     reason        TEXT,
     unfinished    JSONB
+);
+CREATE TABLE IF NOT EXISTS blackboard_agent_progress (
+    board_id             TEXT    NOT NULL,
+    agent                TEXT    NOT NULL,
+    notified_through     BIGINT  NOT NULL DEFAULT 0,
+    acknowledged_through BIGINT  NOT NULL DEFAULT 0,
+    PRIMARY KEY (board_id, agent)
 );
 CREATE INDEX IF NOT EXISTS blackboard_run_state_open_by_deadline
     ON blackboard_run_state (idle_deadline)
@@ -431,6 +439,7 @@ class PostgresStore:
                 "blackboard_premises",
                 "blackboard_regions",
                 "blackboard_run_state",
+                "blackboard_agent_progress",
                 "blackboard_boards",
             ):
                 connection.execute(
@@ -516,6 +525,58 @@ class PostgresStore:
                 (limit,),
             ).fetchall()
         return [r[0] for r in rows]
+
+    def read_agents(self, board_id: str) -> list[AgentProgress]:
+        self._checked()
+        with self._pool.connection() as connection:
+            rows = connection.execute(
+                "SELECT agent, notified_through, acknowledged_through "
+                "FROM blackboard_agent_progress WHERE board_id = %s ORDER BY agent",
+                (board_id,),
+            ).fetchall()
+        return [
+            AgentProgress(agent=r[0], notified_through=r[1], acknowledged_through=r[2])
+            for r in rows
+        ]
+
+    def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
+        self._checked()
+        with self._pool.connection() as connection, connection.transaction():
+            connection.execute(
+                "INSERT INTO blackboard_agent_progress "
+                "(board_id, agent, notified_through, acknowledged_through) "
+                "VALUES (%s, %s, %s, 0) "
+                "ON CONFLICT (board_id, agent) DO UPDATE SET notified_through = "
+                "GREATEST(blackboard_agent_progress.notified_through, "
+                "EXCLUDED.notified_through)",
+                (board_id, agent, through),
+            )
+
+    def acknowledge(
+        self, board_id: str, agent: str, *, through: int
+    ) -> AgentProgress | None:
+        self._checked()
+        # The row is locked for the read, so the entry returned is the one
+        # this call raised. A self-join would read the statement's snapshot
+        # instead, and two callers would each be told they were the first.
+        with self._pool.connection() as connection, connection.transaction():
+            row = connection.execute(
+                "SELECT notified_through, acknowledged_through "
+                "FROM blackboard_agent_progress "
+                "WHERE board_id = %s AND agent = %s FOR UPDATE",
+                (board_id, agent),
+            ).fetchone()
+            if row is None or through > row[0]:
+                return None
+            connection.execute(
+                "UPDATE blackboard_agent_progress SET acknowledged_through = "
+                "GREATEST(acknowledged_through, %s) "
+                "WHERE board_id = %s AND agent = %s",
+                (through, board_id, agent),
+            )
+            return AgentProgress(
+                agent=agent, notified_through=row[0], acknowledged_through=row[1]
+            )
 
     def read_regions(self, board_id: str) -> list[Level | Premise]:
         self._checked()

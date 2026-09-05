@@ -46,6 +46,7 @@ import threading
 from uuid import uuid4
 
 from blackboard import (
+    AgentProgress,
     BoardChange,
     BoardStore,
     Conflict,
@@ -128,6 +129,19 @@ class Bound:
         return self.store.close_run(
             self.board_id, closed_as=closed_as, reason=reason, unfinished=frozenset()
         )
+
+    def read_agents(self) -> list[AgentProgress]:
+        return self.store.read_agents(self.board_id)
+
+    def mark_notified(self, agent: str, through: int) -> None:
+        self.store.mark_notified(self.board_id, agent, through=through)
+
+    def acknowledge(self, agent: str, through: int) -> AgentProgress | None:
+        return self.store.acknowledge(self.board_id, agent, through=through)
+
+    def progress(self, agent: str) -> AgentProgress | None:
+        """The one entry for this agent, or nothing where it has none."""
+        return next((p for p in self.read_agents() if p.agent == agent), None)
 
     def read_regions(self) -> list[Level | Premise]:
         return self.store.read_regions(self.board_id)
@@ -868,3 +882,172 @@ class SharedStoreConformance:
             board.append("platform", {"n": 1})
         removed.delete()
         assert kept.append("platform", {"n": 2}) == 2
+
+
+class AgentConformance:
+    """How far each agent has been told and has answered, held by the store.
+
+    A process that takes a write is not always the process an agent
+    registered with, so how far that agent has been told cannot live in
+    either one. Both numbers are sequence numbers on the board, and both
+    only rise, so two processes writing them converge without a lock.
+    """
+
+    def test_a_board_that_notified_nobody_reads_as_empty(self, ready: Bound) -> None:
+        assert ready.read_agents() == []
+
+    def test_notifying_an_unknown_agent_creates_its_entry(self, ready: Bound) -> None:
+        ready.mark_notified("triage", 4)
+        assert ready.progress("triage") == AgentProgress(
+            agent="triage", notified_through=4, acknowledged_through=0
+        )
+
+    def test_a_notification_further_on_raises_the_watermark(self, ready: Bound) -> None:
+        ready.mark_notified("triage", 4)
+        ready.mark_notified("triage", 9)
+        progress = ready.progress("triage")
+        assert progress is not None
+        assert progress.notified_through == 9
+
+    def test_a_notification_further_back_changes_nothing(self, ready: Bound) -> None:
+        """Two processes notifying one agent leave the higher, in any order."""
+        ready.mark_notified("triage", 9)
+        ready.mark_notified("triage", 4)
+        progress = ready.progress("triage")
+        assert progress is not None
+        assert progress.notified_through == 9
+
+    def test_each_agent_carries_its_own_pair(self, ready: Bound) -> None:
+        ready.mark_notified("triage", 4)
+        ready.mark_notified("capacity", 7)
+        assert {p.agent: p.notified_through for p in ready.read_agents()} == {
+            "triage": 4,
+            "capacity": 7,
+        }
+
+    def test_an_agent_owes_an_answer_once_it_has_been_told(self, ready: Bound) -> None:
+        ready.mark_notified("triage", 4)
+        progress = ready.progress("triage")
+        assert progress is not None
+        assert progress.outstanding
+
+    def test_acknowledging_returns_the_entry_as_it_stood_before(
+        self, ready: Bound
+    ) -> None:
+        ready.mark_notified("triage", 4)
+        assert ready.acknowledge("triage", 4) == AgentProgress(
+            agent="triage", notified_through=4, acknowledged_through=0
+        )
+
+    def test_an_acknowledged_agent_owes_nothing(self, ready: Bound) -> None:
+        ready.mark_notified("triage", 4)
+        ready.acknowledge("triage", 4)
+        progress = ready.progress("triage")
+        assert progress is not None
+        assert not progress.outstanding
+
+    def test_acknowledging_part_of_what_was_told_leaves_the_rest_owed(
+        self, ready: Bound
+    ) -> None:
+        ready.mark_notified("triage", 9)
+        ready.acknowledge("triage", 4)
+        progress = ready.progress("triage")
+        assert progress is not None
+        assert progress.acknowledged_through == 4
+        assert progress.outstanding
+
+    def test_only_the_first_of_two_equal_acknowledgments_sees_it_unanswered(
+        self, ready: Bound
+    ) -> None:
+        """That is what tells a first acknowledgment from a repeat."""
+        ready.mark_notified("triage", 4)
+        first = ready.acknowledge("triage", 4)
+        second = ready.acknowledge("triage", 4)
+        assert first is not None and second is not None
+        assert first.acknowledged_through < 4
+        assert second.acknowledged_through == 4
+
+    def test_an_acknowledgment_further_back_does_not_lower_the_watermark(
+        self, ready: Bound
+    ) -> None:
+        ready.mark_notified("triage", 9)
+        ready.acknowledge("triage", 9)
+        ready.acknowledge("triage", 4)
+        progress = ready.progress("triage")
+        assert progress is not None
+        assert progress.acknowledged_through == 9
+
+    def test_acknowledging_beyond_what_was_told_is_refused(self, ready: Bound) -> None:
+        """The store never handed that range out, so it is not progress."""
+        ready.mark_notified("triage", 4)
+        assert ready.acknowledge("triage", 9) is None
+        progress = ready.progress("triage")
+        assert progress is not None
+        assert progress.acknowledged_through == 0
+
+    def test_acknowledging_for_an_agent_with_no_entry_is_refused(
+        self, ready: Bound
+    ) -> None:
+        assert ready.acknowledge("stranger", 1) is None
+
+    def test_an_acknowledgment_reaches_only_the_agent_it_names(
+        self, ready: Bound
+    ) -> None:
+        ready.mark_notified("triage", 4)
+        ready.mark_notified("capacity", 4)
+        ready.acknowledge("triage", 4)
+        assert {p.agent: p.acknowledged_through for p in ready.read_agents()} == {
+            "triage": 4,
+            "capacity": 0,
+        }
+
+    def test_concurrent_notifications_leave_the_highest(self, ready: Bound) -> None:
+        """Eight processes notifying one agent, and none undoes another."""
+        barrier = threading.Barrier(8)
+
+        def notify(through: int) -> None:
+            barrier.wait()
+            ready.mark_notified("triage", through)
+
+        threads = [threading.Thread(target=notify, args=(i,)) for i in range(1, 9)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        progress = ready.progress("triage")
+        assert progress is not None
+        assert progress.notified_through == 8
+
+    def test_exactly_one_of_eight_equal_acknowledgments_sees_it_unanswered(
+        self, ready: Bound
+    ) -> None:
+        """A repeated acknowledgment is told from a first one under load."""
+        ready.mark_notified("triage", 5)
+        barrier = threading.Barrier(8)
+        firsts: list[bool] = []
+        lock = threading.Lock()
+
+        def acknowledge() -> None:
+            barrier.wait()
+            prior = ready.acknowledge("triage", 5)
+            with lock:
+                firsts.append(prior is not None and prior.acknowledged_through < 5)
+
+        threads = [threading.Thread(target=acknowledge) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert sum(firsts) == 1
+
+    def test_an_agent_on_one_board_is_absent_from_another(self, ready: Bound) -> None:
+        elsewhere = Bound(ready.store, f"{ready.board_id}-elsewhere")
+        ready.mark_notified("triage", 4)
+        assert elsewhere.read_agents() == []
+
+    def test_deleting_a_board_removes_what_its_agents_had_answered(
+        self, ready: Bound
+    ) -> None:
+        ready.mark_notified("triage", 4)
+        ready.delete()
+        assert ready.read_agents() == []
