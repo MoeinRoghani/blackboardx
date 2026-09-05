@@ -33,7 +33,9 @@ concurrent duplicates rather than preventing them.
 
 from __future__ import annotations
 
+import logging
 import threading
+import warnings
 from collections import deque
 from collections.abc import Callable, Iterable
 from contextlib import suppress
@@ -58,6 +60,8 @@ from blackboard._board import (
     Written,
 )
 from blackboard._clock import Clock, ScheduledCall
+
+logger = logging.getLogger(__name__)
 
 
 class BoardStore(Protocol):
@@ -953,7 +957,21 @@ class Control:
         return result
 
     def read_audit(self) -> list[AuditEvent]:
-        """Returns every audit event in the order each occurred."""
+        """Returns every audit event in the order each occurred.
+
+        Deprecated. The audit answered two questions, and the record now
+        answers one of them: a contribution carries its writer and the instant
+        it was written. What is left is what a log line says, and a log line
+        survives the process where this list does not.
+        """
+        warnings.warn(
+            "Control.read_audit is deprecated and may be removed on or after "
+            "2026-12-05. A contribution carries its writer and the instant it "
+            "was written, and what the audit said besides is written to the "
+            "log under the 'blackboard' logger.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         with self._lock:
             return list(self._audit)
 
@@ -1282,6 +1300,18 @@ class Control:
         if self._outcome is not None:
             return
         self._outcome = outcome
+        # No agent learns that the run ended, or that it was named unfinished,
+        # so this is the blackboard's to say. What an agent already received,
+        # a write accepted or refused, a notification, an acknowledgment, is
+        # the agent's to log and is not repeated here.
+        unfinished: frozenset[str] = getattr(outcome, "unfinished", frozenset())
+        logger.info(
+            "run on %s closed as %s%s%s",
+            self._board_id,
+            type(outcome).__name__.lower(),
+            f", reason {outcome.reason!r}" if isinstance(outcome, Aborted) else "",
+            (", unfinished " + ", ".join(sorted(unfinished)) if unfinished else ""),
+        )
         if self._wall_call is not None:
             self._wall_call.cancel()
         if self._idle_call is not None:

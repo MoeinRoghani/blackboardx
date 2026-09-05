@@ -53,11 +53,28 @@ next one covers the range a lost one would have covered. It costs something
 when the lost one is the last, and the run then waits until its idle limit
 closes it.
 
-## The audit is unbounded and in memory
+## The audit is deprecated, and unbounded until it goes
 
 `Control.read_audit` returns every event of the run, with no bound and no
 cursor. A long run holds every event in the process and hands back all of them
-at once. Nothing writes the audit to the store.
+at once, and nothing writes the audit to the store, so it dies with the
+process.
+
+It is deprecated and may be removed on or after 2026-12-05. What it recorded
+is answered two other ways. A contribution carries its writer and the instant
+it was written, so the record says who wrote what and when. Everything else it
+held is written to the log.
+
+## The library logs only what a caller cannot see
+
+The rule is one line: an agent knows what it wrote, what it was refused, what
+it was notified of and what it acknowledged, because each of those reached it,
+so this library says none of them again. It logs a run closing with its
+outcome and the agents that did not finish, and a notification that never
+arrived after its attempts, because no agent can log what it never received.
+
+Every line goes to the `blackboard` logger through the standard library, and
+the application configures the handlers and the format.
 
 ## There is no authentication and no authorisation
 

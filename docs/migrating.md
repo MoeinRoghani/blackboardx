@@ -3,6 +3,20 @@
 Every name that moved, what replaced it, and the release its old form stops
 working in.
 
+## Deprecated, and their removal dates
+
+| Name | Replaced by | May be removed on or after |
+| --- | --- | --- |
+| `attach_model` | `create_model`, which opens a board once; every later operation reads what it needs from the store | 2026-12-05 |
+| `Control.read_audit` | A contribution's `writer` and `written_at` for who and when; the `blackboard` logger for the rest | 2026-12-05 |
+
+Both exist because the run lived in one process's memory. `attach_model` opened
+a run over a record whose run had died with its process, and `read_audit`
+returned a history that died the same way. Both answered questions the record now answers itself.
+
+Both keep working until the date above, and each warns at run time naming its
+replacement.
+
 ## 0.7 to 0.8
 
 Two things changed for anyone who wrote a store: a store holds many boards, and
