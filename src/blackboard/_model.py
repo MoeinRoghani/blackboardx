@@ -19,6 +19,7 @@ registers itself instead.
 from __future__ import annotations
 
 import json
+import warnings
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
@@ -191,6 +192,13 @@ def attach_model(
     run already under way, covering everything on the board, which is what an
     agent that lost its own memory of the run needs.
     """
+    warnings.warn(
+        "attach_model is deprecated and may be removed on or after 2026-12-05. "
+        "A run is no longer opened over a record: create_model opens a board "
+        "once, and every later operation reads what it needs from the store.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     declarations = list(regions)
     roster = list(agents or ())
     _check_roster(declarations, roster)
