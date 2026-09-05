@@ -39,7 +39,7 @@ Everything that the arguments alone settle is checked before the store is touche
 
 `premises` must name each declared premise exactly once. Those writes bypass admission, and they wake nobody, because no agent has registered yet.
 
-`create_model` declares the regions, so it opens a board the store does not hold yet. A board the store already holds is opened again by `attach_model`, which declares nothing and takes no opening premises, because the record holds the values and the versions they are at. [Running as a service](service.md#replacing-a-replica) covers the deployment that reaches for it.
+`create_model` converges on the board. A region the record already holds with the same name and kind is recorded rather than written again, and an opening premise value is written only where the record holds none, so a process does not have to know whether it is the first. [Running as a service](service.md#losing-a-replica) covers the deployment that relies on it.
 
 ## How agents join
 

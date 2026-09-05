@@ -2,7 +2,9 @@
 
 The rule is where the application refuses a write: one that fails the
 application's schema, duplicates something already on the board, or adds
-nothing.
+nothing. It is the first of the decisions
+[the control component](../concepts/control.md#admission) makes, and the only
+one the application writes itself.
 
 ## The signature
 

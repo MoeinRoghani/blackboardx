@@ -1,7 +1,7 @@
 # Let a model decide
 
-An agent's five steps do not change when a language model supplies its
-expertise. It is notified, it reads the board, it decides what to add, it
+An agent's five steps, set out in [Write an agent](writing-an-agent.md), do not
+change when a language model supplies its expertise. It is notified, it reads the board, it decides what to add, it
 writes, and it acknowledges. Only the third step moves: instead of an
 algorithm in the agent's own code deciding, a model is asked, and it is asked
 by being offered the board's reads and writes as tools it may call.

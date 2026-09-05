@@ -1,7 +1,8 @@
 # Test an application
 
 Every timed behaviour is observable without waiting, because the clock is
-injected.
+injected. What those behaviours are is [the run](../concepts/run.md); this is
+how to drive them.
 
 ## Which store a test uses
 
@@ -128,13 +129,12 @@ writes after it. A level carries a window on the same terms, so
 `Level("signals", batch_window=timedelta(seconds=5))` is driven by the same two
 advances.
 
-## A run that opens over an existing record
+## A replacement replica, without a second process
 
-`attach_model` opens a run over a board that a store already holds, so a test
-of a
-replacement replica needs no second process. Give the store before the restart
-and the store after it one file, because a second `SqliteStore(":memory:")`
-reads an empty board.
+`create_model` converges on a board the store already holds, so a test of a
+replica taking over needs no second process: call it again with the same
+arguments. Give the store before the restart and the store after it one file,
+because a second `SqliteStore(":memory:")` reads an empty board.
 
 ```python
 def test_a_run_that_opens_over_an_existing_record(tmp_path):
@@ -156,10 +156,11 @@ def test_a_run_that_opens_over_an_existing_record(tmp_path):
 
     second = SqliteStore(file)
     woken = []
-    resumed = attach_model(
+    resumed = create_model(
         board_id="incident-3391",
         store=second,
         regions=regions,
+        premises={"severity": "high"},
         agents=[Agent(name="triage", notify=woken.append, subscribes_to={"signals"})],
         limits=LIMITS,
         clock=ManualClock(),
@@ -173,11 +174,13 @@ def test_a_run_that_opens_over_an_existing_record(tmp_path):
     second.close()
 ```
 
-The sequence continues from the record, and the agent is woken from sequence 1
-because a run does not carry a cursor over from the record. `regions` is
-checked against the record by
-name and by kind, so a test that renames a region in `regions` fails at
-`attach_model` rather than at the first write.
+The sequence continues from the record. This agent is woken from sequence 1
+because it has answered nothing: a cursor is on the record, so an agent that
+had acknowledged would resume past what it answered.
+
+The opening premise is not written again, which is why `severity` is still at
+version 1 rather than 2. A region named in `regions` that the record holds as
+the other kind raises `RegionKindError` here rather than at the first write.
 
 ## Assert on the record, not on timing
 
