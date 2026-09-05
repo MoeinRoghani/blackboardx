@@ -24,7 +24,7 @@ from blackboard._board import BlackboardError
 #: Raise it when a change makes a record unreadable by an earlier version.
 #: Adding a column an older version ignores is not such a change; removing
 #: one, or giving one a new meaning, is.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SchemaVersionError(BlackboardError):

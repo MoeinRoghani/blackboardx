@@ -180,23 +180,35 @@ class RejectedBody(_Body):
 
 @dataclass(frozen=True)
 class ContributionBody(_Body):
-    """One contribution read back from a level."""
+    """One contribution read back from a level.
+
+    ``writer`` and ``written_at`` are optional, so an older blackboard that
+    sends neither decodes as ``None`` for both and a newer agent reads it
+    without error. ``written_at`` crosses as an ISO-8601 string.
+    """
 
     _required: ClassVar[tuple[str, ...]] = ("sequence",)
 
     sequence: int
     content: object = None
+    writer: str | None = None
+    written_at: str | None = None
 
 
 @dataclass(frozen=True)
 class BoardChangeBody(_Body):
-    """One write to any region, read back from the whole board."""
+    """One write to any region, read back from the whole board.
+
+    ``writer`` and ``written_at`` follow the rule on :class:`ContributionBody`.
+    """
 
     _required: ClassVar[tuple[str, ...]] = ("sequence", "region")
 
     sequence: int
     region: str
     content: object = None
+    writer: str | None = None
+    written_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -255,12 +267,17 @@ class BoardPage(_Body):
 
 @dataclass(frozen=True)
 class PremiseBody(_Body):
-    """A premise's current value and the version that produced it."""
+    """A premise's current value and the version that produced it.
+
+    ``writer`` and ``written_at`` follow the rule on :class:`ContributionBody`.
+    """
 
     _required: ClassVar[tuple[str, ...]] = ("version",)
 
     version: int
     value: object = None
+    writer: str | None = None
+    written_at: str | None = None
 
 
 @dataclass(frozen=True)

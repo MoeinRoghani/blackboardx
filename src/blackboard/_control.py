@@ -85,8 +85,12 @@ class BoardStore(Protocol):
         level: str,
         content: object,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written:
         """Adds one contribution to a level and returns where it landed.
+
+        ``writer`` is the name the write carried, recorded on the row so the
+        record answers who wrote it. The store stamps the instant itself.
 
         ``idempotency_key`` names one write on one board. A key that the store has
         already written answers with what that write produced, marked
@@ -103,8 +107,11 @@ class BoardStore(Protocol):
         value: object,
         expected_version: int,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written | Conflict:
         """Replaces a premise's value under the version the caller expects.
+
+        ``writer`` is recorded as it is on ``append``.
 
         ``idempotency_key`` works as it does for ``append``. A conflict
         writes nothing, so it uses up no key.
@@ -864,7 +871,7 @@ class Control:
                     # A key naming two regions is the caller's mistake, so it
                     # raises here as it does in the store. ADR 0016.
                     result = self._store.append(
-                        self._board_id, level, content, idempotency_key
+                        self._board_id, level, content, idempotency_key, writer=writer
                     )
                     if result.repeated:
                         # Nothing reached the board, so nothing about the run
@@ -926,6 +933,7 @@ class Control:
                         value,
                         expected_version,
                         idempotency_key,
+                        writer=writer,
                     )
                     if isinstance(result, Written) and result.repeated:
                         return result

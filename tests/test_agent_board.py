@@ -93,9 +93,10 @@ def test_the_same_body_lands_the_same_contributions_either_way() -> None:
     assert [c.content for c in in_process.reader.read_level("findings")] == [
         c.content for c in remote_control.reader.read_level("findings")
     ]
-    assert in_process.reader.read_premise(
-        "severity"
-    ) == remote_control.reader.read_premise("severity")
+    here = in_process.reader.read_premise("severity")
+    there = remote_control.reader.read_premise("severity")
+    # Two runs, so two instants. The body landed the same value and version.
+    assert (here.value, here.version) == (there.value, there.version)
 
 
 def test_both_satisfy_the_protocol() -> None:

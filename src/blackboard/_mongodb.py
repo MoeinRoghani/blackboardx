@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from pymongo import ASCENDING, MongoClient, ReturnDocument
@@ -65,6 +66,20 @@ _LEVEL = "level"
 _PREMISE = "premise"
 
 _Result = TypeVar("_Result")
+
+
+def _instant(stored: Any) -> datetime | None:
+    """Reads a stamped instant as UTC-aware, passing through an old row's None.
+
+    The driver returns a naive datetime unless the client is opened
+    ``tz_aware``, and the store cannot assume the caller opened it that way,
+    so it names the zone the value is already in.
+    """
+    if stored is None:
+        return None
+    if isinstance(stored, datetime):
+        return stored.replace(tzinfo=UTC) if stored.tzinfo is None else stored
+    return None
 
 
 class MongoStore:
@@ -235,6 +250,7 @@ class MongoStore:
         level: str,
         content: object,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written:
         self._checked()
         carried = _as_json(content)
@@ -245,16 +261,15 @@ class MongoStore:
             if done is not None:
                 return done
             sequence = self._take_sequence(session, board_id)
-            self._database[_CONTRIBUTIONS].insert_one(
-                {
-                    "board_id": board_id,
-                    "sequence": sequence,
-                    "region": level,
-                    "content": carried,
-                    "version": None,
-                    "idempotency_key": idempotency_key,
-                },
-                session=session,
+            self._insert_contribution(
+                session,
+                board_id=board_id,
+                sequence=sequence,
+                region=level,
+                content=carried,
+                version=None,
+                idempotency_key=idempotency_key,
+                writer=writer,
             )
             return Written(sequence=sequence)
 
@@ -267,6 +282,7 @@ class MongoStore:
         value: object,
         expected_version: int,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written | Conflict:
         self._checked()
         carried = _as_json(value)
@@ -288,7 +304,16 @@ class MongoStore:
                     "name": premise,
                     "version": expected_version,
                 },
-                {"$set": {"value": carried}, "$inc": {"version": 1}},
+                [
+                    {
+                        "$set": {
+                            "value": carried,
+                            "version": {"$add": ["$version", 1]},
+                            "writer": writer,
+                            "written_at": "$$NOW",
+                        }
+                    }
+                ],
                 return_document=ReturnDocument.AFTER,
                 session=session,
             )
@@ -302,16 +327,15 @@ class MongoStore:
                 )
                 return None
             sequence = self._take_sequence(session, board_id)
-            self._database[_CONTRIBUTIONS].insert_one(
-                {
-                    "board_id": board_id,
-                    "sequence": sequence,
-                    "region": premise,
-                    "content": carried,
-                    "version": int(updated["version"]),
-                    "idempotency_key": idempotency_key,
-                },
-                session=session,
+            self._insert_contribution(
+                session,
+                board_id=board_id,
+                sequence=sequence,
+                region=premise,
+                content=carried,
+                version=int(updated["version"]),
+                idempotency_key=idempotency_key,
+                writer=writer,
             )
             return Written(sequence=sequence, version=int(updated["version"]))
 
@@ -341,7 +365,10 @@ class MongoStore:
         documents = _bounded(documents, limit)
         return [
             Contribution(
-                sequence=int(document["sequence"]), content=document["content"]
+                sequence=int(document["sequence"]),
+                content=document["content"],
+                writer=document.get("writer"),
+                written_at=_instant(document.get("written_at")),
             )
             for document in documents
         ]
@@ -356,7 +383,12 @@ class MongoStore:
             raise UnsetPremiseError(
                 f"the premise {premise!r} has no value until one is written"
             )
-        return PremiseState(value=document["value"], version=int(document["version"]))
+        return PremiseState(
+            value=document["value"],
+            version=int(document["version"]),
+            writer=document.get("writer"),
+            written_at=_instant(document.get("written_at")),
+        )
 
     def read_board(
         self, board_id: str, from_sequence: int = 0, limit: int | None = None
@@ -373,6 +405,8 @@ class MongoStore:
                 sequence=int(document["sequence"]),
                 region=document["region"],
                 content=document["content"],
+                writer=document.get("writer"),
+                written_at=_instant(document.get("written_at")),
             )
             for document in documents
         ]
@@ -433,6 +467,39 @@ class MongoStore:
                     "transaction. A standalone server cannot run one."
                 ) from failure
             raise
+
+    def _insert_contribution(
+        self,
+        session: Any,
+        *,
+        board_id: str,
+        sequence: int,
+        region: str,
+        content: Any,
+        version: int | None,
+        idempotency_key: str | None,
+        writer: str | None,
+    ) -> None:
+        # An aggregation-pipeline update with upsert is the way to stamp the
+        # server's clock, `$$NOW`, on an inserted document. The sequence is
+        # freshly taken and unique, so the upsert always inserts.
+        self._database[_CONTRIBUTIONS].update_one(
+            {"board_id": board_id, "sequence": sequence},
+            [
+                {
+                    "$set": {
+                        "region": region,
+                        "content": content,
+                        "version": version,
+                        "idempotency_key": idempotency_key,
+                        "writer": writer,
+                        "written_at": "$$NOW",
+                    }
+                }
+            ],
+            upsert=True,
+            session=session,
+        )
 
     def _take_sequence(self, session: Any, board_id: str) -> int:
         document = self._database[_BOARDS].find_one_and_update(

@@ -81,6 +81,10 @@ ALTER TABLE blackboard_contributions
     ADD COLUMN IF NOT EXISTS version BIGINT;
 ALTER TABLE blackboard_contributions
     ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+ALTER TABLE blackboard_contributions
+    ADD COLUMN IF NOT EXISTS writer TEXT;
+ALTER TABLE blackboard_contributions
+    ADD COLUMN IF NOT EXISTS written_at TIMESTAMPTZ;
 CREATE TABLE IF NOT EXISTS blackboard_premises (
     board_id TEXT   NOT NULL,
     name     TEXT   NOT NULL,
@@ -88,6 +92,10 @@ CREATE TABLE IF NOT EXISTS blackboard_premises (
     version  BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (board_id, name)
 );
+ALTER TABLE blackboard_premises
+    ADD COLUMN IF NOT EXISTS writer TEXT;
+ALTER TABLE blackboard_premises
+    ADD COLUMN IF NOT EXISTS written_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS blackboard_contributions_by_region
     ON blackboard_contributions (board_id, region, sequence);
 CREATE UNIQUE INDEX IF NOT EXISTS blackboard_contributions_by_key
@@ -247,6 +255,7 @@ class PostgresStore:
         level: str,
         content: object,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written:
         self._checked()
         carried = json.dumps(content)
@@ -256,11 +265,13 @@ class PostgresStore:
             if done is not None:
                 return done
             sequence = self._take_sequence(connection, board_id)
+            # now() is the transaction's instant on the server's clock, so
+            # the record never depends on any caller's clock agreeing.
             connection.execute(
                 "INSERT INTO blackboard_contributions "
-                "(board_id, sequence, region, content, idempotency_key) "
-                "VALUES (%s, %s, %s, %s::jsonb, %s)",
-                (board_id, sequence, level, carried, idempotency_key),
+                "(board_id, sequence, region, content, idempotency_key, writer, "
+                "written_at) VALUES (%s, %s, %s, %s::jsonb, %s, %s, now())",
+                (board_id, sequence, level, carried, idempotency_key, writer),
             )
             return Written(sequence=sequence)
 
@@ -271,6 +282,7 @@ class PostgresStore:
         value: object,
         expected_version: int,
         idempotency_key: str | None = None,
+        writer: str | None = None,
     ) -> Written | Conflict:
         self._checked()
         carried = json.dumps(value)
@@ -290,10 +302,10 @@ class PostgresStore:
                     sequence = self._take_sequence(connection, board_id)
                     updated = connection.execute(
                         "UPDATE blackboard_premises SET value = %s::jsonb, "
-                        "version = version + 1 "
+                        "version = version + 1, writer = %s, written_at = now() "
                         "WHERE board_id = %s AND name = %s AND version = %s "
                         "RETURNING version",
-                        (carried, board_id, premise, expected_version),
+                        (carried, writer, board_id, premise, expected_version),
                     ).fetchone()
                     if updated is None:
                         outcome = Conflict(
@@ -307,8 +319,9 @@ class PostgresStore:
                         raise _RollBack
                     connection.execute(
                         "INSERT INTO blackboard_contributions (board_id, sequence,"
-                        " region, content, version, idempotency_key) "
-                        "VALUES (%s, %s, %s, %s::jsonb, %s, %s)",
+                        " region, content, version, idempotency_key, writer, "
+                        "written_at) "
+                        "VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, now())",
                         (
                             board_id,
                             sequence,
@@ -316,6 +329,7 @@ class PostgresStore:
                             carried,
                             int(updated[0]),
                             idempotency_key,
+                            writer,
                         ),
                     )
                     outcome = Written(sequence=sequence, version=int(updated[0]))
@@ -334,19 +348,24 @@ class PostgresStore:
         with self._pool.connection() as connection:
             self._require(connection, board_id, level, _LEVEL)
             rows = connection.execute(
-                "SELECT sequence, content FROM blackboard_contributions "
+                "SELECT sequence, content, writer, written_at "
+                "FROM blackboard_contributions "
                 "WHERE board_id = %s AND region = %s AND sequence >= %s "
                 "ORDER BY sequence LIMIT %s",
                 (board_id, level, from_sequence, limit),
             ).fetchall()
-        return [Contribution(sequence=int(r[0]), content=r[1]) for r in rows]
+        return [
+            Contribution(sequence=int(r[0]), content=r[1], writer=r[2], written_at=r[3])
+            for r in rows
+        ]
 
     def read_premise(self, board_id: str, premise: str) -> PremiseState:
         self._checked()
         with self._pool.connection() as connection:
             self._require(connection, board_id, premise, _PREMISE)
             row = connection.execute(
-                "SELECT value, version FROM blackboard_premises "
+                "SELECT value, version, writer, written_at "
+                "FROM blackboard_premises "
                 "WHERE board_id = %s AND name = %s",
                 (board_id, premise),
             ).fetchone()
@@ -354,7 +373,9 @@ class PostgresStore:
             raise UnsetPremiseError(
                 f"the premise {premise!r} has no value until one is written"
             )
-        return PremiseState(value=row[0], version=int(row[1]))
+        return PremiseState(
+            value=row[0], version=int(row[1]), writer=row[2], written_at=row[3]
+        )
 
     def read_board(
         self, board_id: str, from_sequence: int = 0, limit: int | None = None
@@ -362,12 +383,20 @@ class PostgresStore:
         self._checked()
         with self._pool.connection() as connection:
             rows = connection.execute(
-                "SELECT sequence, region, content FROM blackboard_contributions "
+                "SELECT sequence, region, content, writer, written_at "
+                "FROM blackboard_contributions "
                 "WHERE board_id = %s AND sequence >= %s ORDER BY sequence LIMIT %s",
                 (board_id, from_sequence, limit),
             ).fetchall()
         return [
-            BoardChange(sequence=int(r[0]), region=r[1], content=r[2]) for r in rows
+            BoardChange(
+                sequence=int(r[0]),
+                region=r[1],
+                content=r[2],
+                writer=r[3],
+                written_at=r[4],
+            )
+            for r in rows
         ]
 
     def delete(self, board_id: str) -> Deleted:
