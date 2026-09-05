@@ -1,6 +1,16 @@
 # The run
 
-A model is one run. It opens when it is created, and it ends in one of three states.
+A model is one run: one board, one set of agents, from creation to close.
+
+| Stage | What happens | Section |
+| --- | --- | --- |
+| Creation | The regions are declared, the premises take their opening values, the agents are named | [Creating a model](#creating-a-model) |
+| Under way | Agents write, are notified, and acknowledge | [How agents join](#how-agents-join), [Acknowledging](#acknowledging) |
+| Close | One of three outcomes is recorded, once | [Ending](#ending) |
+
+What decides during the run is [the control component](control.md). What the
+run writes to is [the board](board.md), and where that is kept is
+[storage](storage.md).
 
 ## Creating a model
 
