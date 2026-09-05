@@ -68,6 +68,26 @@ version and `feat:` bumps the minor version. While the major version is 0, a
 breaking change also bumps the minor version. A breaking change carries `!` in
 the subject and a `BREAKING CHANGE:` footer stating the migration.
 
+### Version numbers PyPI will not take
+
+**0.11.0 cannot be published.** It was uploaded on 4 September 2026, withdrawn
+about an hour later, and PyPI never frees a version number a release has used,
+even after that release is deleted. The tag and the GitHub release for it are
+gone and the index holds nothing under it, so nothing here or on PyPI says the
+number is spent.
+
+Check the version on an open release pull request before merging it. Where
+release-please proposes 0.11.0, put this footer on any commit that will be in
+the release, and it proposes 0.11.1 instead.
+
+```
+Release-As: 0.11.1
+```
+
+Without it the release cuts and tags normally and only the publish step fails,
+naming a file that already exists, which leaves a tagged release that reached
+no index.
+
 ### What merging the release pull request does
 
 1. release-please writes the new version into `pyproject.toml` and
