@@ -195,9 +195,9 @@ hold. Those are yours to measure against your database.
 
 ## What is designed and not built
 
-Nothing. Every part of the design in the repository's plan is built: the run's
-deadlines and outcome, how far each agent has been notified and has answered,
-the sweep that closes what nobody is watching, and the outbox that keeps a
-notification a process lost.
+Nothing. Every part of the design is built: the run's deadlines and its
+outcome, how far each agent has been notified and has answered, the sweep
+that closes what nobody is watching, and the outbox that keeps a notification
+a process was holding when it stopped.
 
 

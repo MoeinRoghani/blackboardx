@@ -44,7 +44,7 @@ Reads are not bound that way. `BoardService` takes the store as well as the regi
 
 A replacement replica resumes rather than restarts. The deadlines, the outcome and how far each agent answered are on the record, so a replica that takes over closes the run on the original deadline and does not tell an agent again what it has already answered.
 
-A notification lost with the process usually costs nothing, since a notification carries no values and the next one covers the range the lost one would have covered. It costs something when it is the last one, because nothing then follows it, and the run waits until its idle limit closes it.
+A notification a process was holding when it stopped is not lost. The intent was recorded with the write, so `Control.relay` on any replica holding that agent sends it. Delivery is at least once, and a repeat costs nothing because a notification carries no values.
 
 ## Holding the runs
 

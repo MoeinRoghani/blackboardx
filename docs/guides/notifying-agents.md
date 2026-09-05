@@ -130,17 +130,22 @@ A notification that never lands is not the end of the run. The agent has not
 acknowledged, so the run's idle limit still applies and the outcome names
 that agent as unfinished.
 
-## What the queue does not survive
+## What the queue loses, and what recovers it
 
 The queue is in memory. A process that stops loses whatever had not been
-sent.
+sent, and `close` reports what it abandons through `on_failure`.
 
-Losing them usually costs nothing, because a notification carries no values: it
-says a range changed, and the next notification covers the range that a lost
-notification would have covered. It costs something when the lost notification
-is the last one, since
-no later notification arrives to cover it, and the run then waits until its
-idle limit closes it.
+The intent is not lost with it. A write records one row for each agent that
+should hear of it, in the same transaction as the contribution, and
+`Control.relay` sends what nothing has sent yet. So a notification abandoned
+here is delivered by whichever process runs the relay next, including a
+different replica.
+
+Delivery is therefore at least once. A row is marked only after the send
+returns, so a process that sends and stops before marking sends again, and a
+notification may arrive twice. That costs nothing: a notification carries no
+values, the agent reads the board either way, and cumulative acknowledgment
+absorbs the extra identifier.
 
 ## Sending over something else
 
