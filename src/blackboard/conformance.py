@@ -1144,15 +1144,29 @@ class OutboxConformance:
         ready.mark_sent("triage", 1)
         assert [row.agent for row in ready.unsent()] == ["capacity"]
 
-    def test_marking_a_row_that_was_never_recorded_changes_nothing(
-        self, ready: Bound
-    ) -> None:
+    def test_marking_an_agent_with_no_rows_changes_nothing(self, ready: Bound) -> None:
         ready.store.append(
             ready.board_id, "application", "a", notify=frozenset({"triage"})
         )
         ready.mark_sent("stranger", 1)
-        ready.mark_sent("triage", 99)
         assert len(ready.unsent()) == 1
+
+    def test_marking_covers_every_row_at_or_below_it(self, ready: Bound) -> None:
+        """A notification covers a range, so sending it answers the range."""
+        for content in ("first", "second", "third"):
+            ready.store.append(
+                ready.board_id, "application", content, notify=frozenset({"triage"})
+            )
+        ready.mark_sent("triage", 2)
+        assert [row.through for row in ready.unsent()] == [3]
+
+    def test_marking_below_the_oldest_row_leaves_them_all(self, ready: Bound) -> None:
+        ready.append("application", "untold")
+        ready.store.append(
+            ready.board_id, "application", "a", notify=frozenset({"triage"})
+        )
+        ready.mark_sent("triage", 1)
+        assert [row.through for row in ready.unsent()] == [2]
 
     def test_marking_the_same_row_twice_is_harmless(self, ready: Bound) -> None:
         ready.store.append(

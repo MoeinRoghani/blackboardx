@@ -567,7 +567,7 @@ class PostgresStore:
         with self._pool.connection() as connection, connection.transaction():
             connection.execute(
                 "DELETE FROM blackboard_outbox "
-                "WHERE board_id = %s AND agent = %s AND through = %s",
+                "WHERE board_id = %s AND agent = %s AND through <= %s",
                 (board_id, agent, through),
             )
 
