@@ -19,6 +19,20 @@ replacement.
 
 ## 0.11 to 0.12
 
+### A write records the intent to notify
+
+`append` and `set` take `notify`, a set of agent names, and record one row for
+each in the same transaction as the contribution. `unsent` answers with the
+rows nothing has sent, oldest first; `mark_sent` removes one.
+
+A store of your own implements both and records `notify` on both writes.
+`blackboard.conformance.OutboxConformance` decides if you got it right.
+
+Marking after sending rather than before is what makes delivery at least once.
+A process that sends and stops before marking sends again, and the repeat is
+absorbed by cumulative acknowledgment.
+
+
 One thing changed, and only for anyone who wrote a store: `BoardStore` holds
 how far each agent has been notified and has answered. An application using a
 store shipped here has nothing to do.

@@ -188,6 +188,24 @@ class AgentProgress:
 
 
 @dataclass(frozen=True)
+class Unsent:
+    """One notification a write recorded and nothing has sent yet.
+
+    The row exists because the intent to notify is written in the same
+    transaction as the contribution, so a process that commits a write and
+    stops before delivering has not lost it. Whoever holds the agent sends it
+    and marks it sent.
+
+    ``through`` is the sequence the notification's range ends at, which is
+    also the identifier it carries.
+    """
+
+    board_id: str
+    agent: str
+    through: int
+
+
+@dataclass(frozen=True)
 class Contribution:
     """One unit stored in a level, at its position in the total order.
 
@@ -248,6 +266,8 @@ class _BoardState:
     run: _RunState | None = None
     #: How far each agent has been notified and has acknowledged.
     agents: dict[str, _AgentProgress] = field(default_factory=dict)
+    #: Notifications a write recorded and nothing has sent yet, by agent.
+    outbox: dict[str, set[int]] = field(default_factory=dict)
 
 
 @dataclass
@@ -336,6 +356,7 @@ class InMemoryStore:
         content: object,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written:
         """Adds one contribution to a level and returns where it landed."""
         carried = _as_json(content)
@@ -367,6 +388,7 @@ class InMemoryStore:
             written = Written(sequence=board.sequence)
             if idempotency_key is not None:
                 board.keys[idempotency_key] = (level, written)
+            self._enqueue(board, notify, board.sequence)
             return written
 
     def set(
@@ -377,6 +399,7 @@ class InMemoryStore:
         expected_version: int,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written | Conflict:
         """Replaces a premise's value under the version the caller expects.
 
@@ -415,6 +438,7 @@ class InMemoryStore:
             written = Written(sequence=board.sequence, version=current_version + 1)
             if idempotency_key is not None:
                 board.keys[idempotency_key] = (premise, written)
+            self._enqueue(board, notify, board.sequence)
             return written
 
     def read_level(
@@ -529,6 +553,37 @@ class InMemoryStore:
                 and (now >= board.run.idle_deadline or now >= board.run.wall_deadline)
             ]
         return found[:limit]
+
+    def _enqueue(
+        self, board: _BoardState, notify: frozenset[str], through: int
+    ) -> None:
+        # Callers hold self._lock, so the rows land with the write itself.
+        for agent in notify:
+            board.outbox.setdefault(agent, set()).add(through)
+
+    def unsent(self, limit: int = 100) -> list[Unsent]:
+        with self._lock:
+            found = [
+                Unsent(board_id=board_id, agent=agent, through=through)
+                for board_id, board in self._boards.items()
+                for agent, pending in board.outbox.items()
+                for through in sorted(pending)
+            ]
+        return sorted(found, key=lambda row: (row.through, row.board_id, row.agent))[
+            :limit
+        ]
+
+    def mark_sent(self, board_id: str, agent: str, *, through: int) -> None:
+        with self._lock:
+            board = self._boards.get(board_id)
+            if board is None:
+                return
+            pending = board.outbox.get(agent)
+            if pending is None:
+                return
+            pending.discard(through)
+            if not pending:
+                del board.outbox[agent]
 
     def read_agents(self, board_id: str) -> list[AgentProgress]:
         with self._lock:

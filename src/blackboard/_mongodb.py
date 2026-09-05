@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from pymongo import ASCENDING, MongoClient, ReturnDocument
+from pymongo import ASCENDING, MongoClient, ReplaceOne, ReturnDocument
 from pymongo.errors import OperationFailure
 
 from blackboard._board import (
@@ -49,6 +49,7 @@ from blackboard._board import (
     RegionKindError,
     RunRecord,
     UndeclaredRegionError,
+    Unsent,
     UnsetPremiseError,
     Written,
     _as_json,
@@ -66,6 +67,7 @@ _PREMISES = "blackboard_premises"
 #: different fields and did not raise the schema number.
 _RUN_STATE = "blackboard_run_state"
 _AGENT_PROGRESS = "blackboard_agent_progress"
+_OUTBOX = "blackboard_outbox"
 _SCHEMA = "blackboard_schema"
 
 _LEVEL = "level"
@@ -257,6 +259,7 @@ class MongoStore:
         content: object,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written:
         self._checked()
         carried = _as_json(content)
@@ -277,6 +280,7 @@ class MongoStore:
                 idempotency_key=idempotency_key,
                 writer=writer,
             )
+            self._enqueue(session, board_id, notify, sequence)
             return Written(sequence=sequence)
 
         return self._in_a_transaction(work)
@@ -289,6 +293,7 @@ class MongoStore:
         expected_version: int,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written | Conflict:
         self._checked()
         carried = _as_json(value)
@@ -343,6 +348,7 @@ class MongoStore:
                 idempotency_key=idempotency_key,
                 writer=writer,
             )
+            self._enqueue(session, board_id, notify, sequence)
             return Written(sequence=sequence, version=int(updated["version"]))
 
         written = self._in_a_transaction(work)
@@ -434,6 +440,7 @@ class MongoStore:
             self._database[_AGENT_PROGRESS].delete_many(
                 {"board_id": board_id}, session=session
             )
+            self._database[_OUTBOX].delete_many({"board_id": board_id}, session=session)
             return Deleted(
                 board_id=board_id, regions_removed=regions, writes_removed=writes
             )
@@ -535,6 +542,49 @@ class MongoStore:
             ]
         )
         return [document["_id"] for document in found]
+
+    def _enqueue(
+        self, session: Any, board_id: str, notify: frozenset[str], through: int
+    ) -> None:
+        # In the write's session, so the rows commit with the contribution.
+        if not notify:
+            return
+        self._database[_OUTBOX].bulk_write(
+            [
+                ReplaceOne(
+                    {"_id": f"{board_id}\u0000{agent}\u0000{through}"},
+                    {
+                        "board_id": board_id,
+                        "agent": agent,
+                        "through": through,
+                    },
+                    upsert=True,
+                )
+                for agent in sorted(notify)
+            ],
+            session=session,
+        )
+
+    def unsent(self, limit: int = 100) -> list[Unsent]:
+        self._checked()
+        found = (
+            self._database[_OUTBOX]
+            .find()
+            .sort(
+                [("through", ASCENDING), ("board_id", ASCENDING), ("agent", ASCENDING)]
+            )
+            .limit(limit)
+        )
+        return [
+            Unsent(board_id=d["board_id"], agent=d["agent"], through=int(d["through"]))
+            for d in found
+        ]
+
+    def mark_sent(self, board_id: str, agent: str, *, through: int) -> None:
+        self._checked()
+        self._database[_OUTBOX].delete_one(
+            {"_id": f"{board_id}\u0000{agent}\u0000{through}"}
+        )
 
     def read_agents(self, board_id: str) -> list[AgentProgress]:
         self._checked()

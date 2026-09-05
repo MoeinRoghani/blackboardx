@@ -60,6 +60,7 @@ from blackboard import (
     RegionKindError,
     RunRecord,
     UndeclaredRegionError,
+    Unsent,
     UnsetPremiseError,
     Written,
 )
@@ -129,6 +130,12 @@ class Bound:
         return self.store.close_run(
             self.board_id, closed_as=closed_as, reason=reason, unfinished=frozenset()
         )
+
+    def unsent(self, limit: int = 100) -> list[Unsent]:
+        return self.store.unsent(limit)
+
+    def mark_sent(self, agent: str, through: int) -> None:
+        self.store.mark_sent(self.board_id, agent, through=through)
 
     def read_agents(self) -> list[AgentProgress]:
         return self.store.read_agents(self.board_id)
@@ -1051,3 +1058,141 @@ class AgentConformance:
         ready.mark_notified("triage", 4)
         ready.delete()
         assert ready.read_agents() == []
+
+
+class OutboxConformance:
+    """A write and the intent to notify commit together, or not at all.
+
+    The intent to notify used to live in the memory of the process that took
+    the write, so a process that committed and stopped lost it. It is a row
+    now, written with the contribution, and whoever holds the agent sends it
+    and marks it sent.
+    """
+
+    def test_a_board_that_notified_nobody_has_nothing_unsent(
+        self, ready: Bound
+    ) -> None:
+        assert ready.unsent() == []
+
+    def test_a_write_naming_no_agent_records_nothing(self, ready: Bound) -> None:
+        ready.append("application", "a finding")
+        assert ready.unsent() == []
+
+    def test_a_write_records_one_row_for_each_agent_it_names(
+        self, ready: Bound
+    ) -> None:
+        ready.store.append(
+            ready.board_id,
+            "application",
+            "a finding",
+            notify=frozenset({"triage", "capacity"}),
+        )
+        assert sorted((row.agent, row.through) for row in ready.unsent()) == [
+            ("capacity", 1),
+            ("triage", 1),
+        ]
+
+    def test_the_row_carries_the_sequence_the_write_took(self, ready: Bound) -> None:
+        ready.append("application", "first")
+        written = ready.store.append(
+            ready.board_id, "application", "second", notify=frozenset({"triage"})
+        )
+        (row,) = ready.unsent()
+        assert row.through == written.sequence == 2
+
+    def test_a_premise_write_records_the_intent_too(self, ready: Bound) -> None:
+        ready.declare(Premise("severity"))
+        ready.store.set(
+            ready.board_id, "severity", "high", 0, notify=frozenset({"triage"})
+        )
+        assert [(row.agent, row.through) for row in ready.unsent()] == [("triage", 1)]
+
+    def test_a_conflicting_premise_write_records_nothing(self, ready: Bound) -> None:
+        """It stored nothing, so there is nothing to tell anyone about."""
+        ready.declare(Premise("severity"))
+        ready.set("severity", "high", 0)
+        result = ready.store.set(
+            ready.board_id, "severity", "later", 0, notify=frozenset({"triage"})
+        )
+        assert isinstance(result, Conflict)
+        assert ready.unsent() == []
+
+    def test_a_repeated_key_records_nothing_the_second_time(self, ready: Bound) -> None:
+        """Nothing reached the board, so nobody is newly owed a notification."""
+        ready.store.append(
+            ready.board_id, "application", "a", key := "k1", notify=frozenset({"t"})
+        )
+        ready.store.append(
+            ready.board_id, "application", "a", key, notify=frozenset({"t"})
+        )
+        assert len(ready.unsent()) == 1
+
+    def test_marking_a_row_sent_removes_it(self, ready: Bound) -> None:
+        ready.store.append(
+            ready.board_id, "application", "a", notify=frozenset({"triage"})
+        )
+        ready.mark_sent("triage", 1)
+        assert ready.unsent() == []
+
+    def test_marking_one_agent_leaves_the_other_owed(self, ready: Bound) -> None:
+        ready.store.append(
+            ready.board_id,
+            "application",
+            "a",
+            notify=frozenset({"triage", "capacity"}),
+        )
+        ready.mark_sent("triage", 1)
+        assert [row.agent for row in ready.unsent()] == ["capacity"]
+
+    def test_marking_a_row_that_was_never_recorded_changes_nothing(
+        self, ready: Bound
+    ) -> None:
+        ready.store.append(
+            ready.board_id, "application", "a", notify=frozenset({"triage"})
+        )
+        ready.mark_sent("stranger", 1)
+        ready.mark_sent("triage", 99)
+        assert len(ready.unsent()) == 1
+
+    def test_marking_the_same_row_twice_is_harmless(self, ready: Bound) -> None:
+        ready.store.append(
+            ready.board_id, "application", "a", notify=frozenset({"triage"})
+        )
+        ready.mark_sent("triage", 1)
+        ready.mark_sent("triage", 1)
+        assert ready.unsent() == []
+
+    def test_one_agent_owed_two_writes_carries_two_rows(self, ready: Bound) -> None:
+        for content in ("first", "second"):
+            ready.store.append(
+                ready.board_id, "application", content, notify=frozenset({"triage"})
+            )
+        assert [row.through for row in ready.unsent()] == [1, 2]
+
+    def test_the_oldest_work_comes_back_first(self, ready: Bound) -> None:
+        for content in ("first", "second", "third"):
+            ready.store.append(
+                ready.board_id, "application", content, notify=frozenset({"triage"})
+            )
+        assert [row.through for row in ready.unsent()] == [1, 2, 3]
+
+    def test_the_limit_bounds_what_comes_back(self, ready: Bound) -> None:
+        for content in ("first", "second", "third"):
+            ready.store.append(
+                ready.board_id, "application", content, notify=frozenset({"triage"})
+            )
+        assert [row.through for row in ready.unsent(limit=2)] == [1, 2]
+
+    def test_a_row_names_the_board_it_belongs_to(self, ready: Bound) -> None:
+        ready.store.append(
+            ready.board_id, "application", "a", notify=frozenset({"triage"})
+        )
+        (row,) = ready.unsent()
+        assert row.board_id == ready.board_id
+
+    def test_deleting_a_board_removes_what_it_had_unsent(self, ready: Bound) -> None:
+        ready.store.append(
+            ready.board_id, "application", "a", notify=frozenset({"triage"})
+        )
+        ready.delete()
+        assert ready.unsent() == []

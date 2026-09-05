@@ -58,6 +58,7 @@ from blackboard._board import (
     RegionKindError,
     RunRecord,
     UndeclaredRegionError,
+    Unsent,
     UnsetPremiseError,
     Written,
 )
@@ -97,8 +98,15 @@ class BoardStore(Protocol):
         content: object,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written:
         """Adds one contribution to a level and returns where it landed.
+
+        ``notify`` names the agents that should hear of this write. One row
+        per name is recorded in the same transaction as the contribution, so
+        a process that commits and stops before delivering has not lost the
+        intent. A write that is a repeat records none, because nothing
+        happened.
 
         ``writer`` is the name the write carried, recorded on the row so the
         record answers who wrote it. The store stamps the instant itself.
@@ -119,6 +127,7 @@ class BoardStore(Protocol):
         expected_version: int,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written | Conflict:
         """Replaces a premise's value under the version the caller expects.
 
@@ -212,6 +221,26 @@ class BoardStore(Protocol):
 
         A run closes because nothing happened, so no request is in flight to
         notice. This is what a caller polls to close those runs.
+        """
+        ...
+
+    def unsent(self, limit: int = 100) -> list[Unsent]:
+        """Returns notifications recorded by a write and not yet sent.
+
+        Across every board, oldest first by the sequence the notification
+        ends at, so the process that reads them sends the earliest work
+        first. A caller filters by the agents it holds, because only the
+        process holding an agent can reach it.
+        """
+        ...
+
+    def mark_sent(self, board_id: str, agent: str, *, through: int) -> None:
+        """Records that this notification was sent, so nothing sends it again.
+
+        A row already marked, or one that never existed, changes nothing.
+        Marking after sending rather than before is what makes delivery at
+        least once: a process that sends and stops before marking sends
+        again, and a repeat costs nothing.
         """
         ...
 

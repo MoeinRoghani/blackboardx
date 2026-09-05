@@ -28,6 +28,7 @@ from blackboard._board import (
     RegionKindError,
     RunRecord,
     UndeclaredRegionError,
+    Unsent,
     UnsetPremiseError,
     Written,
 )
@@ -133,6 +134,7 @@ __all__ = [
     "TerminationPredicate",
     "UndeclaredRegionError",
     "UnknownNotificationError",
+    "Unsent",
     "UnsetPremiseError",
     "WallClockExpired",
     "WriteAccepted",

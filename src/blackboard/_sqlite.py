@@ -36,6 +36,7 @@ from blackboard._board import (
     RegionKindError,
     RunRecord,
     UndeclaredRegionError,
+    Unsent,
     UnsetPremiseError,
     Written,
 )
@@ -79,6 +80,12 @@ CREATE TABLE IF NOT EXISTS runs (
     closed_as      TEXT,
     reason         TEXT,
     unfinished     TEXT
+);
+CREATE TABLE IF NOT EXISTS outbox (
+    board_id TEXT    NOT NULL,
+    agent    TEXT    NOT NULL,
+    through  INTEGER NOT NULL,
+    PRIMARY KEY (board_id, agent, through)
 );
 CREATE TABLE IF NOT EXISTS agent_progress (
     board_id             TEXT    NOT NULL,
@@ -250,6 +257,7 @@ class SqliteStore:
         content: object,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written:
         carried = json.dumps(content)
         with self._lock, self._connection:
@@ -264,6 +272,7 @@ class SqliteStore:
                 f"written_at) VALUES (?, ?, ?, ?, ?, ?, {_NOW})",
                 (board_id, sequence, level, carried, idempotency_key, writer),
             )
+            self._enqueue(board_id, notify, sequence)
             return Written(sequence=sequence)
 
     def set(
@@ -274,6 +283,7 @@ class SqliteStore:
         expected_version: int,
         idempotency_key: str | None = None,
         writer: str | None = None,
+        notify: frozenset[str] = frozenset(),
     ) -> Written | Conflict:
         carried = json.dumps(value)
         with self._lock, self._connection:
@@ -308,6 +318,7 @@ class SqliteStore:
                     writer,
                 ),
             )
+            self._enqueue(board_id, notify, sequence)
             return Written(sequence=sequence, version=current + 1)
 
     def read_level(
@@ -389,6 +400,7 @@ class SqliteStore:
                 "regions",
                 "runs",
                 "agent_progress",
+                "outbox",
             ):
                 self._connection.execute(
                     f"DELETE FROM {table} WHERE board_id = ?", (board_id,)
@@ -469,6 +481,34 @@ class SqliteStore:
                 (limit,),
             ).fetchall()
         return [r[0] for r in rows]
+
+    def _enqueue(self, board_id: str, notify: frozenset[str], through: int) -> None:
+        # Callers are inside the write's transaction, so the rows commit with
+        # the contribution or not at all.
+        if not notify:
+            return
+        self._connection.executemany(
+            "INSERT OR IGNORE INTO outbox (board_id, agent, through) VALUES (?, ?, ?)",
+            [(board_id, agent, through) for agent in sorted(notify)],
+        )
+
+    def unsent(self, limit: int = 100) -> list[Unsent]:
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT board_id, agent, through FROM outbox "
+                "ORDER BY through, board_id, agent LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            Unsent(board_id=str(r[0]), agent=str(r[1]), through=int(r[2])) for r in rows
+        ]
+
+    def mark_sent(self, board_id: str, agent: str, *, through: int) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "DELETE FROM outbox WHERE board_id = ? AND agent = ? AND through = ?",
+                (board_id, agent, through),
+            )
 
     def read_agents(self, board_id: str) -> list[AgentProgress]:
         with self._lock:
