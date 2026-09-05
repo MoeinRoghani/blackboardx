@@ -193,8 +193,8 @@ def attach_model(
     """
     warnings.warn(
         "attach_model is deprecated and may be removed on or after 2026-12-05. "
-        "A run is no longer opened over a record: create_model opens a board "
-        "once, and every later operation reads what it needs from the store.",
+        "create_model converges on a board the store already holds, so it "
+        "serves both intents and a process need not know which it is.",
         DeprecationWarning,
         stacklevel=2,
     )

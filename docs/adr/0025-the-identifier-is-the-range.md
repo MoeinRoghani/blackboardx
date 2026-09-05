@@ -52,4 +52,6 @@ Two agents told of one write now carry one identifier. It names the work rather 
 
 `BoardStore` is sixteen methods rather than thirteen. A store written against 0.11 no longer satisfies it, which is a breaking change carried by the release and the migration page.
 
-The registry itself stays in the process, deliberately. `notify`, `subscribes_to` and `writes_to` are policy an application hands to every process the way it hands `regions`, `limits` and the admission rule, and putting a callback in a database would make which process's declaration wins a question nobody asked. The batch window set that precedent already: a store records a region's name and its kind and nothing else.
+The agent roster is not run state and is not moved. It is configuration, and it sits in `create_model` beside `regions`, `limits`, the admission rule and the termination predicate, each of which the application hands to every process and none of which a store holds. Run state is not split by this change or any other: it is wholly in whatever store was chosen, held in memory by `InMemoryStore` and in the database by `PostgresStore`, through one code path either way.
+
+What follows from that is a deployment rule rather than a storage one. Replicas are given the same roster because they are given the same configuration, so each can reach each agent. An application that instead calls `register_agent` on one replica at run time has told one replica something the others were not told, which is the same mistake as running replicas with different configuration.

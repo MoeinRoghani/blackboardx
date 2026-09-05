@@ -23,21 +23,23 @@ The package ships `PostgresStore` and `MongoStore` for a deployment and `SqliteS
 
 A store makes the **record** durable. It does not make the **run** durable, and the difference decides how the service is deployed.
 
-| Held where | What |
+| | What, and where it lives |
 | --- | --- |
-| The database, through the store | Regions, contributions, premise values and versions, the sequence, idempotency keys, the run's two deadlines and its outcome, and how far each agent has been notified and has answered |
-| The process, in `Control` | The registered agents, being their callbacks and subscriptions, and the audit |
-| The process, in `HttpNotifier` | Notifications queued but not yet sent |
+| **Run state** | Regions, contributions, premise values and versions, the sequence, idempotency keys, the run's two deadlines and its outcome, and how far each agent has been notified and has answered. All of it is in the store, whichever store that is. |
+| **Configuration** | The regions, the agent roster, the admission rule, the termination predicate, the limits and the clock. Every replica is given these, the way every replica is given the same image and the same environment. |
+| **In flight** | Notifications `HttpNotifier` has queued but not yet sent. |
 
-A second replica reads all of the left column, so it measures silence from the same instant, closes the run on the same deadline, and knows which agents are owed an answer. What it does not have is a callback for an agent that registered elsewhere, because a callback is not a thing a database holds.
+Replicas are identical, so each is given the same configuration and each reads the same run state. A second replica therefore measures silence from the same instant, closes the run on the same deadline, knows which agents are owed an answer, and holds the same roster with the same addresses. A write is served by whichever replica receives it, and that replica notifies on the write path.
 
-So a write is served by any replica, and the replica an agent registered with is the one that wakes it. That process calls `notify_due` on whatever schedule suits the deployment, which reads what has landed since each of its agents last answered and delivers it. A write taken in the same process notifies inline and needs no poll.
+`Control.notify_due` covers what the write path cannot. It reads what has landed since each agent last answered and delivers it, so a change taken while a replica was starting, or one whose delivery was lost, still reaches the agent. A run inside one process finds nothing to do there. Schedule it beside `close_expired`.
+
+An application that calls `register_agent` at run time on one replica has told one replica something the others were not told. That is the same mistake as running replicas with different configuration, and the library does not repair it: put the agent in the roster every replica loads.
 
 Reads are not bound that way. `BoardService` takes the store as well as the registry, and answers the four `GET` operations from the record whenever the replica holds no run for the board, so any replica holding the store answers a read for any board in that store. A board that the store never held answers 404 in both cases, so a mistyped identifier is not answered with an empty board. The audit is the one read that stays with the run, because it lives in the process and no operation on the wire exposes it.
 
-Making the run itself durable, so that a replacement resumes rather than restarts, means putting the registry, the outstanding notifications, and the deadlines in the database alongside the record. That is not in the library today, and `docs/design/durable-runs.md` in the repository sets out what it would take.
+A replacement replica resumes rather than restarts. The deadlines, the outcome and how far each agent answered are on the record, so a replica that takes over closes the run on the original deadline and does not tell an agent again what it has already answered.
 
-A notification lost with the process usually costs nothing, since a notification carries no values and the next notification covers the range the lost one would have covered. A lost notification costs something when it is the last one, and the run then waits until its idle limit closes it.
+A notification lost with the process usually costs nothing, since a notification carries no values and the next one covers the range the lost one would have covered. It costs something when it is the last one, because nothing then follows it, and the run waits until its idle limit closes it.
 
 ## Holding the runs
 

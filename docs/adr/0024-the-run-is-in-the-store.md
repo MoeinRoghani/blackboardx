@@ -36,4 +36,4 @@ The Postgres table is `blackboard_run_state` and the MongoDB collection matches,
 
 `BoardStore` is thirteen methods rather than eight, and the conformance suite grew with them, so anyone holding a store of their own is told what is newly required by a failing test rather than at run time.
 
-The registry, the cursors, the outstanding notifications and the notification counter are still held in the process at this point. This change moves what decides when a run ends; ADR 0025 moves what decides who is notified.
+The cursors, the outstanding notifications and the notification counter are still held in the process at this point. This change moves what decides when a run ends; ADR 0025 moves what decides who is notified, and records why the agent roster is configuration rather than run state.
