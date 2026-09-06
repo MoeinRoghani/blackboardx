@@ -46,11 +46,38 @@ Replicas are identical, so each is given the same configuration and each reads t
 
 An application that calls `register_agent` at run time on one replica has told one replica something the others were not told. That is the same mistake as running replicas with different configuration, and the library does not repair it: put the agent in the roster every replica loads.
 
-Reads are not bound that way. `BoardService` takes the store as well as the registry, and answers the four `GET` operations from the record whenever the replica holds no run for the board, so any replica holding the store answers a read for any board in that store. A board that the store never held answers 404 in both cases, so a mistyped identifier is not answered with an empty board. The audit is the one read that stays with the run, because it lives in the process and no operation on the wire exposes it.
+Reads are not bound that way. `BoardService` takes the store as well as the registry, and answers the four `GET` operations from the record whenever the replica holds no run for the board, so any replica holding the store answers a read for any board in that store. A board that the store never held answers 404 in both cases, so a mistyped identifier is not answered with an empty board.
 
 A replacement replica resumes rather than restarts. The deadlines, the outcome and how far each agent answered are on the record, so any replica closes the run on the original deadline and tells no agent again what it has already answered.
 
 A notification a process was holding when it stopped is not lost. The intent was recorded with the write, so `Control.relay` on any replica holding that agent sends it. Delivery is at least once, and a repeat costs nothing because a notification carries no values.
+
+## Why this is safe with several replicas
+
+Nothing takes a lock and nothing elects a leader. Every job below is either
+atomic in the store, or benign when two replicas do it at once.
+
+Read the third column first: a job that happens during a request runs in the
+replica serving it, and a job that happens when no request is in flight cannot.
+
+| Job | When | Runs where | Safe because |
+| --- | --- | --- | --- |
+| Apply the admission rule | During a write | The serving replica | It judges the board as read, and concurrent judgement is the documented behaviour |
+| Sequence and store the write | During a write | The store | The store assigns the sequence |
+| Check the premise version | During a write | The store | A compare and set |
+| Enforce the idempotency key | During a write | The store | A unique index |
+| Record who should hear of it | During a write | The store | The same transaction as the contribution, so the intent cannot be lost apart from the write |
+| Give a notification its identifier | On dispatch | Nowhere | It is the sequence the range ends at. Nothing allocates it. |
+| Raise how far an agent was told | Dispatch, and acknowledgment | The store | Both numbers only rise, so either order is correct |
+| Push the idle deadline out | On every event | The store | Both replicas push it forward; either order is correct |
+| Decide a notification is due | A write, or a window closing | The serving replica | A repeat is harmless: a notification carries no values |
+| Send it | After the write commits | Any replica, or the relay | At least once, and repeats are free by the line above |
+| Close a run somebody asked about | On any access | The serving replica | A compare and set on the outcome: the first writer wins |
+| Close a run nobody asked about | Periodically | Wherever you call it | The same compare and set |
+| Ask the termination predicate | At the deadline | Whoever is closing | Its answer is discarded if the board moved |
+
+A replica does not own a board, so there is nothing to hand over when one
+stops and nothing to route around.
 
 ## Serving a board
 
