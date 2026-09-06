@@ -909,7 +909,7 @@ class AgentConformance:
             agent="triage", notified_through=4, acknowledged_through=0
         )
 
-    def test_a_notification_further_on_raises_the_watermark(self, ready: Bound) -> None:
+    def test_a_notification_further_on_moves_it_up(self, ready: Bound) -> None:
         ready.mark_notified("triage", 4)
         ready.mark_notified("triage", 9)
         progress = ready.progress("triage")
@@ -974,7 +974,7 @@ class AgentConformance:
         assert first.acknowledged_through < 4
         assert second.acknowledged_through == 4
 
-    def test_an_acknowledgment_further_back_does_not_lower_the_watermark(
+    def test_an_acknowledgment_further_back_does_not_move_it_down(
         self, ready: Bound
     ) -> None:
         ready.mark_notified("triage", 9)

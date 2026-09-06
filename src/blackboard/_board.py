@@ -272,7 +272,7 @@ class _BoardState:
 
 @dataclass
 class _AgentProgress:
-    """One agent's two watermarks, as the in-memory store holds them."""
+    """How far one agent has been told and has answered, in memory."""
 
     notified_through: int = 0
     acknowledged_through: int = 0
