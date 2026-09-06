@@ -560,6 +560,13 @@ class PostgresStore:
                 "WHERE board_id = %s AND closed_as IS NULL RETURNING board_id",
                 (closed_as, reason, json.dumps(sorted(unfinished)), board_id),
             ).fetchone()
+            if updated is not None:
+                # In the transaction that closed it, so the outcome and the
+                # clearing land together or neither does.
+                for table in ("blackboard_agent_progress", "blackboard_outbox"):
+                    connection.execute(
+                        f"DELETE FROM {table} WHERE board_id = %s", (board_id,)
+                    )
         return updated is not None
 
     def runs_past_deadline(self, limit: int = 100) -> list[str]:

@@ -179,6 +179,18 @@ gave it, so an agent has to be reachable at an address. There is no long poll,
 no stream, and no queue an agent subscribes to. An agent behind a network that
 will not accept an inbound request cannot be notified by this library.
 
+## Closing a run clears what it needed
+
+The outcome and the agents that did not finish are stamped into the run as it
+closes, so everything that write consulted goes with it: how far each agent
+had been told and had answered, and any notification a write recorded that
+nothing has sent. A closed board holds its regions, its contributions, its
+premise values, and one row saying how the run ended.
+
+An acknowledgment arriving after that finds nothing owed. The run has ended,
+so it changes nothing and reports nothing, which is what it would have changed
+had the row still been there.
+
 ## Deleting is the application's to schedule
 
 `store.delete` removes one board. Nothing in the library calls it: a run that

@@ -11,12 +11,16 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
+import pytest
+
 from blackboard import (
     Agent,
     InMemoryStore,
     Level,
     Notification,
     RunLimits,
+    UnknownNotificationError,
+    close_expired,
     create_model,
 )
 
@@ -147,3 +151,51 @@ class TestTheRelaySendsWhatWasLost:
             p for p in store.read_agents("incident-1") if p.agent == "triage"
         )
         assert not progress.outstanding
+
+
+class TestAfterTheRunCloses:
+    """Closing clears what each agent was owed, so a late answer finds none."""
+
+    def test_an_answer_arriving_after_the_close_changes_nothing(self) -> None:
+        seen: list[Notification] = []
+        store = InMemoryStore()
+        model = a_model(store, seen.append)
+        model.control.write("findings", "oom", writer="scanner")
+        model.control.abort("the caller stopped it")
+
+        model.control.ack(seen[-1].notification_id, agent="triage")
+
+    def test_an_answer_naming_nothing_still_raises_while_the_run_is_open(
+        self,
+    ) -> None:
+        store = InMemoryStore()
+        model = a_model(store, lambda n: None)
+        with pytest.raises(UnknownNotificationError):
+            model.control.ack(99, agent="triage")
+
+    def test_closing_leaves_nothing_owed(self) -> None:
+        seen: list[Notification] = []
+        store = InMemoryStore()
+        model = a_model(store, seen.append)
+        model.control.write("findings", "oom", writer="scanner")
+        model.control.abort("done")
+
+        assert store.read_agents("incident-1") == []
+        assert store.unsent() == []
+
+    def test_the_outcome_still_names_who_did_not_finish(self) -> None:
+        """It is stamped as the run closes, before anything is cleared."""
+
+        def dies(notification: Notification) -> None:
+            raise RuntimeError("never answered")
+
+        store = InMemoryStore()
+        model = a_model(store, dies)
+        model.control.write("findings", "oom", writer="scanner")
+        store.open_run("incident-1", wall_clock=3600.0, idle=-1.0)
+        close_expired(store)
+
+        run = store.read_run("incident-1")
+        assert run is not None
+        assert run.unfinished == frozenset({"triage"})
+        assert store.read_agents("incident-1") == []

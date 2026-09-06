@@ -492,6 +492,14 @@ class SqliteStore:
                 "WHERE board_id = ? AND closed_as IS NULL",
                 (closed_as, reason, json.dumps(sorted(unfinished)), board_id),
             ).rowcount
+            if changed == 1:
+                # In the same transaction as the outcome, so a board never
+                # holds a closed run beside the coordination it no longer
+                # needs.
+                for table in ("agent_progress", "outbox"):
+                    self._connection.execute(
+                        f"DELETE FROM {table} WHERE board_id = ?", (board_id,)
+                    )
         return changed == 1
 
     def runs_past_deadline(self, limit: int = 100) -> list[str]:

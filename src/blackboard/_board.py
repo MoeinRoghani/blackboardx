@@ -534,12 +534,18 @@ class InMemoryStore:
     ) -> bool:
         with self._lock:
             board = self._boards.get(board_id)
-            run = None if board is None else board.run
-            if run is None or run.closed_as is not None:
+            if board is None or board.run is None:
+                return False
+            run = board.run
+            if run.closed_as is not None:
                 return False
             run.closed_as = closed_as
             run.reason = reason
             run.unfinished = unfinished
+            # The outcome and the unfinished set are stamped above, so what
+            # the run needed to reach them is redundant from here.
+            board.agents.clear()
+            board.outbox.clear()
             return True
 
     def runs_past_deadline(self, limit: int = 100) -> list[str]:
