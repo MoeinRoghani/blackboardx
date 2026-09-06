@@ -71,34 +71,63 @@ class TestWhatALaneLeavesOnTheRecord:
         assert transport.sent == [URL]
         assert store.unsent() == []
 
-    def test_the_relay_sends_what_the_lane_never_did(self) -> None:
+    def test_what_it_never_sent_is_delivered_when_the_process_comes_back(self) -> None:
         transport = Held()
         store = InMemoryStore()
         notifier = HttpNotifier(
             store=store, transport=transport, attempts=1, close_timeout=1.0
         )
-        model = a_board(store, notifier.to(URL))
-        model.control.write("findings", "oom", writer="scanner")
+        a_board(store, notifier.to(URL)).control.write(
+            "findings", "oom", writer="scanner"
+        )
         notifier.close()
         assert len(store.unsent()) == 1
 
         transport.refusing = False
-        with HttpNotifier(
+        second = HttpNotifier(
             store=store, transport=transport, attempts=1, close_timeout=1.0
-        ) as second:
-            again = create_model(
-                board_id="incident-1",
-                store=store,
-                regions=[Level("findings")],
-                premises={},
-                agents=[
-                    Agent(name="ocp", subscribes_to=["findings"], notify=second.to(URL))
-                ],
-                limits=LIMITS,
-            )
-            assert again.control.relay() == ["ocp"]
+        )
+        create_model(
+            board_id="incident-1",
+            store=store,
+            regions=[Level("findings")],
+            premises={},
+            agents=[
+                Agent(name="ocp", subscribes_to=["findings"], notify=second.to(URL))
+            ],
+            limits=LIMITS,
+        )
+        second.close()  # drains the lane, so the send has happened by here
 
+        assert transport.sent == [URL]
         assert store.unsent() == []
+
+
+class Queueing:
+    """A callable that takes a notification and clears the row itself."""
+
+    marks_sent = True
+
+    def __init__(self) -> None:
+        self.taken: list[Any] = []
+
+    def __call__(self, notification: Any) -> None:
+        self.taken.append(notification)
+
+
+class TestARelayToACallableThatQueues:
+    def test_it_names_the_agent_it_handed_over_to(self) -> None:
+        """It cannot wait for the send, so handing over is what it reports."""
+        store = InMemoryStore()
+        queueing = Queueing()
+        model = a_board(store, queueing)
+        model.control.write("findings", "oom", writer="scanner")
+        assert len(store.unsent()) == 1
+        queueing.taken.clear()
+
+        assert model.control.relay() == ["ocp"]
+        assert len(queueing.taken) == 1
+        assert len(store.unsent()) == 1
 
 
 class TestANotifierWithoutAStore:

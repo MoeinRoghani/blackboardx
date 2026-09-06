@@ -1222,6 +1222,11 @@ class Control:
         A send that raises leaves the row for the next pass, so nothing is
         marked that was not sent. Call it on whatever schedule suits the
         deployment, beside :func:`close_expired`.
+
+        An agent whose callable queues rather than sends, which is what a
+        lane does, is named once the notification is handed over. That is
+        the most this can know: the row it leaves is cleared by the lane,
+        after a send this call has already returned from.
         """
         sent = self._relay_by_address()
         with self._lock:
@@ -1253,8 +1258,9 @@ class Control:
         self._deliver(deliveries)
         return sent + [
             notification.agent
-            for _, notification in deliveries
-            if not any(
+            for notify, notification in deliveries
+            if getattr(notify, "marks_sent", False)
+            or not any(
                 row.agent == notification.agent and row.board_id == self._board_id
                 for row in self._store.unsent(_TAIL)
             )
