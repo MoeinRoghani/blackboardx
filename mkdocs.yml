@@ -47,8 +47,8 @@ nav:
           - Serve a blackboard over HTTP: guides/serving-a-blackboard.md
           - Notify agents over HTTP: guides/notifying-agents.md
           - Test an application: guides/testing.md
-      - Integrations:
-          - Let a model decide: guides/deciding-with-a-model.md
+      - Language models:
+          - Give an agent a language model: guides/deciding-with-a-model.md
           - Use the board inside LangChain: guides/langchain.md
   - Reference:
       - API reference: reference.md

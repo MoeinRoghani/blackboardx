@@ -77,5 +77,5 @@ One thing that separated the two answers was where the cost of finding out what 
 | Choose where the record is kept | [Storage](concepts/storage.md) |
 | Deploy it behind a service | [Running as a service](concepts/service.md) |
 | Serve agents that run elsewhere | [Serve a blackboard over HTTP](guides/serving-a-blackboard.md) |
-| Let a language model decide what an agent writes | [Let a model decide](guides/deciding-with-a-model.md) |
+| Let a language model decide what an agent writes | [Give an agent a language model](guides/deciding-with-a-model.md) |
 | Know what it will not do | [What this version does not do](limits.md) |

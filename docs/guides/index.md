@@ -20,15 +20,15 @@ go to the one that names your question.
 The first three are the application's own code. The next two are what a
 deployment adds. The last one applies throughout.
 
-## Integrations
+## Language models
 
-An agent decides its own work, and a language model is one way to decide. These
-cover that case; nothing in the library depends on either.
+An agent decides its own work, and a language model is one way to decide.
+Nothing in the library depends on either page.
 
 | Guide | Answers |
 | --- | --- |
-| [Let a model decide](deciding-with-a-model.md) | How the board's operations become tools a model can call, against any provider |
+| [Give an agent a language model](deciding-with-a-model.md) | How the board's operations become tools a model can call, against any provider |
 | [Use the board inside LangChain](langchain.md) | How those tools join a loop LangChain already runs |
 
-Read the first before the second. The second assumes the tool surface the first
-describes.
+Read the first before the second. The first is this library's own tool surface,
+against any provider; the second is one framework's way of driving it.
