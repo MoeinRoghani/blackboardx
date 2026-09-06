@@ -131,11 +131,14 @@ class TestReachingAnAgentByAddress:
         )
         del gone
 
+        # A replica holding neither the callable nor a transport takes the
+        # write, so the row is what is left of it.
+        a_board(store).control.write("findings", "oom on web-3", writer="scanner")
+
         posted: list[tuple[str, str]] = []
         surviving = a_board(
             store, reach=lambda address, n: posted.append((address, n.agent))
         )
-        surviving.control.write("findings", "oom on web-3", writer="scanner")
         assert surviving.control.relay() == ["latecomer"]
         assert posted == [("https://latecomer.internal/notify", "latecomer")]
         assert store.unsent() == []
@@ -150,9 +153,9 @@ class TestReachingAnAgentByAddress:
                 address="https://latecomer.internal/notify",
             )
         )
+        a_board(store).control.write("findings", "oom", writer="scanner")
         seen: list[Notification] = []
         serving = a_board(store, reach=lambda address, n: seen.append(n))
-        serving.control.write("findings", "oom", writer="scanner")
         serving.control.relay()
         (told,) = seen
         assert told.regions == frozenset({"findings"})
@@ -171,8 +174,8 @@ class TestReachingAnAgentByAddress:
                 address="https://latecomer.internal/notify",
             )
         )
+        a_board(store).control.write("findings", "oom", writer="scanner")
         serving = a_board(store, reach=dies)
-        serving.control.write("findings", "oom", writer="scanner")
         assert serving.control.relay() == []
         assert len(store.unsent()) == 1
 

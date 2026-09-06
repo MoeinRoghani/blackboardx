@@ -77,6 +77,22 @@ The schema number rises to 5, and so does the compatibility number: a build
 older than this reads who should hear a write from its own roster, so on a
 board it did not create it records nothing.
 
+### A write reaches the agents it can, not only the ones it holds
+
+The write path notified from the agents the process was given callables for.
+A replica that builds a `Control` per request is given none, so a write on it
+notified nobody and every notification waited for a relay pass.
+
+It now reaches every agent the run says should hear of the write and this
+process can reach, which is one carrying an address where this process was
+given `reach`. Nothing changes for an agent declared with a callback, or for a
+process given no transport.
+
+A region carrying a batch window is the exception. A window is held in a
+pending set and a process holding no callable for an agent holds none, so a
+windowed region records the intent and leaves the sending to the relay rather
+than notifying on every write.
+
 ### The sweep relays as well as reaps
 
 `Sweep` takes `control_for`, the same callable `BoardService` takes, and a

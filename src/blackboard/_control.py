@@ -1069,20 +1069,21 @@ class Control:
                 else:
                     # A key naming two regions is the caller's mistake, so it
                     # raises here as it does in the store. ADR 0016.
+                    hearers = self._who_hears(level, writer)
                     result = self._store.append(
                         self._board_id,
                         level,
                         content,
                         idempotency_key,
                         writer=writer,
-                        notify=self._who_hears(level, writer),
+                        notify=frozenset(h.agent for h in hearers),
                     )
                     if result.repeated:
                         # Nothing reached the board, so nothing about the run
                         # changed either.
                         return result
                     self._last_sequence = result.sequence
-                    deliveries = self._note_region_change(level, writer)
+                    deliveries = self._note_region_change(level, writer, hearers)
         self._deliver(deliveries)
         self._check_completion()
         return result
@@ -1123,6 +1124,7 @@ class Control:
                 if gate is not None:
                     result = gate
                 else:
+                    hearers = self._who_hears(premise, writer)
                     result = self._store.set(
                         self._board_id,
                         premise,
@@ -1130,13 +1132,13 @@ class Control:
                         expected_version,
                         idempotency_key,
                         writer=writer,
-                        notify=self._who_hears(premise, writer),
+                        notify=frozenset(h.agent for h in hearers),
                     )
                     if isinstance(result, Written) and result.repeated:
                         return result
                     if isinstance(result, Written):
                         self._last_sequence = result.sequence
-                        deliveries = self._note_region_change(premise, writer)
+                        deliveries = self._note_region_change(premise, writer, hearers)
         self._deliver(deliveries)
         self._check_completion()
         return result
@@ -1421,28 +1423,34 @@ class Control:
                     due if existing is None else min(existing, due)
                 )
 
-    def _who_hears(self, region: str, writer: str) -> frozenset[str]:
+    def _who_hears(self, region: str, writer: str) -> list[AgentProgress]:
         # Callers hold self._lock. The agents this write should wake, read
         # from the run rather than from this process's own roster, so a
         # process that holds no agent still records that one is owed. The
         # store records the answer beside the contribution, so the intent to
         # notify cannot be lost separately from the write that caused it.
+        #
+        # The declarations rather than the names, because the write path
+        # reaches by address what it holds no callable for, and the address
+        # is on the row this already read.
         kind = self._kinds.get(region)
         if kind is None:
-            return frozenset()
-        return frozenset(
-            declared.agent
+            return []
+        return [
+            declared
             for declared in self._store.read_agents(self._board_id)
             if declared.agent != writer and _wants(declared.subscribes_to, region, kind)
-        )
+        ]
 
-    def _note_region_change(self, region: str, writer: str) -> list[_Delivery]:
+    def _note_region_change(
+        self, region: str, writer: str, hearers: list[AgentProgress]
+    ) -> list[_Delivery]:
         # Callers hold self._lock. Returns the deliveries the caller makes
         # after releasing it. Both region kinds carry a window; the default
         # is zero, which dispatches inline.
         now = self._clock.now()
         window = self._batch_windows[region]
-        deliveries: list[_Delivery] = []
+        deliveries: list[_Delivery] = self._reach_the_rest(hearers, window)
         for state in self._agents.values():
             if self._outcome is not None:
                 break
@@ -1456,6 +1464,68 @@ class Control:
             delivery = self._evaluate_dispatch_locked(state, now)
             if delivery is not None:
                 deliveries.append(delivery)
+        return deliveries
+
+    def _reach_the_rest(
+        self, hearers: list[AgentProgress], window: timedelta
+    ) -> list[_Delivery]:
+        # Callers hold self._lock. The write path notifies inline, and the
+        # agents it can notify are not only the ones it holds callables for:
+        # the run says where each is reached, and this process may hold the
+        # transport. Without this, a replica built per request holds no agent
+        # and every notification waits for a relay pass.
+        #
+        # A region carrying a window is left alone. There is no pending set
+        # here to batch into, so notifying would send on every write and
+        # bypass the only damping the library has.
+        if self._reach is None or window > timedelta(0):
+            return []
+        owed = [
+            declared
+            for declared in hearers
+            if declared.agent not in self._agents
+            and declared.address is not None
+            and self._last_sequence > declared.acknowledged_through
+        ]
+        if not owed:
+            return []
+        # One read for every agent, from the least advanced, the way the
+        # poll reads for the agents this process holds.
+        floor = min(declared.acknowledged_through for declared in owed)
+        tail = self._store.read_board(
+            self._board_id, from_sequence=floor + 1, limit=_TAIL
+        )
+        deliveries: list[_Delivery] = []
+        for declared in owed:
+            regions = frozenset(
+                change.region
+                for change in tail
+                if change.sequence > declared.acknowledged_through
+                and change.writer != declared.agent
+                and self._kinds.get(change.region) is not None
+                and _wants(
+                    declared.subscribes_to, change.region, self._kinds[change.region]
+                )
+            )
+            if not regions:
+                continue
+            assert declared.address is not None  # filtered above
+            self._store.mark_notified(
+                self._board_id, declared.agent, through=self._last_sequence
+            )
+            deliveries.append(
+                (
+                    partial(self._reach, declared.address),
+                    Notification(
+                        notification_id=NotificationId(self._last_sequence),
+                        board_id=self._board_id,
+                        agent=declared.agent,
+                        from_sequence=declared.acknowledged_through + 1,
+                        to_sequence=self._last_sequence,
+                        regions=regions,
+                    ),
+                )
+            )
         return deliveries
 
     def _evaluate_dispatch_locked(
