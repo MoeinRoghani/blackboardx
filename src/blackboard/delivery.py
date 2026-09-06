@@ -302,13 +302,14 @@ class HttpNotifier:
         """Sends one notification to an address, on the caller's thread.
 
         The transport a `Control` takes as ``reach``, for an agent the run
-        records an address for and this process holds no callable for. A lane
-        is opened per address and reused, so a relay pass over the same agents
-        does not open one each time.
+        records an address for and this process holds no callable for. It
+        opens no lane and starts no thread, so a notifier used only this way
+        holds nothing between calls.
 
-        Unlike a lane, this does not return before the send. A relay marks a
-        row sent only when this returns, so a raise here leaves the row for
-        the next pass.
+        Unlike a lane, this sends once and does not return before the send.
+        The relay is the retry: it marks a row sent only when this returns, so
+        a raise here leaves the row for the next pass rather than being
+        reported through ``on_failure``.
         """
         self._sending.transport.send(address, _body_of(notification))
 

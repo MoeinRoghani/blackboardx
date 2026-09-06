@@ -110,11 +110,42 @@ date with the whole board. A subscribed premise carrying a batch window is the
 exception: registering schedules the notification a window away, so an agent
 with nothing else pending is woken when that window passes.
 
+Both doors leave the same row on the run: the name, what wakes it, what it may
+write to, and where it is reached. They differ in when and not in what, so any
+process serving that board knows the agent is there.
+
+## Saying where it is reached
+
+`notify` is a callable, and a callable is held by one process. An agent
+deployed as its own service gives an address instead, which is written to the
+run:
+
+```python
+Agent(
+    name="ocp",
+    subscribes_to=["window"],
+    address="https://ocp.internal/notify",
+)
+```
+
+A declaration carries `notify`, `address`, or both, and one naming neither
+raises `ValueError`, because nothing could reach it. Delivering to an address
+needs a transport, which the process serving the board is given as `reach`:
+
+```python
+model = create_model(..., reach=notifier.reach)
+```
+
+[Notify agents over HTTP](notifying-agents.md) covers what to pass and what it
+costs. What the address buys is that the process which took the registration
+is no longer the only one that can wake the agent: any process holding a
+transport reaches it, so losing that process loses nothing.
+
 ## Coming back after a restart
 
 An agent that restarts registers again under the same name. Registering again
-replaces its declaration, including its callback address and its subscriptions,
-so a redeployed agent that moved to a new address is reached at the new one.
+replaces the row it left on the run, its address and its subscriptions with
+it, so a redeployed agent that moved is reached where it moved to.
 
 Its cursor survives, because the control component has not forgotten what the
 agent acknowledged. Whatever notification the old process was still holding is
@@ -188,6 +219,9 @@ def notify(body: dict):
         board.ack(notification.notification_id)
     return "", 204
 ```
+
+The URL that route is served at is the `address` on the agent's declaration,
+which is what any process serving the board posts to.
 
 A client is bound to one board and one agent name, so no method takes the board
 or the agent name, and no method can be given the wrong board or the wrong

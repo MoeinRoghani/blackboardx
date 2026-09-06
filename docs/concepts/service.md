@@ -2,7 +2,7 @@
 
 An application whose agents are separately deployed services puts one service in front of the library, and that service is the only thing that reaches the database.
 
-Every replica of that service is identical: same image, same configuration, same store. **Any replica serves any board.** Nothing is pinned to a replica, so requests may be routed round robin, by sticky session, through a mesh, or across clusters, and the library has no opinion about which.
+Every replica of that service is identical: same image, same callables, same store. **Any replica serves any board.** Nothing is pinned to a replica, so requests may be routed round robin, by sticky session, through a mesh, or across clusters, and the library has no opinion about which.
 
 Read [what a store holds](storage.md#what-a-store-holds) for why that is true, and [what this version does not do](../limits.md) before building on it.
 
@@ -25,34 +25,35 @@ deploying them.
 
 The package ships `PostgresStore` and `MongoStore` for a deployment and `SqliteStore` for one machine, all satisfying the `BoardStore` protocol. Against any other database the nineteen methods are yours to write: four read the record, three write to it, one removes a board, five hold the run, four hold its agents and how far each has got, and two hold what a write recorded and nothing has sent. Every rule they are held to maps onto ordinary primitives. [Storage](storage.md) covers what each has to guarantee.
 
-## What is durable and what is not
+## What is written down and what is not
 
-A store makes the **record** durable. It does not make the **run** durable, and the difference decides how the service is deployed.
+A store makes the record durable, and the run with it. What no store holds is a function, and that is the difference the deployment turns on.
 
-| | What, and where it lives |
+| Word | Holds |
 | --- | --- |
-| **Run state** | Regions, contributions, premise values and versions, the sequence, idempotency keys, the run's two deadlines and its outcome, and how far each agent has been notified and has answered. All of it is in the store, whichever store that is. |
-| **Configuration** | The regions, the agent roster, the admission rule, the termination predicate, the limits and the clock. Every replica is given these, the way every replica is given the same image and the same environment. |
-| **In flight** | Notifications `HttpNotifier` has queued but not yet sent. |
+| **The record** | Regions, contributions, premise values and their versions, the sequence, idempotency keys, and the run's outcome with the agents that did not finish. Removed only by `store.delete`. |
+| **The run** | The two deadlines, its agents with what wakes each and where it is reached, how far each has got, and what a write recorded that nothing has sent. Removed when the run closes. |
+| **The callables** | `admission_rule`, `termination_predicate`, `clock`, `on_open`, `on_closed`, and the transport that reaches an address. Never written, so never removed. |
 
-A `Model` is a handle to a board that lives in the store, not the board
-itself. It holds nothing, so holding one keeps no run open, caches no
-registry, and reserves nothing; build one where convenient and discard it.
-The name invites the other reading, which is why it is said here.
+The first two are in the store, whichever store that is. The third is supplied
+to [`create_model`](run.md) on every construction, because a function is not
+data. [Storage](storage.md#what-a-store-holds) covers the split.
 
-Replicas are identical, so each is given the same configuration and each reads the same run state. A second replica therefore measures silence from the same instant, closes the run on the same deadline, knows which agents are owed an answer, and holds the same roster with the same addresses. A write is served by whichever replica receives it, and that replica notifies on the write path.
+Replicas are identical, so each is given the same callables, and each reads the same record and the same run. A second replica therefore measures silence from the same instant, closes the run on the same deadline, knows which agents the run holds and where each is reached, and knows which are owed an answer. A write is served by whichever replica receives it, and that replica records who should hear it by reading the run rather than by consulting a roster of its own.
 
 `Control.notify_due` covers what the write path cannot. It reads what has landed since each agent last answered and delivers it, so a change taken while a replica was starting, or one whose delivery was lost, still reaches the agent. A run inside one process finds nothing to do there. Schedule it beside `close_expired`.
 
-A board starts with its agents, named to `create_model`, and whatever serves that board constructs it with the same roster. Where the application gets that roster is its own affair: hardcoded, read from its own table, or carried in the request that triggered the run. This library takes no view and owns no registry.
+A board starts with its agents, named to `create_model`. `register_agent` covers the one case that cannot: an agent joining a run already under way. Both write the same row to the run, so the two differ in when and not in what, and after either the agent is on the record rather than in a process.
 
-`register_agent` covers the one case a roster at creation cannot: an agent joining a run already under way. That agent is known to the process it registered with, so that process is the one that wakes it, and it is the process to keep serving that board while the agent is in it.
+Where the application gets its agents is its own affair: hardcoded, pulled from a vault, read from its own table, or carried in the request that triggered the run. This library takes no view and owns no registry.
+
+Which agents a write should wake is read from the run, so a replica that never saw an agent declared still records that it is owed a notification. Reaching it needs one of two things: a callable this process holds, or the address the run records and a transport given as `reach`. `HttpNotifier.reach` is one.
 
 Reads are not bound that way. `BoardService` takes the store as well as the registry, and answers the four `GET` operations from the record whenever the replica holds no run for the board, so any replica holding the store answers a read for any board in that store. A board that the store never held answers 404 in both cases, so a mistyped identifier is not answered with an empty board.
 
 A replacement replica resumes rather than restarts. The deadlines, the outcome and how far each agent answered are on the record, so any replica closes the run on the original deadline and tells no agent again what it has already answered.
 
-A notification a process was holding when it stopped is not lost. The intent was recorded with the write, so `Control.relay` on any replica holding that agent sends it. Delivery is at least once, and a repeat costs nothing because a notification carries no values.
+A notification a process was holding when it stopped is not lost. The intent was recorded with the write, so `Control.relay` sends it from any replica that can reach the agent, which is one holding its callable or one holding a transport for the address the run records. Delivery is at least once, and a repeat costs nothing because a notification carries no values.
 
 ## Why this is safe with several replicas
 
@@ -83,7 +84,7 @@ stops and nothing to route around.
 
 ## Serving a board
 
-`BoardService` asks a callable of yours for the `Control` a request names. A `Control` is a handle: it binds a board identifier and the configuration and reads the store on every call, so building one costs a little object and no round trip, and dropping one closes nothing.
+`BoardService` asks a callable of yours for the `Control` a request names. A `Control` is a handle: it binds a board identifier and the callables and reads the record and the run on every call, so building one costs a little object and no round trip, and dropping one closes nothing.
 
 That leaves two shapes, and both are correct:
 

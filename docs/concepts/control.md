@@ -69,7 +69,7 @@ Every other agent subscribed to the changed region is notified, and nothing rank
 
 ## What wakes an agent
 
-An agent declares what wakes it when it registers.
+An agent declares what wakes it when it joins, through either door.
 
 ```python
 Agent(name="ocp", notify=deliver, subscribes_to=["window", "platform"])
@@ -98,6 +98,16 @@ The default is zero for both kinds, so a change reaches every agent at once unle
 
 ## Delivery
 
+A declaration names one of two ways to reach the agent, or both.
+
+| Declared with | Reached by |
+| --- | --- |
+| `notify` | That callable, in this process |
+| `address` | The transport this process was given as `reach`, aimed at the address the run records |
+| Both | The callable, which is the faster path where the process has one |
+
+Either way the notification goes on the same paths: when the agent joins, when a write it subscribes to lands, and when a batch window closes. A process given neither a callable nor a transport reaches the agent not at all, and leaves what the write recorded for a process that can. That is the mechanism behind [any replica serving any board](service.md).
+
 The control component holds no lock while it invokes the agent's callback. A notification due at once is delivered by the thread that made the change, before the write or the registration returns. A notification that a batch window is holding is delivered by the thread that the clock closes that window on. Deliveries that a callback sets off by writing are drained by the thread already draining them, rather than nesting inside the callback.
 
 A callback may run the whole agent cycle inline, so a test can drive several agents on one thread. A callback that raises is contained: the rest of the batch is delivered and the writer keeps its result.
@@ -111,6 +121,7 @@ readable from [the store](storage.md):
 | --- | --- |
 | Who wrote this, and when | The contribution's `writer` and `written_at` |
 | Was this write refused, and why | The `Rejected` returned to the caller that made it |
+| Which agents are in this run, and where each is reached | `store.read_agents` |
 | How far has this agent been told, and has it answered | `store.read_agents` |
 | How did the run end, and who did not finish | `store.read_run` |
 | What was never delivered | `store.unsent` |

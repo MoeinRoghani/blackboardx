@@ -22,13 +22,13 @@ There is no opening and no handle to keep. The whole surface is three things.
 | **operations** | `write`, `set_premise`, the four reads, `ack` | As many as happen. Any replica serves any of them. |
 | **close** | The outcome row | Once. Not a ceremony, just a write, from the check on access, the reaper, or `abort`. |
 
-`Model` and `Control` bind a board identifier and the configuration so a
+`Model` and `Control` bind a board identifier and the callables so a
 caller does not repeat them. They are convenience over those operations, not a
 connection and not a lease: see [the board is a handle](service.md#serving-a-board).
 
 ## Creating a model
 
-Six things configure a model. Two more say which board the run opens and where the record is kept.
+Six things make a model. Two more say which board the run opens and where the record is kept.
 
 ```python
 model = create_model(
@@ -70,6 +70,8 @@ model.control.register_agent(Agent(name="netops", notify=deliver))
 ```
 
 That agent is woken the same way, so it hears about everything written before it arrived.
+
+Both doors leave the same row on the run: the name, what wakes it, what it may write to, and where it is reached. They differ in when and not in what, so which agents a write should wake is read from the run and a replica that never saw an agent declared still records that it is owed a notification.
 
 Registering a name that is already registered replaces that agent, which is how an agent that restarted or moved rejoins. [Write an agent](../guides/writing-an-agent.md#coming-back-after-a-restart) covers what survives.
 
@@ -114,5 +116,14 @@ Nothing counts writes or notifications. A count of notifications would limit the
 ## After closing
 
 Reads keep working, so the result stays available.
+
+The write that records the outcome also removes, in the same transaction, what
+only an open run needed: how far each agent had been told and had answered,
+and any notification a write recorded that nothing had sent. Nothing reads
+either once a run has ended, and the unfinished set the outcome carries was
+computed from the first of them. What is left is the board and one row saying
+how the run ended. An acknowledgment arriving after that changes nothing and
+reports nothing, which is what it would have changed had the row still been
+there.
 
 A write to a level or a premise comes back `Rejected` with the cause `RUN_CLOSED`, because a write racing the close is ordinary and a caller has to handle it. Registering an agent or declaring a region raises `RunClosedError` instead, because those calls race nothing: a caller that makes one after the run has closed has made a mistake.

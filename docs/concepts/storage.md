@@ -11,40 +11,35 @@ store.read_premise("incident-4471", "window")
 
 ## What a store holds
 
-Everything a run needs, in one place. The obvious split is the record here and
-the run somewhere else, and it loses things that look like run state and are
-not, because they outlive the run that produced them.
+Everything a run needs, in one place. Two questions decide where anything
+goes. Is it data? If so, does it outlive the run?
 
-| Kind | What | Lives |
+| Word | Holds | Removed by |
 | --- | --- | --- |
-| **The answer** | Regions, contributions, premise values and their versions, the sequence, idempotency keys | As long as the board |
-| **The outcome** | How the run ended, and which agents did not finish | As long as the board |
-| **The coordination** | The two deadlines, how far each agent has been told and has answered, and the notifications a write recorded and nothing has sent | Until the run closes, and **removed when it does** |
+| **The record** | Regions, contributions, premise values and their versions, the sequence, idempotency keys, and the run's outcome with the agents that did not finish | `store.delete`, which the library never calls |
+| **The run** | The two deadlines, its agents with what wakes each and where it is reached, how far each has been told and has answered, and the notifications a write recorded that nothing has sent | Closing the run |
+| **The callables** | `admission_rule`, `termination_predicate`, `clock`, `on_open`, `on_closed`, and the transport that carries a notification to an address | Nothing. They are never written, so nothing removes them. |
 
-All three are in the store, and there is no second one. A write and the
-deadline it pushes and the intent to notify it records commit together or not
-at all, so there is no moment where one landed and another did not.
+**How something arrives says nothing about which of the three it is in.**
+`regions`, `premises`, `limits` and `agents` all arrive as arguments to
+[`create_model`](run.md), and they land in the record, the record, the run and
+the run. `admission_rule` arrives the same way and lands nowhere.
+
+An agent is part of the run, so the run records it: its name, what wakes it,
+what it may write to, and where it is reached. Both doors write that row, the
+one at creation and `register_agent` for an agent joining a run already under
+way. What no adapter holds is the callable that reaches it, because a function
+is not data.
+
+The record and the run are in one store, and there is no second one. A write,
+the deadline it pushes and the intent to notify it records commit together or
+not at all, so there is no moment where one landed and another did not.
 
 Nothing above is named after a database. The store is described by operations
 on `BoardStore`; one adapter implements them with tables and a sequence,
 another with collections and a conditional update, and
 [the conformance suite](#an-adapter-of-your-own) holds both to the same
 behaviour.
-
-Section 1.2 above divides the data by what it is for. This divides it by who
-supplies it, and it is the division that decides what a store must hold.
-
-| | What | Where |
-| --- | --- | --- |
-| **Run state** | The sequence, contributions, premise values and versions, idempotency keys, the two deadlines, the outcome, how far each agent has been told and has answered, and what a write recorded and nothing has sent | The store, wholly. `InMemoryStore` puts it in memory and a deployment adapter in the database, through one code path either way. |
-| **Configuration** | `regions`, the `agents` roster, `admission_rule`, `termination_predicate`, `limits`, `clock`. Two of those are callables, which is the whole reason the category is separate. | Supplied to [`create_model`](run.md) on every construction, and stored by nothing. |
-
-Run state is never split between a store and a process. A question of the form
-"does the process still hold this" is malformed; ask which of the two rows it
-is in.
-
-The agent roster is configuration. Every replica is given it because every
-replica is given the same configuration, the way it is given the same image.
 
 What is on the board and what a region is are [the board](board.md). What
 decides during a run is [the control component](control.md).
@@ -110,9 +105,9 @@ with PostgresStore.from_dsn("postgresql://...") as store:
     ...
 ```
 
-`create_schema` creates seven tables and three indexes, all named `blackboard_*` and all `IF NOT EXISTS`, in whatever schema the connection's search path points at. An application that runs its own migrations can issue the same DDL there instead and never call it.
+`create_schema` creates eight tables and three indexes, all named `blackboard_*` and all `IF NOT EXISTS`, in whatever schema the connection's search path points at. An application that runs its own migrations can issue the same DDL there instead and never call it.
 
-Agents deployed as separate services hold no connection to the database. They reach the board through the service that holds the store, and the record is what they share. An adapter makes the record durable; it does not make the run durable, because the control component holds the agent registry, the outstanding notifications, and the deadlines in the process. [Running as a service](service.md) states which part is which and what that means for how many replicas hold one board.
+Agents deployed as separate services hold no connection to the database. They reach the board through the service that holds the store, and the record is what they share. An adapter makes the record durable and the run with it, so no replica has to be the one that opened a board to serve it. [Running as a service](service.md) covers what a replica still has to be given.
 
 ## Deployed on MongoDB
 
@@ -121,7 +116,7 @@ from pymongo import MongoClient
 
 from blackboard import MongoStore, create_model
 
-# The client is the application's own, and the adapter does not open or
+# The client is the application's own, and the adapter neither opens nor
 # closes it.
 client = MongoClient("mongodb://...")
 store = MongoStore(client["incidents"])

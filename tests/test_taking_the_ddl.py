@@ -37,6 +37,16 @@ class TestTakingTheStatements:
         assert PostgresStore.schema_sql()
         assert SqliteStore.schema_sql()
 
+    def test_it_is_eight_tables_and_three_indexes(self) -> None:
+        """`docs/concepts/storage.md` counts them, and a reader plans a
+        migration from that count. A table added here updates that page.
+        """
+        from blackboard import PostgresStore
+
+        sql = PostgresStore.schema_sql()
+        assert sql.count("CREATE TABLE IF NOT EXISTS") == 8
+        assert sql.count("INDEX IF NOT EXISTS") == 3
+
     def test_every_statement_is_conditional(self) -> None:
         """Running them against a database that has them changes nothing."""
         from blackboard import PostgresStore
