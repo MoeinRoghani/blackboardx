@@ -63,6 +63,7 @@ from blackboard._control import (
     WallClockExpired,
     close_expired,
     reader_for,
+    relay_unsent,
 )
 from blackboard._model import Model, attach_model, create_model
 from blackboard._schema import SCHEMA_VERSION, SchemaVersionError
@@ -132,6 +133,7 @@ __all__ = [
     "close_expired",
     "create_model",
     "reader_for",
+    "relay_unsent",
 ]
 
 

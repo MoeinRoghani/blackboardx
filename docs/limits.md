@@ -235,19 +235,21 @@ runs around this module.
 how fast a store is, how it behaves under load, or how many boards it will
 hold. Those are yours to measure against your database.
 
-## The sweep closes runs and does not relay
+## The sweep does not poll for what a write path missed
 
-`Sweep` runs `close_expired` on an interval, and nothing else. The relay and
-`notify_due` are methods on a `Control` rather than functions over a store,
-because sending needs the callables and a store holds none, so an application
-that wants either on a schedule writes that loop itself.
+A pass runs `close_expired` and `relay_unsent`. `Control.notify_due` is not
+among them: it is a method rather than a function over a store, and it
+answers for the agents one process holds callables for, so a sweep that ran it
+would be running it for whichever `Control` a board resolved to rather than
+for every process. An application whose agents are reached by callback
+schedules that one itself, beside the sweep.
 
 ## What is designed and not built
 
-The convenience loop covers one of the two jobs that need a schedule. Every
-other part of the design is built: the run's deadlines and its outcome, the
-agents of a run and how far each has been told and has answered, the sweep
-that closes what nobody is watching, and the outbox that keeps a notification
-a process was holding when it stopped.
+Nothing. Every part of the design is built: the run's deadlines and its
+outcome, the agents of a run and how far each has been told and has answered,
+the loop that closes what nobody is watching and sends what nothing has sent,
+and the outbox that keeps a notification a process was holding when it
+stopped.
 
 

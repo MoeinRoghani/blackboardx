@@ -60,7 +60,7 @@ in this table, and every page, docstring and identifier uses it in that sense.
 | **Attach** | Opening a run over a board the store already holds. `attach_model` declares no region and takes no opening premises, and refuses a board holding no region. `create_model` declares its regions, so it refuses a board that already holds a region of the same name. The record and the run both carry over, including the agents and how far each has been told and has answered. What does not is the callables, which no store holds and every process is given. |
 | **Idle limit** | How long nothing may happen before the run closes. Every write, registration and acknowledgment pushes it out. |
 | **Wall clock limit** | The longest a run may last, whatever else is true. |
-| **Sweep** | The shipped loop that calls `close_expired` on an interval, on a thread of its own. A convenience: the library ships the mechanism and the application owns the schedule. `Sweep` in the code. |
+| **Sweep** | The shipped loop that calls `close_expired` and, given a `control_for`, `relay_unsent` on an interval, on a thread of its own. A convenience: the library ships the mechanism and the application owns the schedule. `Sweep` in the code. |
 | **Termination predicate** | The application's optional function, asked when the idle limit passes, answering if the run may close. |
 | **Outcome** | How a run ended: `Settled`, `WallClockExpired`, or `Aborted`. `Settled` and `WallClockExpired` name the agents that did not finish; an aborted run names none, because the caller ended it rather than the run reaching its own end. |
 

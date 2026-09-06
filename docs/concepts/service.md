@@ -17,7 +17,7 @@ deploying them.
 | `blackboardx` | This package | yes |
 | Storage adapter | A `BoardStore` implementation against your database | `PostgresStore` or `MongoStore`, or you write one |
 | Blackboard service | A container importing the library, serving HTTP | the routing and the answers, not the server |
-| Scheduled work | Closing runs nobody is watching, and sending what was never delivered | `close_expired`, `Control.relay` and `Sweep`; the schedule is yours |
+| Scheduled work | Closing runs nobody is watching, and sending what was never delivered | `close_expired` and `relay_unsent`, or `Sweep` running both; the schedule is yours |
 | Agent client | What agents import to call it | `BoardClient` and `AsyncBoardClient` |
 | Database | One primary you already run | no |
 | Retention | Deciding when a finished run's record goes | `store.delete`, when you call it |
@@ -77,6 +77,7 @@ replica serving it, and a job that happens when no request is in flight cannot.
 | Send it | After the write commits | Any replica, or the relay | At least once, and repeats are free by the line above |
 | Close a run somebody asked about | On any access | The serving replica | A compare and set on the outcome: the first writer wins |
 | Close a run nobody asked about | Periodically | Wherever you call it | The same compare and set |
+| Relay what nothing has sent | Periodically | Wherever you call it | A row is marked only after a send, so two replicas relaying together send twice and repeats are free |
 | Ask the termination predicate | At the deadline | Whoever is closing | Its answer is discarded if the board moved |
 
 A replica does not own a board, so there is nothing to hand over when one

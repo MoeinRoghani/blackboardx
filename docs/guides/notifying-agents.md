@@ -199,8 +199,10 @@ sent, and `close` reports what it abandons through `on_failure`.
 The intent is not lost with it. A write records one row for each agent that
 should hear of it, in the same transaction as the contribution, and the lane
 clears that row only once it has sent. So a notification abandoned here is
-still owed, and `Control.relay` delivers it, from this process when it comes
-back or from any other replica that can reach the agent.
+still owed, and the relay delivers it, from this process when it comes back or
+from any other replica that can reach the agent. `Sweep` runs that relay on an
+interval where it is given a `control_for`, so nothing has to call it by
+hand.
 
 That is what the store on the notifier buys, and the reason to pass it. A
 notifier without one leaves the marking to the control component, which sees

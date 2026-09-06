@@ -77,6 +77,24 @@ The schema number rises to 5, and so does the compatibility number: a build
 older than this reads who should hear a write from its own roster, so on a
 board it did not create it records nothing.
 
+### The sweep relays as well as reaps
+
+`Sweep` takes `control_for`, the same callable `BoardService` takes, and a
+pass then runs `relay_unsent` after `close_expired`:
+
+```python
+with Sweep(store, control_for=runs.get):
+    serve_until_shutdown()
+```
+
+Sending needs the callables, which no store holds, so the relay cannot be a
+function over a store the way closing is. `relay_unsent` is exported for an
+application with a scheduler of its own. A board the callable answers nothing
+for is left, because another replica holds what this one does not.
+
+A `Sweep` given no `control_for` reaps and nothing more, which is what a sweep
+did before.
+
 ### A lane clears its own outbox row
 
 `HttpNotifier` takes `store`. Pass it wherever `to` is used:
