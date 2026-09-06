@@ -60,8 +60,10 @@ absorbs the extra identifier.
 
 `HttpNotifier` still holds its own queue in memory, and `close` waits up to
 `close_timeout` before abandoning what is left and reporting each one through
-`on_failure`. What changed is that abandoning it no longer loses the work: the
-row is still on the record and the next relay pass sends it.
+`on_failure`. Abandoning it loses the work only where the notifier was given
+no store: a lane returns before the send, so the lane is what clears the row,
+and a notifier with no store leaves that to the control component, which sees
+the lane accept the notification and never learns what became of it.
 
 ## The library logs only what a caller cannot see
 

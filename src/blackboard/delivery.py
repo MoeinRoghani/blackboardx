@@ -14,7 +14,7 @@ an agent that is slow, retrying, or down delays only itself.
     from blackboard import Agent, create_model
     from blackboard.delivery import HttpNotifier
 
-    with HttpNotifier() as notifier:
+    with HttpNotifier(store=store) as notifier:
         model = create_model(
             board_id=board_id,
             store=store,
@@ -30,11 +30,13 @@ an agent that is slow, retrying, or down delays only itself.
             limits=limits,
         )
 
-The queue is held in memory. A process that stops loses whatever had not been
-sent, which usually costs nothing, because a notification carries no values
-and the next one covers the range a lost one would have covered. It costs
-something when the lost notification is the last, and the run then waits for an
-acknowledgment that no agent knows to send, until the run's idle limit closes it.
+The queue is held in memory, so a process that stops loses whatever had not
+been sent. Give the notifier the store and it is not lost: a lane returns
+before the send, so the lane clears the outbox row itself once it has sent,
+and what the queue was still holding is still owed and reaches the agent
+through :meth:`blackboard.Control.relay`. Without a store, the control
+component marks the row when the lane accepts the notification, having no way
+to see what became of it.
 """
 
 from __future__ import annotations
@@ -53,7 +55,7 @@ from blackboard._retrying import MAX_BACKOFF, default_backoff
 from blackboard.wire import NotificationBody
 
 if TYPE_CHECKING:
-    from blackboard._control import Notification
+    from blackboard._control import BoardStore, Notification
 
 __all__ = [
     "MAX_BACKOFF",
@@ -182,6 +184,7 @@ class _Sending:
     attempts: int
     backoff: Callable[[int, float | None], float]
     report: Callable[[Undelivered], None]
+    landed: Callable[[Notification], None]
     stopping: threading.Event
 
 
@@ -216,11 +219,22 @@ class Lane:
     which is why an ``Agent`` takes it directly as ``notify``. Close it when
     the run that used it ends, which stops its worker and releases its queue
     without closing the notifier or any other lane.
+
+    Calling it queues and returns, so the notification is not on the wire when
+    the call comes back. ``marks_sent`` says whether this lane records its own
+    sends, which the control component reads to decide whether the outbox row
+    is its to mark. It is true where the notifier was given a store, and a
+    notification only queued is then still owed until the lane has sent it.
     """
 
     def __init__(self, notifier: HttpNotifier, inner: _Lane) -> None:
         self._notifier = notifier
         self._inner = inner
+
+    @property
+    def marks_sent(self) -> bool:
+        """True when this lane marks the outbox row itself, after the send."""
+        return self._notifier.records_sends
 
     def __call__(self, notification: Notification) -> None:
         """Queues one notification and returns, on the writer's thread."""
@@ -274,6 +288,7 @@ class HttpNotifier:
     def __init__(
         self,
         *,
+        store: BoardStore | None = None,
         transport: Transport | None = None,
         attempts: int = 4,
         backoff: Callable[[int, float | None], float] = default_backoff,
@@ -286,17 +301,44 @@ class HttpNotifier:
         self._transport = transport if transport is not None else HttpxTransport()
         self._on_failure = on_failure
         self._close_timeout = close_timeout
+        self._store = store
         self._stopping = threading.Event()
         self._sending = _Sending(
             transport=self._transport,
             attempts=attempts,
             backoff=backoff,
             report=self._report,
+            landed=self._landed,
             stopping=self._stopping,
         )
         self._lock = threading.Lock()
         self._lanes: list[_Lane] = []
         self._closed = False
+
+    @property
+    def records_sends(self) -> bool:
+        """True when this notifier was given a store to mark rows in."""
+        return self._store is not None
+
+    def _landed(self, notification: Notification) -> None:
+        # A lane accepted the notification long before this, so the control
+        # component could not mark the row: it had no way to know the send
+        # had not happened. This is where it did.
+        if self._store is None:
+            return
+        try:
+            self._store.mark_sent(
+                notification.board_id,
+                notification.agent,
+                through=notification.to_sequence,
+            )
+        except Exception:
+            logger.warning(
+                "delivered notification %d to %s but could not mark it sent",
+                notification.notification_id,
+                notification.agent,
+                exc_info=True,
+            )
 
     def reach(self, address: str, notification: Notification) -> None:
         """Sends one notification to an address, on the caller's thread.
@@ -484,6 +526,7 @@ class _Lane:
         for attempt in range(1, self._sending.attempts + 1):
             try:
                 self._sending.transport.send(self._url, body)
+                self._sending.landed(notification)
                 return
             except DeliveryRefused as refused:
                 self._fail(notification, attempt, refused)
