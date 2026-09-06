@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from blackboard import SCHEMA_VERSION, Level, SchemaVersionError, SqliteStore
-from blackboard._schema import stamp_to_write
+from blackboard._schema import SCHEMA_COMPAT_VERSION, stamp_to_write
 
 
 class TestTheDecision:
@@ -83,11 +83,17 @@ def _sqlite_stamp(path: str) -> int | None:
 
 
 def _set_sqlite_stamp(path: str, version: int) -> None:
+    """Writes a stamp that says a build at this version, at the oldest.
+
+    The compatibility number is set alongside, because a database that is
+    merely newer is readable and only one that says otherwise is not.
+    """
     connection = sqlite3.connect(path)
     connection.execute(
-        "INSERT INTO schema_stamp (id, version) VALUES (1, ?) "
-        "ON CONFLICT (id) DO UPDATE SET version = excluded.version",
-        (version,),
+        "INSERT INTO schema_stamp (id, version, compat_version) VALUES (1, ?, ?) "
+        "ON CONFLICT (id) DO UPDATE SET version = excluded.version, "
+        "compat_version = excluded.compat_version",
+        (version, version),
     )
     connection.commit()
     connection.close()
@@ -153,11 +159,13 @@ def _postgres_stamp(store: Any) -> int | None:
 
 
 def _set_postgres_stamp(store: Any, version: int) -> None:
+    """As `_set_sqlite_stamp`, and for the same reason."""
     with store._pool.connection() as connection:
         connection.execute(
-            "INSERT INTO blackboard_schema (id, version) VALUES (1, %s) "
-            "ON CONFLICT (id) DO UPDATE SET version = excluded.version",
-            (version,),
+            "INSERT INTO blackboard_schema (id, version, compat_version) "
+            "VALUES (1, %s, %s) ON CONFLICT (id) DO UPDATE SET "
+            "version = excluded.version, compat_version = excluded.compat_version",
+            (version, version),
         )
 
 
@@ -183,7 +191,14 @@ class TestMongodb:
         from blackboard import MongoStore
 
         store._database["blackboard_schema"].update_one(
-            {"_id": "schema"}, {"$set": {"version": SCHEMA_VERSION + 1}}, upsert=True
+            {"_id": "schema"},
+            {
+                "$set": {
+                    "version": SCHEMA_VERSION + 1,
+                    "compat_version": SCHEMA_VERSION + 1,
+                }
+            },
+            upsert=True,
         )
         assert MONGODB is not None
         with (
@@ -191,3 +206,55 @@ class TestMongodb:
             pytest.raises(SchemaVersionError, match=str(SCHEMA_VERSION + 1)),
         ):
             fresh.declare("board-x", Level("platform"))
+
+
+class TestACompatibilityNumberBesideTheVersion:
+    """One number says what a build writes; the other how far back reads it.
+
+    A single monotonic integer cannot tell a database that is merely newer
+    from one this build cannot use, so refusing on it turns every schema
+    change into a full stop. The second number is the writer declaring which
+    builds it left able to read what it wrote.
+    """
+
+    def test_a_newer_database_is_used_when_it_says_this_build_may(self) -> None:
+        assert (
+            stamp_to_write(
+                SCHEMA_VERSION + 1, where="the test database", compat=SCHEMA_VERSION
+            )
+            is None
+        )
+
+    def test_a_newer_database_is_refused_when_it_says_this_build_may_not(
+        self,
+    ) -> None:
+        with pytest.raises(SchemaVersionError) as raised:
+            stamp_to_write(
+                SCHEMA_VERSION + 1,
+                where="the test database",
+                compat=SCHEMA_VERSION + 1,
+            )
+        assert "or newer" in str(raised.value)
+
+    def test_the_refusal_names_both_numbers(self) -> None:
+        with pytest.raises(SchemaVersionError) as raised:
+            stamp_to_write(9, where="the test database", compat=9)
+        said = str(raised.value)
+        assert "9" in said
+        assert str(SCHEMA_VERSION) in said
+
+    def test_a_record_with_no_compatibility_number_is_refused_when_newer(
+        self,
+    ) -> None:
+        """Written before this library had one, so it makes no promise."""
+        with pytest.raises(SchemaVersionError):
+            stamp_to_write(SCHEMA_VERSION + 1, where="the test database")
+
+    def test_an_older_database_is_stamped_forward_as_before(self) -> None:
+        assert (
+            stamp_to_write(SCHEMA_VERSION - 1, where="the test database", compat=1)
+            == SCHEMA_VERSION
+        )
+
+    def test_the_compatibility_number_is_never_above_the_version(self) -> None:
+        assert SCHEMA_COMPAT_VERSION <= SCHEMA_VERSION

@@ -35,6 +35,23 @@ version.
 | `RunClosed` | `store.read_run` answers the outcome, and the run closing is logged |
 | `AuditEvent` | Nothing. There is no audit. |
 
+## 0.13 to 0.14
+
+### The schema carries a compatibility number
+
+A store stamped one number, the schema it wrote, and refused any database
+whose number was higher. That could not tell a database written by a newer
+build this one can still read from one it cannot, so every schema change
+stopped a rolling deploy.
+
+There are two numbers now. `SCHEMA_VERSION` is what a build writes;
+`SCHEMA_COMPAT_VERSION` is the oldest build that can still read it. A store
+refuses only when the second is higher than the version it knows.
+
+Nothing to do. The column is added where it is missing, and a database
+carrying only the old number is treated as making no promise, so it is
+refused when newer exactly as before.
+
 ## 0.11 to 0.12
 
 ### A write records the intent to notify

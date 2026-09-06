@@ -40,7 +40,7 @@ from blackboard._board import (
     UnsetPremiseError,
     Written,
 )
-from blackboard._schema import stamp_to_write
+from blackboard._schema import SCHEMA_COMPAT_VERSION, stamp_to_write
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_stamp (
@@ -228,17 +228,30 @@ class SqliteStore:
         # Once, when the file opens, so a record this version cannot read is
         # refused at the door rather than at whichever query touches the
         # missing piece first.
+        present = {
+            r[1] for r in self._connection.execute("PRAGMA table_info(schema_stamp)")
+        }
+        if "compat_version" not in present:
+            self._connection.execute(
+                "ALTER TABLE schema_stamp ADD COLUMN compat_version INTEGER"
+            )
         row = self._connection.execute(
-            "SELECT version FROM schema_stamp WHERE id = 1"
+            "SELECT version, compat_version FROM schema_stamp WHERE id = 1"
         ).fetchone()
-        writing = stamp_to_write(None if row is None else int(row[0]), where=where)
+        writing = stamp_to_write(
+            None if row is None else int(row[0]),
+            where=where,
+            compat=None if row is None or row[1] is None else int(row[1]),
+        )
         if writing is None:
             return
         with self._connection:
             self._connection.execute(
-                "INSERT INTO schema_stamp (id, version) VALUES (1, ?) "
-                "ON CONFLICT (id) DO UPDATE SET version = excluded.version",
-                (writing,),
+                "INSERT INTO schema_stamp (id, version, compat_version) "
+                "VALUES (1, ?, ?) ON CONFLICT (id) DO UPDATE SET "
+                "version = excluded.version, "
+                "compat_version = excluded.compat_version",
+                (writing, SCHEMA_COMPAT_VERSION),
             )
 
     def _already_written(

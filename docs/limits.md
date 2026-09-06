@@ -149,6 +149,21 @@ names
 and kinds against the record and nothing else, and a window that disagrees
 with the previous run's is not reported.
 
+## Two versions run side by side only when the schema says so
+
+A store records two numbers: the schema it wrote, and the oldest library that
+can still read what it wrote. A database that is merely newer is used; one
+whose second number is above what this build knows is refused.
+
+That is what decides whether a rolling deploy works. A release that only adds
+a column or a table leaves the second number where it was, so the old and new
+builds run against one database while the rollout proceeds. A release that
+gives something a new meaning raises it, and then the two cannot run together
+and the deploy has to stop everything.
+
+One number could not tell those apart, so it had to refuse every newer
+database and made every schema change a full stop.
+
 ## A record is never stamped backwards
 
 A store refuses a record written for a schema it cannot read, and never
