@@ -891,6 +891,79 @@ class SharedStoreConformance:
         assert kept.append("platform", {"n": 2}) == 2
 
 
+class ClosingConformance:
+    """Closing a run removes the coordination it needed, and keeps the result.
+
+    The outcome and the unfinished set are stamped into the run row by the
+    write that closes it, so everything that write consulted is redundant the
+    instant it lands. Leaving it would accumulate rows nobody reads, one set
+    per run.
+    """
+
+    def test_closing_keeps_the_outcome(self, ready: Bound) -> None:
+        ready.open_run()
+        assert ready.close_run(closed_as="settled", reason="nothing to add")
+        run = ready.read_run()
+        assert run is not None
+        assert run.closed_as == "settled"
+        assert run.reason == "nothing to add"
+
+    def test_closing_keeps_who_did_not_finish(self, ready: Bound) -> None:
+        ready.open_run()
+        ready.mark_notified("triage", 4)
+        ready.store.close_run(
+            ready.board_id, closed_as="settled", unfinished=frozenset({"triage"})
+        )
+        run = ready.read_run()
+        assert run is not None
+        assert run.unfinished == frozenset({"triage"})
+
+    def test_closing_removes_how_far_each_agent_got(self, ready: Bound) -> None:
+        """The unfinished set was computed from these and is on the run row."""
+        ready.open_run()
+        ready.mark_notified("triage", 4)
+        ready.mark_notified("capacity", 2)
+        assert ready.read_agents() != []
+        ready.close_run()
+        assert ready.read_agents() == []
+
+    def test_closing_removes_what_was_never_sent(self, ready: Bound) -> None:
+        """Nobody is owed a wake-up to a run that has ended."""
+        ready.store.append(
+            ready.board_id, "application", "a", notify=frozenset({"triage"})
+        )
+        ready.open_run()
+        assert ready.unsent() != []
+        ready.close_run()
+        assert ready.unsent() == []
+
+    def test_closing_leaves_the_board_alone(self, ready: Bound) -> None:
+        ready.declare(Premise("severity"))
+        ready.append("application", "a finding")
+        ready.set("severity", "high", 0)
+        ready.open_run()
+        ready.close_run()
+        assert entries(ready.read_level("application")) == [(1, "a finding")]
+        assert ready.read_premise("severity").value == "high"
+        assert len(ready.read_regions()) == 2
+
+    def test_a_caller_that_did_not_win_clears_nothing(self, ready: Bound) -> None:
+        ready.open_run()
+        ready.close_run()
+        ready.mark_notified("late", 1)
+        assert not ready.close_run(), "the run was already closed"
+        assert [p.agent for p in ready.read_agents()] == ["late"]
+
+    def test_closing_one_board_leaves_another_alone(self, ready: Bound) -> None:
+        elsewhere = Bound(ready.store, f"{ready.board_id}-elsewhere")
+        elsewhere.mark_notified("triage", 1)
+        ready.open_run()
+        ready.mark_notified("triage", 1)
+        ready.close_run()
+        assert ready.read_agents() == []
+        assert [p.agent for p in elsewhere.read_agents()] == ["triage"]
+
+
 class AgentConformance:
     """How far each agent has been told and has answered, held by the store.
 

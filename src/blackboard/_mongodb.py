@@ -529,6 +529,9 @@ class MongoStore:
                 }
             },
         )
+        if outcome.modified_count == 1:
+            for collection in (_AGENT_PROGRESS, _OUTBOX):
+                self._database[collection].delete_many({"board_id": board_id})
         return outcome.modified_count == 1
 
     def runs_past_deadline(self, limit: int = 100) -> list[str]:

@@ -19,7 +19,7 @@ not, because they outlive the run that produced them.
 | --- | --- | --- |
 | **The answer** | Regions, contributions, premise values and their versions, the sequence, idempotency keys | As long as the board |
 | **The outcome** | How the run ended, and which agents did not finish | As long as the board |
-| **The coordination** | The two deadlines, how far each agent has been notified and has answered, and the notifications a write recorded and nothing has sent | Until the run closes, then as its record |
+| **The coordination** | The two deadlines, how far each agent has been told and has answered, and the notifications a write recorded and nothing has sent | Until the run closes, and **removed when it does** |
 
 All three are in the store, and there is no second one. A write and the
 deadline it pushes and the intent to notify it records commit together or not

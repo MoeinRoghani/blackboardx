@@ -1102,6 +1102,13 @@ class Control:
             self._board_id, agent, through=int(acknowledged)
         )
         if prior is None:
+            # Closing a run clears what each agent was owed, so an answer
+            # arriving after that finds nothing. The run has ended and the
+            # answer changes nothing, which is what it would have changed
+            # had the row still been there.
+            run = self._store.read_run(self._board_id)
+            if run is not None and run.closed_as is not None:
+                return
             raise UnknownNotificationError(
                 f"no notification {notification_id} was issued to {agent!r}"
             )
