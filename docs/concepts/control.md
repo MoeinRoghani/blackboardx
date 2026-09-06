@@ -106,7 +106,9 @@ A declaration names one of two ways to reach the agent, or both.
 | `address` | The transport this process was given as `reach`, aimed at the address the run records |
 | Both | The callable, which is the faster path where the process has one |
 
-Either way the notification goes on the same paths: when the agent joins, when a write it subscribes to lands, and when a batch window closes. A process given neither a callable nor a transport reaches the agent not at all, and leaves what the write recorded for a process that can. That is the mechanism behind [any replica serving any board](service.md).
+Either way the notification goes on the same paths: when the agent joins, when a write it subscribes to lands, and when a batch window closes. The replica taking a write reaches every agent the run says should hear of it and it can reach, which is not only the ones it was given callables for. A process given neither a callable nor a transport reaches the agent not at all, and leaves what the write recorded for a process that can. That is the mechanism behind [any replica serving any board](service.md).
+
+The one thing a process cannot do for an agent it holds no callable for is batch. A window is held in a pending set, and there is none here, so a write to a region carrying a window records the intent and leaves the sending to [the relay](../guides/ending-a-run.md#closing-a-run-no-process-is-watching). Zero, the default, is unaffected.
 
 The control component holds no lock while it invokes the agent's callback. A notification due at once is delivered by the thread that made the change, before the write or the registration returns. A notification that a batch window is holding is delivered by the thread that the clock closes that window on. Deliveries that a callback sets off by writing are drained by the thread already draining them, rather than nesting inside the callback.
 

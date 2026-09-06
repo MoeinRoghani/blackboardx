@@ -37,7 +37,10 @@ therefore the poll interval plus whatever is left of the region's batch
 window. Choose the interval and the idle limit together: a run whose idle
 limit is shorter than the poll interval can settle before the poll notices.
 An agent with an address on the run is woken by the replica taking the write
-and pays neither.
+and pays neither, unless the region it subscribes to carries a batch window.
+A window is held in a pending set, and a process holding no callable for an
+agent holds none, so a windowed region records the intent and leaves the
+sending to the relay rather than notifying on every write.
 
 Two replicas holding the same agent name both hold a callback, and both
 deliver. A notification carries no values, so a repeat costs the wire

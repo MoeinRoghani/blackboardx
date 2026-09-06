@@ -50,11 +50,13 @@ class TestAnAgentReachedByAddressCanAnswer:
 
     def test_the_relay_records_that_it_told_the_agent(self) -> None:
         store = InMemoryStore()
-        a_board(store).control.register_agent(
+        stopped = a_board(store)  # no transport, so the write leaves the row
+        stopped.control.register_agent(
             Agent(name="remote", subscribes_to=["findings"], address=ADDRESS)
         )
+        stopped.control.write("findings", "oom", writer="scanner")
+
         serving = a_board(store, reach=lambda address, n: None)
-        serving.control.write("findings", "oom", writer="scanner")
         assert serving.control.relay() == ["remote"]
 
         (progress,) = store.read_agents("incident-1")
@@ -62,12 +64,14 @@ class TestAnAgentReachedByAddressCanAnswer:
 
     def test_the_acknowledgment_is_accepted(self) -> None:
         store = InMemoryStore()
-        a_board(store).control.register_agent(
+        stopped = a_board(store)
+        stopped.control.register_agent(
             Agent(name="remote", subscribes_to=["findings"], address=ADDRESS)
         )
+        stopped.control.write("findings", "oom", writer="scanner")
+
         told: list[Notification] = []
         serving = a_board(store, reach=lambda address, n: told.append(n))
-        serving.control.write("findings", "oom", writer="scanner")
         serving.control.relay()
 
         (notification,) = told
@@ -83,11 +87,13 @@ class TestAnAgentReachedByAddressCanAnswer:
             raise RuntimeError("unreachable")
 
         store = InMemoryStore()
-        a_board(store).control.register_agent(
+        stopped = a_board(store)
+        stopped.control.register_agent(
             Agent(name="remote", subscribes_to=["findings"], address=ADDRESS)
         )
+        stopped.control.write("findings", "oom", writer="scanner")
+
         serving = a_board(store, reach=dies)
-        serving.control.write("findings", "oom", writer="scanner")
         assert serving.control.relay() == []
 
         assert len(store.unsent()) == 1
