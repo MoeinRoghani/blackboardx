@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.14.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.13.0...v0.14.0) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **control:** `BoardStore` gains `declare_agent`, and `read_agents` answers with `subscribes_to`, `writes_to` and `address` beside how far each agent got. `Agent` gains `address` and `notify` becomes optional, with a declaration naming neither refused. `create_model` and `attach_model` take `reach`. A store written against 0.14 no longer satisfies the protocol. The schema number rises to 5, and the compatibility number with it: a build older than this reads who should hear a write from its own roster, so on a board it did not create it records nothing.
+* **storage:** `close_run` removes each agent's progress and any unsent notification for that board, in the transaction that records the outcome. A store of its own must do the same, and `blackboard.conformance.ClosingConformance` checks it. Code reading `store.read_agents` after a run has closed finds nothing; the outcome carries the agents that did not finish.
+* **storage:** a store records `compat_version` beside `version`, and refuses a database only when that number exceeds the schema this build knows. A database written by 0.13 or earlier carries no such number and is refused when newer, as before. The column is added where missing, so there is nothing to run. `SCHEMA_VERSION` rises to 4 and `SCHEMA_COMPAT_VERSION` is 3, because schema 3 moved each agent's progress into the store and a build older than that cannot share a board.
+
+### Features
+
+* **control:** an agent is written to the run ([#280](https://github.com/MoeinRoghani/blackboardx/issues/280)) ([b0d090a](https://github.com/MoeinRoghani/blackboardx/commit/b0d090aefc1b2e6a16b27bfc96667e2a860f9c0d)), closes [#279](https://github.com/MoeinRoghani/blackboardx/issues/279)
+* **control:** the sweep relays as well as reaps ([#288](https://github.com/MoeinRoghani/blackboardx/issues/288)) ([d691f7b](https://github.com/MoeinRoghani/blackboardx/commit/d691f7b5ef405b0b708e123ad9d49d3514391514)), closes [#287](https://github.com/MoeinRoghani/blackboardx/issues/287)
+* **storage:** a schema says which builds can read it ([#268](https://github.com/MoeinRoghani/blackboardx/issues/268)) ([df328a7](https://github.com/MoeinRoghani/blackboardx/commit/df328a7b81b94f8bf49bc114821e57a32e08bfaf)), closes [#266](https://github.com/MoeinRoghani/blackboardx/issues/266)
+* **storage:** closing a run clears what it needed ([#278](https://github.com/MoeinRoghani/blackboardx/issues/278)) ([5131e70](https://github.com/MoeinRoghani/blackboardx/commit/5131e70bd27599e0ab5082434d599a6182ecf874)), closes [#277](https://github.com/MoeinRoghani/blackboardx/issues/277)
+* **storage:** take the DDL, or let the store run it ([#267](https://github.com/MoeinRoghani/blackboardx/issues/267)) ([f983634](https://github.com/MoeinRoghani/blackboardx/commit/f9836345835c2773a96621de32fa7e19edb0bc1f)), closes [#265](https://github.com/MoeinRoghani/blackboardx/issues/265)
+
+
+### Bug Fixes
+
+* **control:** a write notifies the agents it can reach ([#290](https://github.com/MoeinRoghani/blackboardx/issues/290)) ([46594ad](https://github.com/MoeinRoghani/blackboardx/commit/46594adb25e83631b0d7e4bdc0244dd8bef1a91f)), closes [#289](https://github.com/MoeinRoghani/blackboardx/issues/289)
+* **control:** an agent reached by address can answer ([#282](https://github.com/MoeinRoghani/blackboardx/issues/282)) ([dc0a7fe](https://github.com/MoeinRoghani/blackboardx/commit/dc0a7fe8f3b2b40b1fceef76b78177a84b7c2f5b)), closes [#281](https://github.com/MoeinRoghani/blackboardx/issues/281)
+* **delivery:** a lane clears the outbox row after it sends ([#286](https://github.com/MoeinRoghani/blackboardx/issues/286)) ([fefe246](https://github.com/MoeinRoghani/blackboardx/commit/fefe246733f97817e85c07fab5409647809a319d)), closes [#285](https://github.com/MoeinRoghani/blackboardx/issues/285)
+
+
+### Documentation
+
+* concepts that read in order ([#257](https://github.com/MoeinRoghani/blackboardx/issues/257)) ([11fae8c](https://github.com/MoeinRoghani/blackboardx/commit/11fae8cd86ed02050e712220a1b8fe69221c2d13)), closes [#256](https://github.com/MoeinRoghani/blackboardx/issues/256)
+* creating a board is not one of the seven operations ([#260](https://github.com/MoeinRoghani/blackboardx/issues/260)) ([cfd12c5](https://github.com/MoeinRoghani/blackboardx/commit/cfd12c56ed761f54a427791ded8ba9f60a8e495a)), closes [#259](https://github.com/MoeinRoghani/blackboardx/issues/259)
+* group the guides the way comparable libraries do ([#264](https://github.com/MoeinRoghani/blackboardx/issues/264)) ([cd7077a](https://github.com/MoeinRoghani/blackboardx/commit/cd7077ab431c8b8db020da5a09f9101503cd3114)), closes [#263](https://github.com/MoeinRoghani/blackboardx/issues/263)
+* guides with a shape a reader can follow ([#262](https://github.com/MoeinRoghani/blackboardx/issues/262)) ([e8fb6c9](https://github.com/MoeinRoghani/blackboardx/commit/e8fb6c9dcef655b22eeb377eca0ec6f8f895e3c4)), closes [#261](https://github.com/MoeinRoghani/blackboardx/issues/261)
+* the decision records that were never written ([#270](https://github.com/MoeinRoghani/blackboardx/issues/270)) ([8977d68](https://github.com/MoeinRoghani/blackboardx/commit/8977d68d55fa406be32446cb3ecf81101ceb7fd9)), closes [#269](https://github.com/MoeinRoghani/blackboardx/issues/269)
+* the sweep against the corrected model ([#284](https://github.com/MoeinRoghani/blackboardx/issues/284)) ([b5871a3](https://github.com/MoeinRoghani/blackboardx/commit/b5871a34f7ecf64cc42b1d418d4bf947df90431d)), closes [#283](https://github.com/MoeinRoghani/blackboardx/issues/283)
+* the tables that stayed in the blueprint ([#272](https://github.com/MoeinRoghani/blackboardx/issues/272)) ([0ce8564](https://github.com/MoeinRoghani/blackboardx/commit/0ce8564b218fc7ae0573b961a48de6b3433c626c)), closes [#271](https://github.com/MoeinRoghani/blackboardx/issues/271)
+* two records that decided the wrong thing ([#274](https://github.com/MoeinRoghani/blackboardx/issues/274)) ([25d7f8d](https://github.com/MoeinRoghani/blackboardx/commit/25d7f8d442e0e6508095990337ce67927636ce3d)), closes [#273](https://github.com/MoeinRoghani/blackboardx/issues/273)
+
 ## [0.13.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.12.0...v0.13.0) (2026-09-05)
 
 
