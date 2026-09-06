@@ -13,7 +13,7 @@ board?
 | Where the address lives | The run, so every process reads it | The lane, so this process alone has it |
 | Which process can deliver | Any that was given the transport | The one that opened the lane |
 | When the writer's thread is free | After the send | At once, because the send is queued |
-| Retries | The relay, on its next pass | The lane, four attempts by default |
+| Retries | The relay, on its next pass | The lane, four attempts by default, then the relay |
 | To close | Nothing | Each lane, and the notifier |
 
 Deployed behind several replicas, use `reach`. A run inside one process can use
@@ -65,6 +65,19 @@ retries, on the next pass of `Control.relay`.
 `notifier.to(url)` returns a lane, which is the `notify` callable an `Agent`
 takes. It queues the notification and returns, so the agent that wrote is not
 made to wait, and it sends on a worker of its own with the retry policy below.
+
+A notifier whose lanes are used takes the store:
+
+```python
+with HttpNotifier(store=store) as notifier:
+    ...
+```
+
+A lane returns before the notification is on the wire, so the control component
+cannot know the send happened, and the lane is what records it. Without the
+store the row is cleared when the lane accepts the notification, and one the
+lane never sends is lost. `reach` needs no store, because it sends where it is
+called and what marks the row can see that it returned.
 
 ```python
 Agent(
@@ -184,10 +197,15 @@ The queue is in memory. A process that stops loses whatever had not been
 sent, and `close` reports what it abandons through `on_failure`.
 
 The intent is not lost with it. A write records one row for each agent that
-should hear of it, in the same transaction as the contribution, and
-`Control.relay` sends what nothing has sent yet. So a notification abandoned
-here is delivered by whichever process runs the relay next, including a
-different replica.
+should hear of it, in the same transaction as the contribution, and the lane
+clears that row only once it has sent. So a notification abandoned here is
+still owed, and `Control.relay` delivers it, from this process when it comes
+back or from any other replica that can reach the agent.
+
+That is what the store on the notifier buys, and the reason to pass it. A
+notifier without one leaves the marking to the control component, which sees
+the lane accept the notification and cannot see what became of it, so a
+notification lost in the queue is lost outright.
 
 Delivery is therefore at least once. A row is marked only after the send
 returns, so a process that sends and stops before marking sends again, and a

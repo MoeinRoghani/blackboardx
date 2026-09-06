@@ -1641,11 +1641,16 @@ class Control:
                 with suppress(Exception):
                     notify(notification)
                     sent = True
-                if sent:
+                if sent and not getattr(notify, "marks_sent", False):
                     # Marked after the send, never before. A process that
                     # sends and stops before marking sends again, which is
                     # at least once; marking first would be at most once and
                     # would lose exactly what the outbox exists to keep.
+                    #
+                    # A callable that answers ``marks_sent`` returns before
+                    # the notification is on the wire and records the send
+                    # where it happens, so marking here would be marking
+                    # something that had only been accepted.
                     with suppress(Exception):
                         self._store.mark_sent(
                             self._board_id,

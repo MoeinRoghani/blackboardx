@@ -77,6 +77,30 @@ The schema number rises to 5, and so does the compatibility number: a build
 older than this reads who should hear a write from its own roster, so on a
 board it did not create it records nothing.
 
+### A lane clears its own outbox row
+
+`HttpNotifier` takes `store`. Pass it wherever `to` is used:
+
+```python
+with HttpNotifier(store=store) as notifier:
+    ...
+```
+
+A lane queues the notification and returns, so the call comes back before
+anything is on the wire. The control component was marking the outbox row at
+that moment, which meant a notification a lane accepted and never sent was
+gone from the record as well as from memory. A rolling update lost every
+notification queued at that instant, which is the case the outbox was built
+for.
+
+A lane whose notifier has the store now marks the row itself, after the
+transport returns, and the control component leaves it alone. What the queue
+was still holding is still owed, and `Control.relay` delivers it.
+
+A notifier given no store behaves exactly as it did, so nothing breaks by
+omission. `reach` is unaffected: it sends on the calling thread, so what marks
+the row can see that the send returned.
+
 ### Closing a run clears what only an open run needed
 
 The write that records the outcome now also removes, in the same
