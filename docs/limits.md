@@ -11,7 +11,7 @@ The record is durable and so is the run. What is not is the callback.
 | | What, and where it lives |
 | --- | --- |
 | **Run state** | Regions, contributions, premise values and versions, the sequence, idempotency keys, the run's two deadlines and its outcome, and how far each agent has been notified and has answered. All of it is in the store you chose, held in memory by `InMemoryStore` and in the database by a deployment adapter, through one code path either way. None of it is split between the two. |
-| **Configuration** | The regions, the agent roster, the admission rule, the termination predicate, the limits and the clock. The application hands these to every process, and no store holds any of them. The audit belongs here too, and is deprecated. |
+| **Configuration** | The regions, the agent roster, the admission rule, the termination predicate, the limits and the clock. The application hands these to every process, and no store holds any of them. |
 | **In flight** | Notifications `HttpNotifier` has queued but not yet sent. |
 
 A write is served by any process. It lands on the record, pushes the idle

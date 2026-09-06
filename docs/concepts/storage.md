@@ -31,10 +31,20 @@ another with collections and a conditional update, and
 [the conformance suite](#an-adapter-of-your-own) holds both to the same
 behaviour.
 
-What a store does **not** hold is the configuration an application supplies:
-the regions it declares, the agents it names, the admission rule, the
-termination predicate, the limits and the clock. Those are arguments to
-[`create_model`](run.md), given to every process that serves the board.
+Section 1.2 above divides the data by what it is for. This divides it by who
+supplies it, and it is the division that decides what a store must hold.
+
+| | What | Where |
+| --- | --- | --- |
+| **Run state** | The sequence, contributions, premise values and versions, idempotency keys, the two deadlines, the outcome, each agent's two watermarks, and what a write recorded and nothing has sent | The store, wholly. `InMemoryStore` puts it in memory and a deployment adapter in the database, through one code path either way. |
+| **Configuration** | `regions`, the `agents` roster, `admission_rule`, `termination_predicate`, `limits`, `clock`. Two of those are callables, which is the whole reason the category is separate. | Supplied to [`create_model`](run.md) on every construction, and stored by nothing. |
+
+Run state is never split between a store and a process. A question of the form
+"does the process still hold this" is malformed; ask which of the two rows it
+is in.
+
+The agent roster is configuration. Every replica is given it because every
+replica is given the same configuration, the way it is given the same image.
 
 What is on the board and what a region is are [the board](board.md). What
 decides during a run is [the control component](control.md).

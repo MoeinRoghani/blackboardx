@@ -2,11 +2,17 @@
 
 Three things end a run, and the outcome names which of the three it was.
 
-| What ends it | Outcome | Names unfinished agents |
-| --- | --- | --- |
-| Nothing has happened for the idle limit | `Settled` | Yes |
-| The wall clock limit passed | `WallClockExpired` | Yes |
-| The application called `abort` | `Aborted` | No |
+| | Idle limit | Wall clock | `abort` |
+| --- | --- | --- | --- |
+| **Outcome** | `Settled` | `WallClockExpired` | `Aborted` |
+| **Deadline lives in** | The store, pushed out on every event | The store, fixed when the run is created | Nothing, it is a call |
+| **Who notices** | Any replica on any access, or the reaper | Same | The replica handling the call |
+| **What is checked** | `now > idle_deadline` | `now > wall_deadline` | Nothing to check |
+| **Predicate asked** | Yes, and `CONTINUE` pushes the deadline out again | **No**, it closes regardless | No |
+| **Names unfinished agents** | Yes | Yes | **No** |
+
+Whoever wins the compare and set on the outcome closes it, so a run closes
+once however many callers reach a deadline together.
 
 The first three sections take those in turn. The rest is who does the closing,
 how the outcome is read, and what a closed run still answers.

@@ -12,6 +12,20 @@ What decides during the run is [the control component](control.md). What the
 run writes to is [the board](board.md), and where that is kept is
 [storage](storage.md).
 
+## One create, many operations, one outcome
+
+There is no opening and no handle to keep. The whole surface is three things.
+
+| | What it is | How many |
+| --- | --- | --- |
+| **create** | `create_model` | Once per board. It converges, so a process does not have to know whether it is first. |
+| **operations** | `write`, `set_premise`, the four reads, `ack` | As many as happen. Any replica serves any of them. |
+| **close** | The outcome row | Once. Not a ceremony, just a write, from the check on access, the reaper, or `abort`. |
+
+`Model` and `Control` bind a board identifier and the configuration so a
+caller does not repeat them. They are convenience over those operations, not a
+connection and not a lease: see [the board is a handle](service.md#serving-a-board).
+
 ## Creating a model
 
 Six things configure a model. Two more say which board the run opens and where the record is kept.
