@@ -4,7 +4,7 @@ Date: 2026-09-05
 
 ## Status
 
-Accepted. Completes what ADR 0024 began, and supersedes what ADR 0018 recorded about a cursor and a notification identifier starting again.
+Accepted, except on the agent roster. ADR 0032 supersedes what this record decided about the roster being configuration, and about calling `register_agent` at run time being a mistake. Everything else here stands. This record completes what ADR 0024 began, and supersedes what ADR 0018 recorded about a cursor and a notification identifier starting again.
 
 ## Context
 

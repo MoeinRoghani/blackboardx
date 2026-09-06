@@ -44,7 +44,9 @@ Replicas are identical, so each is given the same configuration and each reads t
 
 `Control.notify_due` covers what the write path cannot. It reads what has landed since each agent last answered and delivers it, so a change taken while a replica was starting, or one whose delivery was lost, still reaches the agent. A run inside one process finds nothing to do there. Schedule it beside `close_expired`.
 
-An application that calls `register_agent` at run time on one replica has told one replica something the others were not told. That is the same mistake as running replicas with different configuration, and the library does not repair it: put the agent in the roster every replica loads.
+A board starts with its agents, named to `create_model`, and whatever serves that board constructs it with the same roster. Where the application gets that roster is its own affair: hardcoded, read from its own table, or carried in the request that triggered the run. This library takes no view and owns no registry.
+
+`register_agent` covers the one case a roster at creation cannot: an agent joining a run already under way. That agent is known to the process it registered with, so that process is the one that wakes it, and it is the process to keep serving that board while the agent is in it.
 
 Reads are not bound that way. `BoardService` takes the store as well as the registry, and answers the four `GET` operations from the record whenever the replica holds no run for the board, so any replica holding the store answers a read for any board in that store. A board that the store never held answers 404 in both cases, so a mistyped identifier is not answered with an empty board.
 
