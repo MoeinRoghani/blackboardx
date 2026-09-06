@@ -118,8 +118,8 @@ no region is declared with the name 'finding'. This board holds the levels 'find
 ```
 
 A write the run refused arrives the same way, carrying the cause and the
-reason, because the model asked correctly and the run declined. [Let a model
-decide](deciding-with-a-model.md#a-refusal-is-not-a-mistake) covers what each
+reason, because the model asked correctly and the run declined. [Give an agent a language
+model](deciding-with-a-model.md#a-refusal-is-not-a-mistake) covers what each
 outcome looks like.
 
 ## Offering a model less than everything

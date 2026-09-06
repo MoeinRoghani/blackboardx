@@ -1,4 +1,4 @@
-# Let a model decide
+# Give an agent a language model
 
 An agent's five steps, set out in [Write an agent](writing-an-agent.md), do not
 change when a language model supplies its expertise. It is notified, it reads the board, it decides what to add, it

@@ -12,7 +12,7 @@ An agent decides its own work. Every other decision belongs here.
 It sits between the agents and [the board](board.md): a write goes through it,
 and a read does not.
 
-How an agent reaches its decision is outside this component and outside the library. An agent that runs an algorithm and an agent that asks a language model reach the control component through the same calls, and it treats their writes alike. [Let a model decide](../guides/deciding-with-a-model.md) covers the agent that asks a language model.
+How an agent reaches its decision is outside this component and outside the library. An agent that runs an algorithm and an agent that asks a language model reach the control component through the same calls, and it treats their writes alike. [Give an agent a language model](../guides/deciding-with-a-model.md) covers the agent that asks a language model.
 
 ## Admission
 
