@@ -140,6 +140,21 @@ class Bound:
     def read_agents(self) -> list[AgentProgress]:
         return self.store.read_agents(self.board_id)
 
+    def declare_agent(
+        self,
+        agent: str,
+        subscribes_to: frozenset[str] | None = None,
+        writes_to: frozenset[str] | None = None,
+        address: str | None = None,
+    ) -> None:
+        self.store.declare_agent(
+            self.board_id,
+            agent,
+            subscribes_to=subscribes_to,
+            writes_to=writes_to,
+            address=address,
+        )
+
     def mark_notified(self, agent: str, through: int) -> None:
         self.store.mark_notified(self.board_id, agent, through=through)
 
@@ -975,6 +990,52 @@ class AgentConformance:
 
     def test_a_board_that_notified_nobody_reads_as_empty(self, ready: Bound) -> None:
         assert ready.read_agents() == []
+
+    def test_declaring_an_agent_records_what_it_wants(self, ready: Bound) -> None:
+        ready.declare_agent(
+            "triage",
+            subscribes_to=frozenset({"application"}),
+            writes_to=frozenset({"application"}),
+            address="https://triage.internal/notify",
+        )
+        (declared,) = ready.read_agents()
+        assert declared.subscribes_to == frozenset({"application"})
+        assert declared.writes_to == frozenset({"application"})
+        assert declared.address == "https://triage.internal/notify"
+
+    def test_an_agent_that_lives_in_a_process_names_no_address(
+        self, ready: Bound
+    ) -> None:
+        ready.declare_agent("triage", subscribes_to=frozenset({"application"}))
+        (declared,) = ready.read_agents()
+        assert declared.address is None
+        assert declared.writes_to is None
+
+    def test_declaring_leaves_how_far_it_got_alone(self, ready: Bound) -> None:
+        ready.declare_agent("triage", subscribes_to=frozenset({"application"}))
+        ready.mark_notified("triage", 4)
+        ready.acknowledge("triage", 2)
+        ready.declare_agent("triage", subscribes_to=frozenset({"platform"}))
+        (declared,) = ready.read_agents()
+        assert (declared.notified_through, declared.acknowledged_through) == (4, 2)
+        assert declared.subscribes_to == frozenset({"platform"})
+
+    def test_declaring_again_replaces_what_it_wants(self, ready: Bound) -> None:
+        """An agent that restarted and changed its mind says so."""
+        ready.declare_agent("triage", subscribes_to=frozenset({"application"}))
+        ready.declare_agent("triage", address="https://moved.internal/notify")
+        (declared,) = ready.read_agents()
+        assert declared.subscribes_to is None
+        assert declared.address == "https://moved.internal/notify"
+
+    def test_notifying_an_agent_that_declared_nothing_still_works(
+        self, ready: Bound
+    ) -> None:
+        """The two are separate rows of one entry, written by separate calls."""
+        ready.mark_notified("stranger", 3)
+        (progress,) = ready.read_agents()
+        assert progress.notified_through == 3
+        assert progress.subscribes_to is None
 
     def test_notifying_an_unknown_agent_creates_its_entry(self, ready: Bound) -> None:
         ready.mark_notified("triage", 4)

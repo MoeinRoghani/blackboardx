@@ -23,7 +23,7 @@ deploying them.
 | Retention | Deciding when a finished run's record goes | `store.delete`, when you call it |
 | Agents | Independent deployments | no |
 
-The package ships `PostgresStore` and `MongoStore` for a deployment and `SqliteStore` for one machine, all satisfying the `BoardStore` protocol. Against any other database the eighteen methods are yours to write: four read the record, three write to it, one removes a board, five hold the run, three hold how far each agent has been notified and has answered, and two hold what a write recorded and nothing has sent. Every rule they are held to maps onto ordinary primitives. [Storage](storage.md) covers what each has to guarantee.
+The package ships `PostgresStore` and `MongoStore` for a deployment and `SqliteStore` for one machine, all satisfying the `BoardStore` protocol. Against any other database the nineteen methods are yours to write: four read the record, three write to it, one removes a board, five hold the run, four hold its agents and how far each has got, and two hold what a write recorded and nothing has sent. Every rule they are held to maps onto ordinary primitives. [Storage](storage.md) covers what each has to guarantee.
 
 ## What is durable and what is not
 

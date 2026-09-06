@@ -124,6 +124,12 @@ CREATE TABLE IF NOT EXISTS blackboard_agent_progress (
     acknowledged_through BIGINT  NOT NULL DEFAULT 0,
     PRIMARY KEY (board_id, agent)
 );
+ALTER TABLE blackboard_agent_progress
+    ADD COLUMN IF NOT EXISTS subscribes_to JSONB;
+ALTER TABLE blackboard_agent_progress
+    ADD COLUMN IF NOT EXISTS writes_to JSONB;
+ALTER TABLE blackboard_agent_progress
+    ADD COLUMN IF NOT EXISTS address TEXT;
 CREATE INDEX IF NOT EXISTS blackboard_run_state_open_by_deadline
     ON blackboard_run_state (idle_deadline)
     WHERE closed_as IS NULL;
@@ -617,14 +623,52 @@ class PostgresStore:
         self._checked()
         with self._pool.connection() as connection:
             rows = connection.execute(
-                "SELECT agent, notified_through, acknowledged_through "
+                "SELECT agent, notified_through, acknowledged_through, "
+                "subscribes_to, writes_to, address "
                 "FROM blackboard_agent_progress WHERE board_id = %s ORDER BY agent",
                 (board_id,),
             ).fetchall()
         return [
-            AgentProgress(agent=r[0], notified_through=r[1], acknowledged_through=r[2])
+            AgentProgress(
+                agent=r[0],
+                notified_through=r[1],
+                acknowledged_through=r[2],
+                subscribes_to=None if r[3] is None else frozenset(r[3]),
+                writes_to=None if r[4] is None else frozenset(r[4]),
+                address=r[5],
+            )
             for r in rows
         ]
+
+    def declare_agent(
+        self,
+        board_id: str,
+        agent: str,
+        *,
+        subscribes_to: frozenset[str] | None = None,
+        writes_to: frozenset[str] | None = None,
+        address: str | None = None,
+    ) -> None:
+        self._checked()
+        with self._pool.connection() as connection, connection.transaction():
+            connection.execute(
+                "INSERT INTO blackboard_agent_progress "
+                "(board_id, agent, notified_through, acknowledged_through, "
+                "subscribes_to, writes_to, address) "
+                "VALUES (%s, %s, 0, 0, %s::jsonb, %s::jsonb, %s) "
+                "ON CONFLICT (board_id, agent) DO UPDATE SET "
+                "subscribes_to = EXCLUDED.subscribes_to, "
+                "writes_to = EXCLUDED.writes_to, address = EXCLUDED.address",
+                (
+                    board_id,
+                    agent,
+                    None
+                    if subscribes_to is None
+                    else json.dumps(sorted(subscribes_to)),
+                    None if writes_to is None else json.dumps(sorted(writes_to)),
+                    address,
+                ),
+            )
 
     def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
         self._checked()

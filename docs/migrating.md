@@ -35,6 +35,42 @@ version.
 | `RunClosed` | `store.read_run` answers the outcome, and the run closing is logged |
 | `AuditEvent` | Nothing. There is no audit. |
 
+## 0.14 to 0.15
+
+### An agent is written to the run
+
+A board starts with its agents and `register_agent` adds one mid-run. Both
+now write the same row: the name, what wakes it, what it may write to, and
+where it is reached. The callable is written nowhere, because a function is
+not data.
+
+That is what lets any replica serve any request. Which agents a write should
+wake is read from the run rather than from the roster the serving process
+happens to hold, so a replica that never saw an agent declared still records
+that it is owed a notification.
+
+`Agent` gains `address`, and `notify` becomes optional. A declaration carries
+at least one of the two, and naming neither raises `ValueError`.
+
+| Declared with | Means |
+| --- | --- |
+| `notify` | An agent in this process, as before. Nothing changes. |
+| `address` | An agent reached over the wire by any process holding a transport. |
+| Both | The address is on the record, and the callable is the faster path where it is present. |
+
+`create_model` and `attach_model` take `reach`, a transport that turns an
+address into a delivery. `HttpNotifier.reach` is one. A process without one
+reaches the agents it holds callables for and no others, which is what it
+did before.
+
+A store of its own implements `declare_agent` and returns the three new
+fields from `read_agents`. `blackboard.conformance.AgentConformance` checks
+them.
+
+The schema number rises to 5, and so does the compatibility number: a build
+older than this reads who should hear a write from its own roster, so on a
+board it did not create it records nothing.
+
 ## 0.13 to 0.14
 
 ### The schema carries a compatibility number

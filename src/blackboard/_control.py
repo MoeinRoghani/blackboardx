@@ -261,6 +261,31 @@ class BoardStore(Protocol):
         """
         ...
 
+    def declare_agent(
+        self,
+        board_id: str,
+        agent: str,
+        *,
+        subscribes_to: frozenset[str] | None = None,
+        writes_to: frozenset[str] | None = None,
+        address: str | None = None,
+    ) -> None:
+        """Records that this agent is part of this run, and what it wants.
+
+        Called for every agent a board starts with and for every one that
+        joins a run already under way, because those are two doors to one
+        fact. Declaring the same agent again replaces what it declared, which
+        is what an agent that restarted and changed its mind needs.
+
+        ``address`` is where the agent is reached, and is ``None`` for one
+        that lives in the process that declared it. No adapter holds the
+        callable that reaches it; that is not data.
+
+        Creates the entry where none exists, leaving how far the agent has
+        got where it was.
+        """
+        ...
+
     def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
         """Records that the agent has been told everything through ``through``.
 
@@ -422,6 +447,14 @@ class Agent:
     ``writes_to`` names the levels the agent may write to, and omitting it
     permits every level.
 
+    ``address`` is where the agent is reached, and is written to the run so
+    that any process serving the board knows it. ``notify`` is how it is
+    reached from this process, and is written nowhere, because a function is
+    not data. A declaration carries at least one of the two: ``notify`` alone
+    is an agent living in this process, ``address`` alone is one reached over
+    the wire, and both is an address on the record with a faster path where
+    the callable is present.
+
     The control component invokes ``notify`` to deliver a notification,
     holding no lock, on the thread that closed the batch window or, when
     deliveries chain, on a thread already draining them; two notifications
@@ -438,15 +471,21 @@ class Agent:
     """
 
     name: str
-    notify: Callable[[Notification], None]
+    notify: Callable[[Notification], None] | None = None
     subscribes_to: Iterable[str] | None = None
     writes_to: Iterable[str] | None = None
+    address: str | None = None
 
     def __post_init__(self) -> None:
         for field_name in ("subscribes_to", "writes_to"):
             given = getattr(self, field_name)
             if given is not None and not isinstance(given, frozenset):
                 object.__setattr__(self, field_name, frozenset(given))
+        if self.notify is None and self.address is None:
+            raise ValueError(
+                f"{self.name!r} names neither notify nor address, so nothing"
+                " can reach it"
+            )
 
 
 class DuplicateAgentError(BlackboardError):
@@ -566,6 +605,19 @@ class _AgentState:
     window_call: ScheduledCall | None = None
     window_due: datetime | None = None
     window_generation: int = 0
+
+
+def _wants(
+    subscribes_to: frozenset[str] | None, region: str, kind: _RegionKind
+) -> bool:
+    """Whether a change to this region wakes an agent that wants these.
+
+    The same rule as `_subscribed`, against what the run records rather than
+    against a declaration this process happens to hold.
+    """
+    if subscribes_to is not None:
+        return region in subscribes_to
+    return kind is _RegionKind.PREMISE
 
 
 def _subscribed(state: _AgentState, region: str, kind: _RegionKind) -> bool:
@@ -756,6 +808,7 @@ class Control:
         clock: Clock,
         adopt: bool = False,
         on_closed: Callable[[RunOutcome], None] | None = None,
+        reach: Callable[[str, Notification], None] | None = None,
     ) -> None:
         resolved = limits
         self._board_id = board_id
@@ -773,6 +826,7 @@ class Control:
         self._closing: list[RunOutcome] = []
         self._delivery_queue: deque[_Delivery] = deque()
         self._delivering = threading.local()
+        self._reach = reach
         self._termination_predicate = termination_predicate
         self._limits = resolved
         self._outcome: RunOutcome | None = None
@@ -909,6 +963,21 @@ class Control:
                     if progress.agent == agent.name
                 ),
                 0,
+            )
+            # An agent named at creation and one joining mid-run are two
+            # doors to one fact, so both leave the same row behind.
+            self._store.declare_agent(
+                self._board_id,
+                agent.name,
+                subscribes_to=(
+                    None
+                    if agent.subscribes_to is None
+                    else frozenset(agent.subscribes_to)
+                ),
+                writes_to=(
+                    None if agent.writes_to is None else frozenset(agent.writes_to)
+                ),
+                address=agent.address,
             )
             state = _AgentState(
                 declaration=agent,
@@ -1130,16 +1199,21 @@ class Control:
         """Sends what a write recorded and nothing has sent, and names them.
 
         A process that took a write and stopped before delivering left the
-        intent on the record. This sends it. Only rows for agents registered
-        here are touched, because a process can reach no other agent.
+        intent on the record. This sends it.
+
+        An agent this process holds a callable for is reached through it. One
+        it does not is reached through the address the run records, if this
+        process was given a transport; without one, such a row is left for a
+        process that has either.
 
         A send that raises leaves the row for the next pass, so nothing is
         marked that was not sent. Call it on whatever schedule suits the
         deployment, beside :func:`close_expired`.
         """
+        sent = self._relay_by_address()
         with self._lock:
             if self._outcome is not None or not self._agents:
-                return []
+                return sent
             owed = sorted(
                 {
                     row.agent
@@ -1148,10 +1222,10 @@ class Control:
                 }
             )
             if not owed:
-                return []
+                return sent
             run = self._store.read_run(self._board_id)
             if run is None:
-                return []
+                return sent
             # The row says an agent is owed something and not which regions.
             # The record says which: everything since that agent's answer,
             # filtered by what it subscribes to. So a resent notification
@@ -1164,7 +1238,7 @@ class Control:
                 if delivery is not None:
                     deliveries.append(delivery)
         self._deliver(deliveries)
-        return [
+        return sent + [
             notification.agent
             for _, notification in deliveries
             if not any(
@@ -1172,6 +1246,58 @@ class Control:
                 for row in self._store.unsent(_TAIL)
             )
         ]
+
+    def _relay_by_address(self) -> list[str]:
+        # What this process holds no callable for. Everything the notification
+        # needs is on the record, so a process that never saw the agent
+        # declared can still reach it.
+        if self._reach is None:
+            return []
+        rows = [
+            row
+            for row in self._store.unsent(_TAIL)
+            if row.board_id == self._board_id and row.agent not in self._agents
+        ]
+        if not rows:
+            return []
+        declared = {a.agent: a for a in self._store.read_agents(self._board_id)}
+        board = self._store.read_board(self._board_id, limit=_TAIL)
+        last = board[-1].sequence if board else 0
+        sent: list[str] = []
+        for name in sorted({row.agent for row in rows}):
+            agent = declared.get(name)
+            if agent is None or agent.address is None:
+                continue
+            regions = frozenset(
+                change.region
+                for change in board
+                if change.sequence > agent.acknowledged_through
+                and change.writer != name
+                and self._kinds.get(change.region) is not None
+                and _wants(
+                    agent.subscribes_to, change.region, self._kinds[change.region]
+                )
+            )
+            if not regions:
+                continue
+            notification = Notification(
+                notification_id=NotificationId(last),
+                board_id=self._board_id,
+                agent=name,
+                from_sequence=agent.acknowledged_through + 1,
+                to_sequence=last,
+                regions=regions,
+            )
+            try:
+                self._reach(agent.address, notification)
+            except Exception:
+                logger.warning(
+                    "could not reach %s at %s", name, agent.address, exc_info=True
+                )
+                continue
+            self._store.mark_sent(self._board_id, name, through=last)
+            sent.append(name)
+        return sent
 
     def notify_due(self) -> list[str]:
         """Delivers what this process's agents are owed, and names them.
@@ -1267,16 +1393,18 @@ class Control:
                 )
 
     def _who_hears(self, region: str, writer: str) -> frozenset[str]:
-        # Callers hold self._lock. The agents this write should wake, which
-        # the store records beside the contribution so the intent to notify
-        # cannot be lost separately from the write that caused it.
+        # Callers hold self._lock. The agents this write should wake, read
+        # from the run rather than from this process's own roster, so a
+        # process that holds no agent still records that one is owed. The
+        # store records the answer beside the contribution, so the intent to
+        # notify cannot be lost separately from the write that caused it.
         kind = self._kinds.get(region)
         if kind is None:
             return frozenset()
         return frozenset(
-            name
-            for name, state in self._agents.items()
-            if name != writer and _subscribed(state, region, kind)
+            declared.agent
+            for declared in self._store.read_agents(self._board_id)
+            if declared.agent != writer and _wants(declared.subscribes_to, region, kind)
         )
 
     def _note_region_change(self, region: str, writer: str) -> list[_Delivery]:
@@ -1308,6 +1436,12 @@ class Control:
         # a change is due; arms or re-arms the batch window when the
         # earliest due instant is ahead.
         if not state.pending:
+            return None
+        if state.declaration.notify is None:
+            # Declared with an address and no callable, so this process
+            # cannot deliver in line. The row a write recorded is what
+            # reaches it, through whichever process holds a transport.
+            state.pending.clear()
             return None
         if self._last_sequence <= state.acknowledged_through:
             # Everything on the board is behind this agent's answer, so the
@@ -1423,6 +1557,7 @@ class Control:
             self._board_id, state.declaration.name, through=self._last_sequence
         )
         state.notified_through = max(state.notified_through, self._last_sequence)
+        assert state.declaration.notify is not None  # guarded before dispatch
         return (state.declaration.notify, notification)
 
     def _close_window(self, agent_name: str, generation: int) -> None:

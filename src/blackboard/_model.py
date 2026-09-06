@@ -39,6 +39,7 @@ from blackboard._control import (
     BoardStore,
     Control,
     DuplicateAgentError,
+    Notification,
     PremiseError,
     RunClosedError,
     RunLimits,
@@ -90,6 +91,7 @@ def create_model(
     clock: Clock | None = None,
     on_open: Callable[[Model], None] | None = None,
     on_closed: Callable[[RunOutcome], None] | None = None,
+    reach: Callable[[str, Notification], None] | None = None,
 ) -> Model:
     """Opens a run and returns the model.
 
@@ -142,6 +144,7 @@ def create_model(
         store=store,
         clock=clock if clock is not None else SystemClock(),
         on_closed=on_closed,
+        reach=reach,
     )
     model = Model(board_id=board_id, reader=control.reader, control=control)
     # The wall clock can expire while the run is opening, in which case the
@@ -177,6 +180,7 @@ def attach_model(
     clock: Clock | None = None,
     on_open: Callable[[Model], None] | None = None,
     on_closed: Callable[[RunOutcome], None] | None = None,
+    reach: Callable[[str, Notification], None] | None = None,
 ) -> Model:
     """Opens a run over a board that already holds a record.
 
@@ -223,6 +227,7 @@ def attach_model(
         clock=clock if clock is not None else SystemClock(),
         adopt=True,
         on_closed=on_closed,
+        reach=reach,
     )
     model = Model(board_id=board_id, reader=control.reader, control=control)
     try:
