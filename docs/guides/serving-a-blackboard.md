@@ -150,8 +150,8 @@ library's.
 
 There are seven, and none creates a board. `create_model` is a function you
 call, not an operation an agent calls, and it could not be one: its arguments
-include the admission rule, the termination predicate and each agent's
-`notify` callback, and a request body carries no callable.
+include the admission rule and the termination predicate, and a request body
+carries no callable.
 
 So a service that creates boards on request mounts an endpoint of its own,
 receives whatever its callers send, and calls `create_model` with the rules
@@ -165,12 +165,28 @@ def open_incident(body: dict) -> dict:
         store=store,
         regions=REGIONS_FOR[body["kind"]],
         premises={"severity": body["severity"]},
+        agents=[
+            Agent(
+                name=a["name"],
+                subscribes_to=a["subscribes_to"],
+                address=a["address"],
+            )
+            for a in body["agents"]
+        ],
         limits=LIMITS,
         admission_rule=no_duplicate_findings,
         termination_predicate=until_a_cause_is_agreed,
+        reach=notifier.reach,
     )
     return {"board_id": model.board_id}
 ```
+
+The agents can come from the request because what an agent is made of is
+data: its name, what wakes it, what it may write to, and where it is reached.
+All four are written to the run, so the replica that took this request is not
+the one that has to serve the next. The callable is the one part that cannot
+arrive this way, which is why `reach` is given here and comes from the
+process.
 
 The regions, the rules and the limits come from the application, whether
 hardcoded, chosen by a template per kind of work, or looked up. Which of those

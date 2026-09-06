@@ -28,7 +28,7 @@ connection and not a lease: see [the board is a handle](service.md#serving-a-boa
 
 ## Creating a model
 
-Six things configure a model. Two more say which board the run opens and where the record is kept.
+Six things make a model. Two more say which board the run opens and where the record is kept.
 
 ```python
 model = create_model(
@@ -70,6 +70,8 @@ model.control.register_agent(Agent(name="netops", notify=deliver))
 ```
 
 That agent is woken the same way, so it hears about everything written before it arrived.
+
+Both doors leave the same row on the run: the name, what wakes it, what it may write to, and where it is reached. They differ in when and not in what, so which agents a write should wake is read from the run and a replica that never saw an agent declared still records that it is owed a notification.
 
 Registering a name that is already registered replaces that agent, which is how an agent that restarted or moved rejoins. [Write an agent](../guides/writing-an-agent.md#coming-back-after-a-restart) covers what survives.
 

@@ -1,10 +1,15 @@
 """Creating a model.
 
-Six things configure a model: region declarations, opening premise values,
-the agents it starts with, an admission rule, a termination predicate, and
-run limits. A seventh argument, the board, says where the record is kept
-rather than configuring what the model is. The clock is dependency
-injection rather than configuration.
+Six things make a model: region declarations, opening premise values, the
+agents it starts with, an admission rule, a termination predicate, and run
+limits. A seventh argument, the store, says where the record is kept rather
+than what the model is. The clock is dependency injection.
+
+Where each of those lands is decided by two questions rather than by the
+argument list. Is it data, and does it outlive the run? The regions and the
+opening values are the record, the agents and the limits are the run, and
+the rule, the predicate and the clock are written nowhere, because a
+function is not data.
 
 Where the record is kept is stated, never defaulted. An application names
 the board it wants, so none reaches deployment holding its record in
@@ -197,14 +202,16 @@ def attach_model(
     every write is rejected. A name or a kind that disagrees with the record
     is refused naming the region.
 
-    What the record holds carries over: the regions, the contributions, the
-    premise values and their versions, the sequence, the idempotency keys,
-    and how far each agent has been notified and has answered. What the
-    process held does not: the agent registry and the audit.
+    The run carries over with it: its agents, what wakes each and where it
+    is reached, and how far each has been told and has answered. What does
+    not carry over is the callables, which no store holds. An agent this
+    process is to reach in line is declared here again with its callback;
+    one the run records an address for is reached by the transport given as
+    ``reach``.
 
-    So an agent registered against the attached run resumes from what it
+    So an agent declared against the attached run resumes from what it
     answered rather than being told the whole board again, and an agent that
-    had answered everything is registered without being woken.
+    had answered everything is declared without being woken.
     """
     warnings.warn(
         "attach_model is deprecated and may be removed on or after 2026-12-05. "

@@ -2,11 +2,22 @@
 
 An agent that runs in the same process as the blackboard is reached by a
 function call. An agent that runs as its own service is reached over the
-network, and the control component knows nothing about networks: it calls
-`Agent.notify` and expects that call to return.
+network, and the control component knows nothing about networks.
 
-`HttpNotifier` supplies that callable. It puts the notification on a queue and
-returns, and a worker sends the notification.
+`HttpNotifier` is what knows. It offers the same sending two ways, and which
+one to use is decided by one question: does more than one process serve this
+board?
+
+| | `reach`, with an `address` on the agent | `to`, as the agent's `notify` |
+| --- | --- | --- |
+| Where the address lives | The run, so every process reads it | The lane, so this process alone has it |
+| Which process can deliver | Any that was given the transport | The one that opened the lane |
+| When the writer's thread is free | After the send | At once, because the send is queued |
+| Retries | The relay, on its next pass | The lane, four attempts by default |
+| To close | Nothing | Each lane, and the notifier |
+
+Deployed behind several replicas, use `reach`. A run inside one process can use
+either, and a lane keeps the writer's thread off the network.
 
 ## Wiring it up
 
@@ -30,18 +41,44 @@ with HttpNotifier() as notifier:
             Agent(
                 name="triage",
                 subscribes_to={"signals"},
-                notify=notifier.to("https://triage.internal/notify"),
+                address="https://triage.internal/notify",
             ),
             Agent(
                 name="correlator",
                 subscribes_to={"findings"},
-                notify=notifier.to("https://correlator.internal/notify"),
+                address="https://correlator.internal/notify",
             ),
         ],
         limits=RunLimits(wall_clock=timedelta(minutes=30), idle=timedelta(minutes=2)),
+        reach=notifier.reach,
     )
     model.control.wait_closed()
 ```
+
+Each address is written to the run, so a second replica serving the same board
+delivers to the same agents without being told about them. `reach` sends on
+the calling thread and does not retry: the row the write recorded is what
+retries, on the next pass of `Control.relay`.
+
+## A lane, where the writer must not wait
+
+`notifier.to(url)` returns a lane, which is the `notify` callable an `Agent`
+takes. It queues the notification and returns, so the agent that wrote is not
+made to wait, and it sends on a worker of its own with the retry policy below.
+
+```python
+Agent(
+    name="triage",
+    subscribes_to={"signals"},
+    notify=notifier.to("https://triage.internal/notify"),
+    address="https://triage.internal/notify",
+)
+```
+
+Declaring both is the deployment that wants each: the callable is the faster
+path in the process that holds it, and the address is what any other process
+uses. A lane belongs to the process that opened it, so an agent declared with
+a lane alone is reachable from that process and no other.
 
 ## Closing a lane and closing the notifier
 
@@ -77,15 +114,17 @@ reported as undelivered before `close` returns.
 `to` on a notifier that has already closed raises `RuntimeError`. A run opened
 after that point needs a notifier of its own.
 
-## Why the writer does not wait
+## What sending inline costs
 
-Without a queue, the control component sends on the thread of whichever
-agent just wrote, one agent after another, before returning. Five agents at a
-fifth of a second each cost that writer a full second for a write that took
-microseconds, and one agent whose endpoint hangs costs it the whole timeout.
+The control component sends on the thread of whichever agent just wrote, one
+agent after another, before returning. Five agents at a fifth of a second each
+cost that writer a full second for a write that took microseconds, and one
+agent whose endpoint hangs costs it the whole timeout. That is what `reach`
+does, because it sends where it is called.
 
-Queueing moves all of that off the writer's thread. `notify` puts the
-notification down and returns.
+A queue moves all of it off the writer's thread: a lane puts the notification
+down and returns. What it costs in exchange is that the queue belongs to this
+process, which is the trade the table at the top of this page compares.
 
 ## Why every agent gets its own lane
 
@@ -97,6 +136,11 @@ Call `to` once per agent, even when two agents answer at the same address.
 Two agents sharing one callable share one queue and take turns.
 
 ## What happens when a delivery fails
+
+This section is about a lane. A send through `reach` raises to its caller,
+which is the relay: the row stays unsent, the failure is logged at `WARNING`
+on the `blackboard` logger, and the next pass tries again. Nothing below
+applies to it.
 
 The notifier tries again. `attempts` counts every call to the transport, so
 the default of 4 is one send and three retries, and `backoff` decides the

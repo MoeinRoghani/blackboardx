@@ -4,7 +4,7 @@ Every limit here is a limit of the library as it stands, checked against the
 code rather than remembered. Where something is designed and not built, this
 page says so and points at the design.
 
-## An agent is woken by the process it registered with
+## A callback belongs to one process
 
 The record is durable and so is the run. What is not is the callback.
 
@@ -20,30 +20,37 @@ deadline, and records how far the agents that should hear of it have been
 told. A process that never registered an agent still knows that agent is
 owed an answer, and `close_expired` names it when the run closes.
 
-What that process cannot do is reach the agent. A callback is a Python
-object, so the process an agent registered with is the only one that can call
-it. That process finds the work by reading the record, through
+Whether it can then reach the agent depends on how that agent was declared.
+An `address` is data, so every process reads it and any process given a
+transport as `reach` delivers to it. A `notify` callback is a Python object,
+so the process that holds it is the only one that can call it.
+
+An agent declared by callback alone is therefore woken from one process, and
+that process finds the work by reading the record, through
 `Control.notify_due`, which delivers what its own agents are owed and names
 them. Call it on whatever schedule suits the deployment, beside
 `close_expired`. A write taken in the same process notifies inline and needs
 no poll, so a run inside one process never calls it.
 
-The delay between a write on one replica and the agent hearing of it is
+The delay between a write on one replica and such an agent hearing of it is
 therefore the poll interval plus whatever is left of the region's batch
 window. Choose the interval and the idle limit together: a run whose idle
 limit is shorter than the poll interval can settle before the poll notices.
+An agent with an address on the run is woken by the replica taking the write
+and pays neither.
 
 Two replicas holding the same agent name both hold a callback, and both
 deliver. A notification carries no values, so a repeat costs the wire
-nothing, but it costs an application whose callback does real work. Register
-one name in one place.
+nothing, but it costs an application whose callback does real work. Give one
+name one callback in one place, or an address and no callback.
 
 ## A notification is sent at least once, and may be sent twice
 
 The intent to notify is a row written in the same transaction as the
 contribution, so a process that commits a write and stops before delivering
-has not lost it. `Control.relay` sends what is unsent for the agents that
-process holds, and marks a row only after the send returns.
+has not lost it. `Control.relay` sends what is unsent, through a callback
+this process holds or through the address the run records, and marks a row
+only after the send returns.
 
 Marking after sending rather than before is what makes delivery at least
 once. A process that sends and stops before marking sends again, so a
@@ -226,10 +233,18 @@ runs around this module.
 how fast a store is, how it behaves under load, or how many boards it will
 hold. Those are yours to measure against your database.
 
+## The sweep closes runs and does not relay
+
+`Sweep` runs `close_expired` on an interval, and nothing else. The relay and
+`notify_due` are methods on a `Control` rather than functions over a store,
+because sending needs the callables and a store holds none, so an application
+that wants either on a schedule writes that loop itself.
+
 ## What is designed and not built
 
-Nothing. Every part of the design is built: the run's deadlines and its
-outcome, how far each agent has been notified and has answered, the sweep
+The convenience loop covers one of the two jobs that need a schedule. Every
+other part of the design is built: the run's deadlines and its outcome, the
+agents of a run and how far each has been told and has answered, the sweep
 that closes what nobody is watching, and the outbox that keeps a notification
 a process was holding when it stopped.
 

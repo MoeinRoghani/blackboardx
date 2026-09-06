@@ -105,9 +105,9 @@ with PostgresStore.from_dsn("postgresql://...") as store:
     ...
 ```
 
-`create_schema` creates seven tables and three indexes, all named `blackboard_*` and all `IF NOT EXISTS`, in whatever schema the connection's search path points at. An application that runs its own migrations can issue the same DDL there instead and never call it.
+`create_schema` creates eight tables and three indexes, all named `blackboard_*` and all `IF NOT EXISTS`, in whatever schema the connection's search path points at. An application that runs its own migrations can issue the same DDL there instead and never call it.
 
-Agents deployed as separate services hold no connection to the database. They reach the board through the service that holds the store, and the record is what they share. An adapter makes the record durable; it does not make the run durable, because the control component holds the agent registry, the outstanding notifications, and the deadlines in the process. [Running as a service](service.md) states which part is which and what that means for how many replicas hold one board.
+Agents deployed as separate services hold no connection to the database. They reach the board through the service that holds the store, and the record is what they share. An adapter makes the record durable and the run with it, so no replica has to be the one that opened a board to serve it. [Running as a service](service.md) covers what a replica still has to be given.
 
 ## Deployed on MongoDB
 
@@ -116,7 +116,7 @@ from pymongo import MongoClient
 
 from blackboard import MongoStore, create_model
 
-# The client is the application's own, and the adapter does not open or
+# The client is the application's own, and the adapter neither opens nor
 # closes it.
 client = MongoClient("mongodb://...")
 store = MongoStore(client["incidents"])

@@ -1,32 +1,37 @@
 """The control component.
 
 A write made through the control component passes the application's
-admission rule before the board sequences it. The rule sees the proposed write with a
-read handle on the board and returns an acceptance or a reasoned rejection. An admitted
-level write is sequenced and audited. An admitted
-premise write may still fail with a conflict, which returns to the writer
-unaudited. A rejected write returns its reason to the writer, never reaches
-the board, and is audited without a sequence number.
+admission rule before the board sequences it. The rule sees the proposed
+write with a read handle on the board and returns an acceptance or a
+reasoned rejection. An admitted level write is sequenced. An admitted
+premise write may still fail with a conflict, which changes nothing and
+takes no sequence number. A rejected write returns its reason to the writer
+and never reaches the board.
 
-An admitted premise write also notifies the registered agents, each
-through its batch window, except the agent that wrote the change. The control component
-tracks which agents hold an unacknowledged notification.
+An admitted write also notifies the agents the run records as subscribing
+to the region it landed in, each through that region's batch window, except
+the agent that wrote it. The intent to notify is recorded in the same
+transaction as the contribution, so a process that commits and stops before
+delivering has not lost it.
 
-The run closes in exactly one of three states: settled, wall clock
-expired, or aborted. It closes on silence: every write, premise write,
-registration and acknowledgment pushes the idle deadline out, and when
-that deadline passes the control component consults the application's
-termination predicate, which with none supplied lets the run close.
-Sequencing rechecks closure under the lock, so no write lands after the
-closing event, and reads and the audit stay open on a closed run.
+The run closes in exactly one of three states: settled, wall clock expired,
+or aborted. It closes on silence: every write, registration and
+acknowledgment pushes the idle deadline out, and when that deadline passes
+the control component consults the application's termination predicate,
+which with none supplied lets the run close. Sequencing rechecks closure
+under the lock, so no write lands after the closing event, and reads stay
+open on a closed run.
 
-The agent registry, the outstanding notifications, the audit, and both
-deadlines are held in this process. The board is given, not owned, and it
-is the only part of a run that a second process can read.
+The run is in the store: its two deadlines, its agents with what wakes each
+and where it is reached, how far each has been told and has answered, and
+what a write recorded and nothing has sent. Every process serving the board
+reads the same rows, which is what lets any replica serve any request. What
+this process holds is the callables it was given and the batch windows it
+has armed.
 
-The rule runs without the control component's lock, so two writes judged
-at the same moment are both judged against the board as it was before the first of them
-landed. A premise write closes that window with its expected
+The rule runs without the control component's lock, so two writes judged at
+the same moment are both judged against the board as it was before the
+first of them landed. A premise write closes that window with its expected
 version; a level write does not, so a rule refusing duplicates bounds
 concurrent duplicates rather than preventing them.
 """
@@ -394,8 +399,8 @@ class RejectionCause(Enum):
     """Why the control component refused a write.
 
     Every cause is a decision the run made about a write it understood. What
-    the application's own configuration settles, such as a region nobody declared,
-    raises an error instead.
+    the application's own declarations settle, such as a region nobody
+    declared, raises an error instead.
 
     ``ADMISSION``: the admission rule rejected it. ``NOT_PERMITTED``: the
     writing agent did not declare that level. ``RUN_CLOSED``: the run has
@@ -796,10 +801,11 @@ class _AgentBoard:
 class Control:
     """The control component's write path, over the board it is given.
 
-    The board holds the record and outlives this object. What a run knows,
-    being its two deadlines, its outcome, and how far each agent has been
-    notified and has answered, is on the record too, so this object holds
-    nothing but the configuration it was given.
+    The board holds the record and outlives this object. The run is in the
+    store beside it, being its two deadlines, its outcome, its agents, how
+    far each has been told and has answered, and what a write recorded and
+    nothing has sent. So this object holds nothing but the callables it was
+    given and the batch windows it has armed.
     """
 
     def __init__(
@@ -1028,8 +1034,8 @@ class Control:
 
         ``idempotency_key`` names one write. A key already written answers
         with what that write produced, marked ``repeated``, and changes
-        nothing: no audit event, no notification, and no push of the idle
-        deadline, because nothing happened. A key that named a different
+        nothing: no intent to notify, no notification, and no push of the
+        idle deadline, because nothing happened. A key that named a different
         region raises ``IdempotencyKeyError``, because the caller chose it.
         """
         refusal = self._refuse_region(writer, level, _RegionKind.LEVEL)
@@ -1318,11 +1324,12 @@ class Control:
     def notify_due(self) -> list[str]:
         """Delivers what this process's agents are owed, and names them.
 
-        A write taken by one process reaches the agents registered with
-        another here. The process that took the write records that it
-        landed and nothing about who should hear of it; the process holding
-        an agent is the only one that can reach it, so it is the one that
-        reads the record and decides.
+        A write taken by one process reaches the agents declared with
+        another here. That is what an agent declared by callback needs: the
+        process holding the callback is the only one that can call it, so it
+        is the one that reads the record and decides. An agent the run
+        records an address for is reached by whichever process took the
+        write, and does not wait for this.
 
         A run inside one process never needs this. That process notifies on
         the write path and closes its own windows on a timer, so this

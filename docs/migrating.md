@@ -35,7 +35,7 @@ version.
 | `RunClosed` | `store.read_run` answers the outcome, and the run closing is logged |
 | `AuditEvent` | Nothing. There is no audit. |
 
-## 0.14 to 0.15
+## 0.13 to 0.14
 
 ### An agent is written to the run
 
@@ -77,7 +77,27 @@ The schema number rises to 5, and so does the compatibility number: a build
 older than this reads who should hear a write from its own roster, so on a
 board it did not create it records nothing.
 
-## 0.13 to 0.14
+### Closing a run clears what only an open run needed
+
+The write that records the outcome now also removes, in the same
+transaction, how far each agent had been told and had answered, and any
+notification for that board that nothing had sent. Nothing reads either once
+a run has ended, and leaving them meant every closed board accumulated rows
+that nothing would ever read again.
+
+What survives is the outcome: how the run ended, its reason, and the agents
+that did not finish. `store.read_run` answers it, and the unfinished set was
+computed from what the close removed. An abort names none, as it did before.
+
+| Was | Is |
+| --- | --- |
+| `store.read_agents` after a close | Answers nothing. The outcome carries the unfinished set that was computed from it. |
+| `store.unsent` after a close | Answers nothing for that board. Nobody is owed a wake-up to a run that has ended. |
+| An acknowledgment arriving after a close | Changes nothing and reports nothing, which is what it would have done had the row still been there. An unknown notification on an open run still raises. |
+| The board: regions, contributions, premise values | Untouched. |
+
+A store of its own does the same in the transaction that closes the run.
+`blackboard.conformance.ClosingConformance` checks it.
 
 ### The schema carries a compatibility number
 

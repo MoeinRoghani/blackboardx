@@ -25,9 +25,9 @@ deploying them.
 
 The package ships `PostgresStore` and `MongoStore` for a deployment and `SqliteStore` for one machine, all satisfying the `BoardStore` protocol. Against any other database the nineteen methods are yours to write: four read the record, three write to it, one removes a board, five hold the run, four hold its agents and how far each has got, and two hold what a write recorded and nothing has sent. Every rule they are held to maps onto ordinary primitives. [Storage](storage.md) covers what each has to guarantee.
 
-## What is durable and what is not
+## What is written down and what is not
 
-A store makes the **record** durable. It does not make the **run** durable, and the difference decides how the service is deployed.
+A store makes the record durable, and the run with it. What no store holds is a function, and that is the difference the deployment turns on.
 
 | Word | Holds |
 | --- | --- |
@@ -53,7 +53,7 @@ Reads are not bound that way. `BoardService` takes the store as well as the regi
 
 A replacement replica resumes rather than restarts. The deadlines, the outcome and how far each agent answered are on the record, so any replica closes the run on the original deadline and tells no agent again what it has already answered.
 
-A notification a process was holding when it stopped is not lost. The intent was recorded with the write, so `Control.relay` on any replica holding that agent sends it. Delivery is at least once, and a repeat costs nothing because a notification carries no values.
+A notification a process was holding when it stopped is not lost. The intent was recorded with the write, so `Control.relay` sends it from any replica that can reach the agent, which is one holding its callable or one holding a transport for the address the run records. Delivery is at least once, and a repeat costs nothing because a notification carries no values.
 
 ## Why this is safe with several replicas
 
