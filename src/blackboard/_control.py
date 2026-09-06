@@ -1899,6 +1899,41 @@ def close_expired(store: BoardStore, limit: int = 100) -> list[str]:
     return closed
 
 
+def relay_unsent(
+    store: BoardStore,
+    control_for: Callable[[str], Control | None],
+    limit: int = 100,
+) -> list[str]:
+    """Sends what a write recorded and nothing has sent, and names the agents.
+
+    The other job that needs a schedule. :func:`close_expired` takes a store,
+    because closing needs nothing else; sending needs the callables, which no
+    store holds, so this takes a callable of yours answering with the
+    ``Control`` for a board. It is the same callable ``BoardService`` takes.
+
+    A board yours answers nothing for is left, because another replica holds
+    what this one does not. One board failing is no reason to leave the rest
+    of the pass undone.
+
+    ``limit`` bounds how many owed notifications one pass reads.
+    """
+    boards: list[str] = []
+    for row in store.unsent(limit):
+        if row.board_id not in boards:
+            boards.append(row.board_id)
+    sent: list[str] = []
+    for board_id in boards:
+        # A relay has no caller waiting on it, so a board that fails here
+        # reaches nobody unless this says so.
+        try:
+            control = control_for(board_id)
+            if control is not None:
+                sent.extend(control.relay())
+        except Exception:
+            logger.exception("the relay could not send for the run on %s", board_id)
+    return sent
+
+
 class Sweep:
     """Calls :func:`close_expired` on an interval, on a thread of its own.
 
@@ -1907,6 +1942,11 @@ class Sweep:
     loop: a scheduled job, a serverless invocation, or a thread beside the
     service are all equally supported, and this is only the last of those
     written out so an application does not have to.
+
+    ``control_for`` is what makes a pass relay as well as reap. It answers
+    with the ``Control`` for a board, and is the same callable
+    ``BoardService`` takes. A sweep given none reaps and nothing more, which
+    is what a sweep did before this argument existed.
 
     ``interval`` is the seconds between passes. ``jitter`` spreads the first
     pass over a fraction of that interval, chosen once when the sweep starts,
@@ -1922,6 +1962,7 @@ class Sweep:
         self,
         store: BoardStore,
         *,
+        control_for: Callable[[str], Control | None] | None = None,
         interval: float = 30.0,
         limit: int = 100,
         jitter: float = 1.0,
@@ -1935,6 +1976,7 @@ class Sweep:
         if not 0.0 <= jitter <= 1.0:
             raise ValueError(f"jitter is a fraction between 0 and 1, not {jitter}")
         self._store = store
+        self._control_for = control_for
         self._interval = interval
         self._limit = limit
         self._jitter = jitter
@@ -1987,7 +2029,12 @@ class Sweep:
             return
         while not self._stopping.is_set():
             try:
+                # Reaped before relayed: closing a run clears what it was
+                # owed, so a notification to a run about to end is not sent
+                # and then answered into a closed run.
                 close_expired(self._store, self._limit)
+                if self._control_for is not None:
+                    relay_unsent(self._store, self._control_for, self._limit)
             except Exception:
                 # The store failed the query itself, not one board. Say so and
                 # keep the loop, because nothing else will sweep.

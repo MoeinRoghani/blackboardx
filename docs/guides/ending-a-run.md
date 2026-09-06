@@ -125,7 +125,7 @@ write the same thread:
 ```python
 from blackboard import Sweep
 
-with Sweep(store) as sweep:  # every thirty seconds, on a thread of its own
+with Sweep(store, control_for=runs.get) as sweep:  # every thirty seconds
     serve_until_shutdown()
 ```
 
@@ -134,9 +134,19 @@ do not query together afterwards. A pass that raises is logged and the loop
 continues, because a loop that died on one failure would leave every later run
 open. Closing it waits for the pass in flight.
 
-It is a convenience over `close_expired` and nothing more, the way
+Two things need a schedule, and a pass runs both. `close_expired` closes what
+nobody is watching, and `relay_unsent` sends what a write recorded and nothing
+has sent. Closing takes only the store; sending takes the callables as well,
+so `control_for` answers with the `Control` for a board, and is the same
+callable `BoardService` takes. A sweep given none reaps and nothing more.
+
+Reaping runs first. Closing a run clears what it was owed, so a notification
+to a run about to end is not sent and then answered into a run that has
+closed.
+
+It is a convenience over those two functions and nothing more, the way
 `HttpNotifier` is a convenience over the wire protocol. An application with a
-scheduler of its own calls the function and ignores this.
+scheduler of its own calls them and ignores this.
 
 ## Reading the outcome
 
