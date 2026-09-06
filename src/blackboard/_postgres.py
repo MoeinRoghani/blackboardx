@@ -50,7 +50,7 @@ from blackboard._board import (
     UnsetPremiseError,
     Written,
 )
-from blackboard._schema import stamp_to_write
+from blackboard._schema import SCHEMA_COMPAT_VERSION, stamp_to_write
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
@@ -268,17 +268,25 @@ class PostgresStore:
                 "CREATE TABLE IF NOT EXISTS blackboard_schema ("
                 "id INTEGER PRIMARY KEY CHECK (id = 1), version BIGINT NOT NULL)"
             )
+            connection.execute(
+                "ALTER TABLE blackboard_schema "
+                "ADD COLUMN IF NOT EXISTS compat_version BIGINT"
+            )
             row = connection.execute(
-                "SELECT version FROM blackboard_schema WHERE id = 1"
+                "SELECT version, compat_version FROM blackboard_schema WHERE id = 1"
             ).fetchone()
             writing = stamp_to_write(
-                None if row is None else int(row[0]), where="this database"
+                None if row is None else int(row[0]),
+                where="this database",
+                compat=None if row is None or row[1] is None else int(row[1]),
             )
             if writing is not None:
                 connection.execute(
-                    "INSERT INTO blackboard_schema (id, version) VALUES (1, %s) "
-                    "ON CONFLICT (id) DO UPDATE SET version = excluded.version",
-                    (writing,),
+                    "INSERT INTO blackboard_schema (id, version, compat_version) "
+                    "VALUES (1, %s, %s) ON CONFLICT (id) DO UPDATE SET "
+                    "version = excluded.version, "
+                    "compat_version = excluded.compat_version",
+                    (writing, SCHEMA_COMPAT_VERSION),
                 )
         self._stamped = True
 

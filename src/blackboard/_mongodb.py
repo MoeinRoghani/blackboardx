@@ -54,7 +54,7 @@ from blackboard._board import (
     Written,
     _as_json,
 )
-from blackboard._schema import stamp_to_write
+from blackboard._schema import SCHEMA_COMPAT_VERSION, stamp_to_write
 
 if TYPE_CHECKING:
     from pymongo.database import Database
@@ -210,12 +210,22 @@ class MongoStore:
     def _stamp(self) -> None:
         """Records the schema this version writes, or refuses one it cannot read."""
         found = self._database[_SCHEMA].find_one({"_id": "schema"})
+        recorded = None if found is None else found.get("compat_version")
         writing = stamp_to_write(
-            None if found is None else int(found["version"]), where="this database"
+            None if found is None else int(found["version"]),
+            where="this database",
+            compat=None if recorded is None else int(recorded),
         )
         if writing is not None:
             self._database[_SCHEMA].update_one(
-                {"_id": "schema"}, {"$set": {"version": writing}}, upsert=True
+                {"_id": "schema"},
+                {
+                    "$set": {
+                        "version": writing,
+                        "compat_version": SCHEMA_COMPAT_VERSION,
+                    }
+                },
+                upsert=True,
             )
         self._stamped = True
 

@@ -23,12 +23,28 @@ from blackboard._board import BlackboardError
 
 logger = logging.getLogger("blackboard")
 
-#: The schema this version of the library reads and writes.
+#: The schema this version of the library writes.
 #:
-#: Raise it when a change makes a record unreadable by an earlier version.
-#: Adding a column an older version ignores is not such a change; removing
-#: one, or giving one a new meaning, is.
-SCHEMA_VERSION = 3
+#: Raise it on any change to the physical schema, additive or not.
+SCHEMA_VERSION = 4
+
+#: The oldest ``SCHEMA_VERSION`` whose library still works against a database
+#: at :data:`SCHEMA_VERSION`.
+#:
+#: One number says what this build writes; this one says how far back a build
+#: may be and still read it. A store refuses a database whose compatibility
+#: number is higher than the version this build knows, and accepts one that is
+#: merely newer.
+#:
+#: That distinction is what lets two releases run against one database while a
+#: deployment rolls. A change that only adds a column or a table leaves this
+#: where it is, because a build that ignores them is unharmed. A change that
+#: gives something a new meaning raises it to the new ``SCHEMA_VERSION``.
+#:
+#: It is 3 because schema 3 moved each agent's progress into the store: a
+#: build older than that counts notifications in its own memory, so it cannot
+#: share a board with one that does not.
+SCHEMA_COMPAT_VERSION = 3
 
 
 class SchemaVersionError(BlackboardError):
@@ -40,19 +56,41 @@ class SchemaVersionError(BlackboardError):
     """
 
 
-def stamp_to_write(found: int | None, *, where: str) -> int | None:
+def stamp_to_write(
+    found: int | None, *, where: str, compat: int | None = None
+) -> int | None:
     """Returns the number to stamp on the record, or ``None`` to leave it.
 
-    ``found`` is the number already on the record, or ``None`` where there is
-    none. ``where`` names the database in the message a refusal carries.
+    ``found`` is the number already on the record and ``compat`` the
+    compatibility number beside it, each ``None`` where there is none.
+    ``where`` names the database in the message a refusal carries.
+
+    A database newer than this build is refused only when it says so, through
+    a compatibility number higher than what this build knows. A database that
+    is merely newer is used, because the build that wrote it declared this one
+    still able to.
 
     A record with no stamp is adopted rather than refused. Everything written
     before stamps existed is readable by this version, and refusing it would
     strand a record for a reason that is not true.
     """
+    if compat is not None and compat > SCHEMA_VERSION:
+        logger.error(
+            "%s holds a record needing schema %d at the oldest,"
+            " and this version writes %d",
+            where,
+            compat,
+            SCHEMA_VERSION,
+        )
+        raise SchemaVersionError(
+            f"{where} holds a record written for schema {found},"
+            f" which requires blackboardx at schema {compat} or newer,"
+            f" and this version is at {SCHEMA_VERSION}."
+            " Upgrade blackboardx to a version that reads it."
+        )
     if found is None:
         return SCHEMA_VERSION
-    if found > SCHEMA_VERSION:
+    if found > SCHEMA_VERSION and compat is None:
         # The caller of an ordinary operation sees this raised. A scheduled
         # sweep has no caller, and a store opened at start-up may raise into
         # a place nobody is reading, so it is said here as well.
