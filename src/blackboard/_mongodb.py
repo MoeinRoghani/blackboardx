@@ -607,9 +607,50 @@ class MongoStore:
                 agent=document["agent"],
                 notified_through=int(document["notified_through"]),
                 acknowledged_through=int(document["acknowledged_through"]),
+                subscribes_to=(
+                    None
+                    if document.get("subscribes_to") is None
+                    else frozenset(document["subscribes_to"])
+                ),
+                writes_to=(
+                    None
+                    if document.get("writes_to") is None
+                    else frozenset(document["writes_to"])
+                ),
+                address=document.get("address"),
             )
             for document in found
         ]
+
+    def declare_agent(
+        self,
+        board_id: str,
+        agent: str,
+        *,
+        subscribes_to: frozenset[str] | None = None,
+        writes_to: frozenset[str] | None = None,
+        address: str | None = None,
+    ) -> None:
+        self._checked()
+        self._database[_AGENT_PROGRESS].update_one(
+            {"_id": f"{board_id}\u0000{agent}"},
+            {
+                "$set": {
+                    "board_id": board_id,
+                    "agent": agent,
+                    "subscribes_to": (
+                        None if subscribes_to is None else sorted(subscribes_to)
+                    ),
+                    "writes_to": None if writes_to is None else sorted(writes_to),
+                    "address": address,
+                },
+                "$setOnInsert": {
+                    "notified_through": 0,
+                    "acknowledged_through": 0,
+                },
+            },
+            upsert=True,
+        )
 
     def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
         self._checked()

@@ -243,6 +243,18 @@ class Lane:
         self.close()
 
 
+def _body_of(notification: Notification) -> dict[str, Any]:
+    """One notification as the wire carries it."""
+    return NotificationBody(
+        board_id=notification.board_id,
+        notification_id=int(notification.notification_id),
+        agent=notification.agent,
+        from_sequence=notification.from_sequence,
+        to_sequence=notification.to_sequence,
+        regions=sorted(notification.regions),
+    ).to_json()
+
+
 class HttpNotifier:
     """Sends notifications to agents without the writer waiting.
 
@@ -285,6 +297,20 @@ class HttpNotifier:
         self._lock = threading.Lock()
         self._lanes: list[_Lane] = []
         self._closed = False
+
+    def reach(self, address: str, notification: Notification) -> None:
+        """Sends one notification to an address, on the caller's thread.
+
+        The transport a `Control` takes as ``reach``, for an agent the run
+        records an address for and this process holds no callable for. A lane
+        is opened per address and reused, so a relay pass over the same agents
+        does not open one each time.
+
+        Unlike a lane, this does not return before the send. A relay marks a
+        row sent only when this returns, so a raise here leaves the row for
+        the next pass.
+        """
+        self._sending.transport.send(address, _body_of(notification))
 
     def to(self, url: str) -> Lane:
         """Opens a lane to one agent and returns it.
@@ -453,14 +479,7 @@ class _Lane:
             )
 
     def _send(self, notification: Notification) -> None:
-        body = NotificationBody(
-            board_id=notification.board_id,
-            notification_id=int(notification.notification_id),
-            agent=notification.agent,
-            from_sequence=notification.from_sequence,
-            to_sequence=notification.to_sequence,
-            regions=sorted(notification.regions),
-        ).to_json()
+        body = _body_of(notification)
         for attempt in range(1, self._sending.attempts + 1):
             try:
                 self._sending.transport.send(self._url, body)

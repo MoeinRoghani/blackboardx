@@ -116,6 +116,24 @@ class RecordingBoard:
     def read_agents(self, board_id: str) -> list[AgentProgress]:
         return self._inner.read_agents(board_id)
 
+    def declare_agent(
+        self,
+        board_id: str,
+        agent: str,
+        *,
+        subscribes_to: frozenset[str] | None = None,
+        writes_to: frozenset[str] | None = None,
+        address: str | None = None,
+    ) -> None:
+        self.calls.append(f"declare_agent:{agent}")
+        self._inner.declare_agent(
+            board_id,
+            agent,
+            subscribes_to=subscribes_to,
+            writes_to=writes_to,
+            address=address,
+        )
+
     def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
         self.calls.append(f"mark_notified:{agent}")
         self._inner.mark_notified(board_id, agent, through=through)
@@ -194,7 +212,7 @@ def test_without_one_the_in_memory_board_is_used() -> None:
     assert [c.content for c in model.reader.read_level("platform")] == ["finding"]
 
 
-def test_the_protocol_is_eighteen_methods() -> None:
+def test_the_protocol_is_nineteen_methods() -> None:
     """The documentation counts them. A method added here updates that count.
 
     `docs/concepts/storage.md`, `docs/glossary.md` and `docs/concepts/service.md`
@@ -214,6 +232,7 @@ def test_the_protocol_is_eighteen_methods() -> None:
         "unsent",
         "mark_sent",
         "read_agents",
+        "declare_agent",
         "mark_notified",
         "acknowledge",
         "open_run",

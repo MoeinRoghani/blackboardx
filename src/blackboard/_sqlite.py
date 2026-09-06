@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS agent_progress (
     agent                TEXT    NOT NULL,
     notified_through     INTEGER NOT NULL DEFAULT 0,
     acknowledged_through INTEGER NOT NULL DEFAULT 0,
+    subscribes_to        TEXT,
+    writes_to            TEXT,
+    address              TEXT,
     PRIMARY KEY (board_id, agent)
 );
 CREATE INDEX IF NOT EXISTS contributions_by_region
@@ -101,14 +104,32 @@ CREATE UNIQUE INDEX IF NOT EXISTS contributions_by_key
     WHERE idempotency_key IS NOT NULL;
 """
 
+
 #: Columns added after the first release. A file written by an earlier
 #: version is opened by this one, so they are added where they are absent
 #: rather than assumed.
+def _listed(names: frozenset[str] | None) -> str | None:
+    """A set of region names as the store keeps it, or nothing for the default."""
+    return None if names is None else json.dumps(sorted(names))
+
+
+def _names(stored: object) -> frozenset[str] | None:
+    """The inverse of `_listed`."""
+    return None if stored is None else frozenset(json.loads(str(stored)))
+
+
 _ADDED_COLUMNS = (
     ("version", "INTEGER"),
     ("idempotency_key", "TEXT"),
     ("writer", "TEXT"),
     ("written_at", "TEXT"),
+)
+
+#: Columns added to `agent_progress` after it first shipped.
+_ADDED_AGENT_COLUMNS = (
+    ("subscribes_to", "TEXT"),
+    ("writes_to", "TEXT"),
+    ("address", "TEXT"),
 )
 
 #: An instant a given offset after SQLite's clock, for a deadline the store
@@ -222,6 +243,19 @@ class SqliteStore:
                     if name not in present:
                         self._connection.execute(
                             f"ALTER TABLE {table} ADD COLUMN {name} {kind}"
+                        )
+        present = {
+            row[1]
+            for row in self._connection.execute(
+                "SELECT * FROM pragma_table_info('agent_progress')"
+            )
+        }
+        if present:
+            with self._connection:
+                for name, kind in _ADDED_AGENT_COLUMNS:
+                    if name not in present:
+                        self._connection.execute(
+                            f"ALTER TABLE agent_progress ADD COLUMN {name} {kind}"
                         )
 
     def _stamp(self, where: str) -> None:
@@ -543,7 +577,8 @@ class SqliteStore:
     def read_agents(self, board_id: str) -> list[AgentProgress]:
         with self._lock:
             rows = self._connection.execute(
-                "SELECT agent, notified_through, acknowledged_through "
+                "SELECT agent, notified_through, acknowledged_through, "
+                "subscribes_to, writes_to, address "
                 "FROM agent_progress WHERE board_id = ? ORDER BY agent",
                 (board_id,),
             ).fetchall()
@@ -552,9 +587,32 @@ class SqliteStore:
                 agent=str(r[0]),
                 notified_through=int(r[1]),
                 acknowledged_through=int(r[2]),
+                subscribes_to=_names(r[3]),
+                writes_to=_names(r[4]),
+                address=None if r[5] is None else str(r[5]),
             )
             for r in rows
         ]
+
+    def declare_agent(
+        self,
+        board_id: str,
+        agent: str,
+        *,
+        subscribes_to: frozenset[str] | None = None,
+        writes_to: frozenset[str] | None = None,
+        address: str | None = None,
+    ) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                "INSERT INTO agent_progress "
+                "(board_id, agent, notified_through, acknowledged_through, "
+                "subscribes_to, writes_to, address) VALUES (?, ?, 0, 0, ?, ?, ?) "
+                "ON CONFLICT (board_id, agent) DO UPDATE SET "
+                "subscribes_to = excluded.subscribes_to, "
+                "writes_to = excluded.writes_to, address = excluded.address",
+                (board_id, agent, _listed(subscribes_to), _listed(writes_to), address),
+            )
 
     def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
         with self._lock, self._connection:

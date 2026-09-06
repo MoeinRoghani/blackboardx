@@ -180,6 +180,12 @@ class AgentProgress:
     agent: str
     notified_through: int
     acknowledged_through: int
+    #: The regions whose changes wake this agent, or ``None`` for the default.
+    subscribes_to: frozenset[str] | None = None
+    #: The levels it may write to, or ``None`` for every one.
+    writes_to: frozenset[str] | None = None
+    #: Where it is reached, or ``None`` for an agent that lives in one process.
+    address: str | None = None
 
     @property
     def outstanding(self) -> bool:
@@ -272,10 +278,13 @@ class _BoardState:
 
 @dataclass
 class _AgentProgress:
-    """How far one agent has been told and has answered, in memory."""
+    """One agent of a run, as the in-memory store holds it."""
 
     notified_through: int = 0
     acknowledged_through: int = 0
+    subscribes_to: frozenset[str] | None = None
+    writes_to: frozenset[str] | None = None
+    address: str | None = None
 
 
 @dataclass
@@ -599,11 +608,30 @@ class InMemoryStore:
             return [
                 AgentProgress(
                     agent=name,
-                    notified_through=progress.notified_through,
-                    acknowledged_through=progress.acknowledged_through,
+                    notified_through=held.notified_through,
+                    acknowledged_through=held.acknowledged_through,
+                    subscribes_to=held.subscribes_to,
+                    writes_to=held.writes_to,
+                    address=held.address,
                 )
-                for name, progress in board.agents.items()
+                for name, held in board.agents.items()
             ]
+
+    def declare_agent(
+        self,
+        board_id: str,
+        agent: str,
+        *,
+        subscribes_to: frozenset[str] | None = None,
+        writes_to: frozenset[str] | None = None,
+        address: str | None = None,
+    ) -> None:
+        with self._lock:
+            board = self._board(board_id)
+            held = board.agents.setdefault(agent, _AgentProgress())
+            held.subscribes_to = subscribes_to
+            held.writes_to = writes_to
+            held.address = address
 
     def mark_notified(self, board_id: str, agent: str, *, through: int) -> None:
         with self._lock:

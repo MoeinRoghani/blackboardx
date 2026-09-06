@@ -26,7 +26,7 @@ logger = logging.getLogger("blackboard")
 #: The schema this version of the library writes.
 #:
 #: Raise it on any change to the physical schema, additive or not.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 #: The oldest ``SCHEMA_VERSION`` whose library still works against a database
 #: at :data:`SCHEMA_VERSION`.
@@ -41,10 +41,11 @@ SCHEMA_VERSION = 4
 #: where it is, because a build that ignores them is unharmed. A change that
 #: gives something a new meaning raises it to the new ``SCHEMA_VERSION``.
 #:
-#: It is 3 because schema 3 moved each agent's progress into the store: a
-#: build older than that counts notifications in its own memory, so it cannot
-#: share a board with one that does not.
-SCHEMA_COMPAT_VERSION = 3
+#: It is 5 because schema 5 moved each agent's declaration into the store: a
+#: build older than that reads who should hear a write from its own roster, so
+#: on a board it did not create it records nothing and the notification is
+#: never recovered.
+SCHEMA_COMPAT_VERSION = 5
 
 
 class SchemaVersionError(BlackboardError):
