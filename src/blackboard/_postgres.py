@@ -134,6 +134,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS blackboard_contributions_by_key
     WHERE idempotency_key IS NOT NULL;
 """
 
+#: The key the schema lock takes. Any constant does, so long as it is this
+#: library's alone; it is the digits of the distribution name.
+_SCHEMA_LOCK = 7108154896321
+
 _LEVEL = "level"
 _PREMISE = "premise"
 
@@ -187,13 +191,36 @@ class PostgresStore:
         with _PsycopgPool(dsn, **pool_kwargs) as pool:
             yield cls(pool)
 
+    @classmethod
+    def schema_sql(cls) -> str:
+        """Returns the statements :meth:`create_schema` runs, without running them.
+
+        For an application whose database is owned by a migration tool, or
+        whose role may not create tables, or that reviews DDL before it runs.
+        Take these, put them wherever your migrations live, and never call
+        :meth:`create_schema`.
+
+        Every statement is conditional, so applying them to a database that
+        already holds the tables changes nothing.
+        """
+        return _SCHEMA
+
     def create_schema(self) -> None:
         """Creates the tables this adapter reads, if they are not there.
 
         Every statement is ``IF NOT EXISTS``, so calling it against a
         database that already has them changes nothing.
+
+        Safe to call from every replica at once. ``IF NOT EXISTS`` is not
+        atomic in Postgres: two sessions can both find a table missing and
+        one then fails creating it. A lock around the whole thing serialises
+        them, and it is released when the transaction ends however it ends.
+
+        :meth:`schema_sql` hands over the same statements for an application
+        that would rather run them itself.
         """
-        with self._pool.connection() as connection:
+        with self._pool.connection() as connection, connection.transaction():
+            connection.execute("SELECT pg_advisory_xact_lock(%s)", (_SCHEMA_LOCK,))
             connection.execute(_SCHEMA)
         self._stamp()
 

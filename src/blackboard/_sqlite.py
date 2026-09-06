@@ -162,6 +162,15 @@ class SqliteStore:
         self._stamp(path)
         self._connection.commit()
 
+    @classmethod
+    def schema_sql(cls) -> str:
+        """Returns the statements this store runs when it opens a file.
+
+        For an application that would rather create the tables itself. Every
+        statement is conditional, so applying them twice changes nothing.
+        """
+        return _SCHEMA
+
     def close(self) -> None:
         """Closes the connection. Reopening the same path reads the record back."""
         with self._lock:

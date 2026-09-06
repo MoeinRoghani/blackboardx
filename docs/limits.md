@@ -72,6 +72,24 @@ does not end the pass; the sweep logs it and closes the rest.
 Every line goes to the `blackboard` logger through the standard library, and
 the application configures the handlers and the format.
 
+## Every store call blocks
+
+`BoardStore` has eighteen methods and not one is a coroutine, so every write,
+read, acknowledgment and sweep waits for its database round trip. Run state is
+wholly in the store, so those round trips are the ordinary path rather than an
+occasional cost.
+
+An application built on `asyncio` therefore has to keep them off its event
+loop, because a blocking call inside `async def` stalls every other request on
+that worker. FastAPI's own guidance is to declare a route that calls a
+blocking library with plain `def`, which runs it in a threadpool; a route that
+must stay `async def` puts the call on a thread with
+`fastapi.concurrency.run_in_threadpool`, which is what
+[Serve a blackboard over HTTP](guides/serving-a-blackboard.md) shows.
+
+The agent half has both shapes already, `BoardClient` and `AsyncBoardClient`,
+so an agent may be written either way. The blackboard half has one.
+
 ## There is no authentication and no authorisation
 
 `BoardService` authenticates nobody. It does not check that the `writer` named
