@@ -36,7 +36,7 @@ supplies it, and it is the division that decides what a store must hold.
 
 | | What | Where |
 | --- | --- | --- |
-| **Run state** | The sequence, contributions, premise values and versions, idempotency keys, the two deadlines, the outcome, each agent's two watermarks, and what a write recorded and nothing has sent | The store, wholly. `InMemoryStore` puts it in memory and a deployment adapter in the database, through one code path either way. |
+| **Run state** | The sequence, contributions, premise values and versions, idempotency keys, the two deadlines, the outcome, how far each agent has been told and has answered, and what a write recorded and nothing has sent | The store, wholly. `InMemoryStore` puts it in memory and a deployment adapter in the database, through one code path either way. |
 | **Configuration** | `regions`, the `agents` roster, `admission_rule`, `termination_predicate`, `limits`, `clock`. Two of those are callables, which is the whole reason the category is separate. | Supplied to [`create_model`](run.md) on every construction, and stored by nothing. |
 
 Run state is never split between a store and a process. A question of the form
