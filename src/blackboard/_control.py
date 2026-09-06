@@ -229,8 +229,8 @@ class BoardStore(Protocol):
 
         Across every board, oldest first by the sequence the notification
         ends at, so the process that reads them sends the earliest work
-        first. A caller filters by the agents it holds, because only the
-        process holding an agent can reach it.
+        first. A caller sends what it can reach: an agent it holds a callable
+        for, or one the run records an address for, which is any of them.
         """
         ...
 
@@ -454,6 +454,12 @@ class Agent:
     is an agent living in this process, ``address`` alone is one reached over
     the wire, and both is an address on the record with a faster path where
     the callable is present.
+
+    An agent declared by ``address`` alone is delivered to by the transport
+    the process was given as ``reach``, on the same paths a callable is
+    delivered to on: when it joins, when a write it subscribes to lands, and
+    when a batch window closes. A process given no transport reaches it not
+    at all, and leaves the row a write recorded for one that was.
 
     The control component invokes ``notify`` to deliver a notification,
     holding no lock, on the thread that closed the batch window or, when
@@ -1201,10 +1207,11 @@ class Control:
         A process that took a write and stopped before delivering left the
         intent on the record. This sends it.
 
-        An agent this process holds a callable for is reached through it. One
-        it does not is reached through the address the run records, if this
-        process was given a transport; without one, such a row is left for a
-        process that has either.
+        An agent this process declared is reached the way it was declared,
+        through its callable or through the address the run records. One this
+        process never saw declared is reached through that address alone, if
+        this process was given a transport; without one, such a row is left
+        for a process that has either.
 
         A send that raises leaves the row for the next pass, so nothing is
         marked that was not sent. Call it on whatever schedule suits the
@@ -1248,9 +1255,10 @@ class Control:
         ]
 
     def _relay_by_address(self) -> list[str]:
-        # What this process holds no callable for. Everything the notification
-        # needs is on the record, so a process that never saw the agent
-        # declared can still reach it.
+        # What this process never saw declared. Everything the notification
+        # needs is on the record, so a replica that took no part in the
+        # declaration still reaches the agent. An agent declared here is left
+        # to the pass below, which dispatches it the way a write would.
         if self._reach is None:
             return []
         rows = [
@@ -1260,6 +1268,7 @@ class Control:
         ]
         if not rows:
             return []
+        row_through = {row.agent: row.through for row in rows}
         declared = {a.agent: a for a in self._store.read_agents(self._board_id)}
         board = self._store.read_board(self._board_id, limit=_TAIL)
         last = board[-1].sequence if board else 0
@@ -1279,6 +1288,9 @@ class Control:
                 )
             )
             if not regions:
+                # The agent has answered past this row, so nothing is owed.
+                # Marking it keeps a moot row out of every later pass.
+                self._store.mark_sent(self._board_id, name, through=row_through[name])
                 continue
             notification = Notification(
                 notification_id=NotificationId(last),
@@ -1288,6 +1300,10 @@ class Control:
                 to_sequence=last,
                 regions=regions,
             )
+            # Intent is recorded at dispatch, the way the write path records
+            # it, so the acknowledgment this notification asks for is one the
+            # store will accept. The row is what recovers a send that fails.
+            self._store.mark_notified(self._board_id, name, through=last)
             try:
                 self._reach(agent.address, notification)
             except Exception:
@@ -1437,10 +1453,10 @@ class Control:
         # earliest due instant is ahead.
         if not state.pending:
             return None
-        if state.declaration.notify is None:
-            # Declared with an address and no callable, so this process
-            # cannot deliver in line. The row a write recorded is what
-            # reaches it, through whichever process holds a transport.
+        if self._carrier_for(state) is None:
+            # An address and no transport here, so this process cannot
+            # deliver in line. The row a write recorded is what reaches it,
+            # through whichever process holds one.
             state.pending.clear()
             return None
         if self._last_sequence <= state.acknowledged_through:
@@ -1557,8 +1573,22 @@ class Control:
             self._board_id, state.declaration.name, through=self._last_sequence
         )
         state.notified_through = max(state.notified_through, self._last_sequence)
-        assert state.declaration.notify is not None  # guarded before dispatch
-        return (state.declaration.notify, notification)
+        carrier = self._carrier_for(state)
+        assert carrier is not None  # guarded before dispatch
+        return (carrier, notification)
+
+    def _carrier_for(self, state: _AgentState) -> Callable[[Notification], None] | None:
+        # What carries a notification to this agent from this process. A
+        # callable it was declared with, or the transport this process was
+        # given aimed at the address the run records. An agent declared here
+        # by address alone is reached the same way any other process reaches
+        # it, so both doors and both transports wake an agent alike.
+        declaration = state.declaration
+        if declaration.notify is not None:
+            return declaration.notify
+        if declaration.address is not None and self._reach is not None:
+            return partial(self._reach, declaration.address)
+        return None
 
     def _close_window(self, agent_name: str, generation: int) -> None:
         # A cancelled timer whose call already started still runs; the

@@ -55,13 +55,19 @@ at least one of the two, and naming neither raises `ValueError`.
 | Declared with | Means |
 | --- | --- |
 | `notify` | An agent in this process, as before. Nothing changes. |
-| `address` | An agent reached over the wire by any process holding a transport. |
+| `address` | An agent reached over the wire by any process holding a transport, the one that declared it included. |
 | Both | The address is on the record, and the callable is the faster path where it is present. |
 
 `create_model` and `attach_model` take `reach`, a transport that turns an
 address into a delivery. `HttpNotifier.reach` is one. A process without one
 reaches the agents it holds callables for and no others, which is what it
 did before.
+
+An agent declared by address alone is delivered to on the same paths a
+callable is: when it joins, when a write it subscribes to lands, and when a
+batch window closes. `HttpNotifier.reach` sends on the calling thread, so
+give an agent a lane as `notify` as well where the writer should not wait for
+the send.
 
 A store of its own implements `declare_agent` and returns the three new
 fields from `read_agents`. `blackboard.conformance.AgentConformance` checks
