@@ -7,8 +7,11 @@ wrong are worth having on the record.
 The decisions are in
 [ADR 0024](../adr/0024-the-run-is-in-the-store.md),
 [ADR 0025](../adr/0025-the-identifier-is-the-range.md) and
-[ADR 0026](../adr/0026-one-door-into-a-board.md). What the library holds and
-where is in [What this version does not do](../limits.md).
+[ADR 0026](../adr/0026-one-door-into-a-board.md), and what it settled about
+the agent was corrected by
+[ADR 0032](../adr/0032-an-agent-is-part-of-the-run.md) and
+[ADR 0034](../adr/0034-an-agent-carries-an-address.md). What the library holds
+and where is in [Storage](../concepts/storage.md#what-a-store-holds).
 
 ## What was missing, and is not now
 
@@ -19,7 +22,9 @@ process ended the run against a record that survived it.
 
 A run's deadlines, its outcome, and how far each agent has been notified and
 has answered are now rows. Any process reads them, closes a run that has gone
-quiet, and names the agents it did not hear back from.
+quiet, and names the agents it did not hear back from. The write that closes a
+run removes what only an open run needs, leaving the outcome.
+[ADR 0033](../adr/0033-closing-clears-what-the-run-needed.md).
 
 ## Where this document was wrong
 
@@ -32,19 +37,26 @@ dual write does not arise.
 **It proposed an audit table.** Every event of a run, written hot and read
 cold. There is none. What it recorded is answered two other ways: a
 contribution carries its writer and the instant the store stamped, and
-everything else is a log line. `Control.read_audit` is deprecated and may be
-removed on or after 2026-12-05.
+everything else is a log line. `read_audit` went in 0.13.0.
+
+## Where the correction above was itself wrong
 
 **It proposed storing each agent's callback address, subscriptions and
-permissions.** Those are configuration, which the application hands to every
-replica the way it hands the regions, the limits and the admission rule. A
-store holds run state; it does not hold a callback.
+permissions.** This page called those configuration and said a store does not
+hold a callback. Four of the five fields on a declaration are data, and the
+one that is not is the callable rather than the address. An agent is now
+written to the run through both doors, and a replica that holds no callable
+for it reaches it at the address the run records.
+[ADR 0032](../adr/0032-an-agent-is-part-of-the-run.md) and
+[ADR 0034](../adr/0034-an-agent-carries-an-address.md).
 
-## What is still to build
+## What it left to build, and is built
 
-The transactional outbox. A contribution and the intent to notify are not yet
-written in one transaction, so a process that commits a write and stops
-before delivering loses the notification.
+The transactional outbox. The intent to notify is written in the transaction
+that writes the contribution, and a relay sends what is unsent and marks it
+only once the send returns, so a process that commits a write and stops before
+delivering loses nothing.
+[ADR 0030](../adr/0030-the-intent-to-notify-is-on-the-record.md).
 
 ## What did not change
 

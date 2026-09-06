@@ -22,7 +22,7 @@ There is no opening and no handle to keep. The whole surface is three things.
 | **operations** | `write`, `set_premise`, the four reads, `ack` | As many as happen. Any replica serves any of them. |
 | **close** | The outcome row | Once. Not a ceremony, just a write, from the check on access, the reaper, or `abort`. |
 
-`Model` and `Control` bind a board identifier and the configuration so a
+`Model` and `Control` bind a board identifier and the callables so a
 caller does not repeat them. They are convenience over those operations, not a
 connection and not a lease: see [the board is a handle](service.md#serving-a-board).
 

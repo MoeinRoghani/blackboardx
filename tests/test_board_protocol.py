@@ -215,9 +215,9 @@ def test_without_one_the_in_memory_board_is_used() -> None:
 def test_the_protocol_is_nineteen_methods() -> None:
     """The documentation counts them. A method added here updates that count.
 
-    `docs/concepts/storage.md`, `docs/glossary.md` and `docs/concepts/service.md`
-    each say how many `BoardStore` has, and a reader who counts wrong writes an
-    adapter that is missing one.
+    `docs/concepts/storage.md`, `docs/glossary.md`, `docs/concepts/service.md`
+    and `docs/limits.md` each say how many `BoardStore` has, and a reader who
+    counts wrong writes an adapter that is missing one.
     """
     named = {name for name in dir(BoardStore) if not name.startswith("_")}
     assert named == {

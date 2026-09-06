@@ -8,10 +8,11 @@ page says so and points at the design.
 
 The record is durable and so is the run. What is not is the callback.
 
-| | What, and where it lives |
+| Word | Holds |
 | --- | --- |
-| **Run state** | Regions, contributions, premise values and versions, the sequence, idempotency keys, the run's two deadlines and its outcome, and how far each agent has been notified and has answered. All of it is in the store you chose, held in memory by `InMemoryStore` and in the database by a deployment adapter, through one code path either way. None of it is split between the two. |
-| **Configuration** | The regions, the agent roster, the admission rule, the termination predicate, the limits and the clock. The application hands these to every process, and no store holds any of them. |
+| **The record** | Regions, contributions, premise values and their versions, the sequence, idempotency keys, and the run's outcome with the agents that did not finish. Removed only by `store.delete`. |
+| **The run** | The two deadlines, its agents with what wakes each and where it is reached, how far each has got, and what a write recorded that nothing has sent. Removed when the run closes. |
+| **The callables** | `admission_rule`, `termination_predicate`, `clock`, `on_open`, `on_closed`, and the transport that reaches an address. Never written, so never removed. |
 | **In flight** | Notifications `HttpNotifier` has queued but not yet sent. |
 
 A write is served by any process. It lands on the record, pushes the idle
@@ -74,10 +75,10 @@ the application configures the handlers and the format.
 
 ## Every store call blocks
 
-`BoardStore` has eighteen methods and not one is a coroutine, so every write,
-read, acknowledgment and sweep waits for its database round trip. Run state is
-wholly in the store, so those round trips are the ordinary path rather than an
-occasional cost.
+`BoardStore` has nineteen methods and not one is a coroutine, so every write,
+read, acknowledgment and sweep waits for its database round trip. The record
+and the run are both in the store, so those round trips are the ordinary path
+rather than an occasional cost.
 
 An application built on `asyncio` therefore has to keep them off its event
 loop, because a blocking call inside `async def` stalls every other request on
@@ -143,11 +144,10 @@ A store holds a region's name and its kind. It holds no batch window, so
 window was declared, and `wire.RegionBody.declaration` rebuilds it the same way
 on the other side.
 
-The window is configuration rather than record, so a run that attaches must
-state its windows again in the `regions` it passes. `attach_model` compares
-names
-and kinds against the record and nothing else, and a window that disagrees
-with the previous run's is not reported.
+The window is neither the record nor the run, so every process serving a board
+states its windows again in the `regions` it passes. Names and kinds are
+checked against the record and nothing else, so a window that disagrees with
+another process's is not reported.
 
 ## Two versions run side by side only when the schema says so
 

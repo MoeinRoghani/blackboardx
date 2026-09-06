@@ -39,7 +39,7 @@ in this table, and every page, docstring and identifier uses it in that sense.
 | **Admission rule** | The application's function, called on every proposed write before the board sequences anything. It answers `Accept()` or `Reject(reason)`. |
 | **Opening value** | The value a premise starts the run with, given by the `premises` argument to `create_model`. It is a write: it reaches the board and takes a sequence number. It bypasses admission, because it is the application's own input rather than a proposal from a writer. `attach_model` takes no opening premises, because the record already holds the values and the versions they are at. |
 | **Conflict** | A premise write that named a version other than the current one. It changes nothing and takes no sequence number. |
-| **Rejection** | A write the control component refused, with the cause. It never reaches the board and takes no sequence number. The cause is `ADMISSION`, `NOT_PERMITTED`, or `RUN_CLOSED`, and there is no fourth. What the application's own configuration settles, including an undeclared region and a reused idempotency key, raises instead of being rejected. |
+| **Rejection** | A write the control component refused, with the cause. It never reaches the board and takes no sequence number. The cause is `ADMISSION`, `NOT_PERMITTED`, or `RUN_CLOSED`, and there is no fourth. What the application's own declarations settle, including an undeclared region and a reused idempotency key, raises instead of being rejected. |
 
 ## Notification and closing
 
@@ -52,6 +52,9 @@ in this table, and every page, docstring and identifier uses it in that sense.
 | **Cursor** | An agent's last acknowledged sequence number. |
 | **Subscription** | Which regions wake an agent. Omitting `subscribes_to` subscribes it to every premise and to no level; naming regions subscribes it to exactly those, of either kind. |
 | **Run** | One model, from creation to close. |
+| **The record** | What outlives the run: regions, contributions, premise values and their versions, the sequence, idempotency keys, and the run's outcome with the agents that did not finish. Removed only by `store.delete`, which the library never calls. |
+| **The run** | What belongs to one run: the two deadlines, its agents with what wakes each and where it is reached, how far each has been told and has answered, and what a write recorded that nothing has sent. Removed when the run closes. |
+| **The callables** | What is never written, because a function is not data: the admission rule, the termination predicate, the clock, `on_open`, `on_closed`, and the transport that reaches an address. Supplied to `create_model` on every construction. |
 | **Model** | A handle to a board that lives in the store. It holds nothing: every call reads what it needs, so holding one keeps no run open and caches nothing, and it can be built and discarded on any replica. Dropping it closes nothing. `Model` in the code. |
 | **Attach** | Opening a run over a board the store already holds. `attach_model` declares no region and takes no opening premises, and refuses a board holding no region. `create_model` declares its regions, so it refuses a board that already holds a region of the same name. The record carries over, including how far each agent has been notified and has answered; the agent registry does not. |
 | **Idle limit** | How long nothing may happen before the run closes. Every write, registration and acknowledgment pushes it out. |

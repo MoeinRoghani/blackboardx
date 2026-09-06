@@ -13,7 +13,7 @@ framework and opens no socket.
 
 `BoardService` turns one request into one answer. It takes the store, so every
 replica answers a read for any board the store holds, and a callable that finds
-the `Control` a request names, so a write reaches the configuration that board
+the `Control` a request names, so a write reaches the callables that board
 was created with.
 
 ```python
