@@ -4,7 +4,7 @@ Date: 2026-09-02
 
 ## Status
 
-Superseded by ADR 0026, which makes `create_model` converge on a board the store already holds, so there is one door rather than two. ADR 0024 had already superseded the reason this record gives for a second door. What this record decided about a board outliving one process stands.
+Superseded by ADR 0026, which makes `create_model` converge on a board the store already holds, so there is one door rather than two. Two records had already taken parts of it: ADR 0024 the reason given here for a second door, and ADR 0025 the table below saying a cursor and a notification identifier start again. What this record decided about a board outliving one process stands.
 
 ## Context
 
