@@ -60,6 +60,7 @@ reads back through this service meets 404 for the board that is being created.
 
     ```python
     from fastapi import FastAPI, Request as Incoming
+    from fastapi.concurrency import run_in_threadpool
     from fastapi.responses import JSONResponse, Response as Bare
 
     from blackboard import Control
@@ -72,13 +73,16 @@ reads back through this service meets 404 for the board that is being created.
 
     @app.api_route("/v1/{rest:path}", methods=["GET", "POST", "PUT"])
     async def blackboard(rest: str, incoming: Incoming):
-        answer = service.handle(
+        # handle reaches the store, which blocks. On a thread, so it does not
+        # block the event loop and every other request on this worker with it.
+        answer = await run_in_threadpool(
+            service.handle,
             Request(
                 method=incoming.method,
                 path=incoming.url.path,
                 body=await _json(incoming),
                 query=dict(incoming.query_params),
-            )
+            ),
         )
         if answer.body is None:
             return Bare(status_code=answer.status, headers=dict(answer.headers))
