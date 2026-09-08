@@ -1045,11 +1045,8 @@ class Control:
         if refusal is not None:
             return refusal
         with self._lock:
-            writer_state = self._agents.get(writer)
-            declared = (
-                None if writer_state is None else writer_state.declaration.writes_to
-            )
-            if declared is not None and level not in set(declared):
+            declared = self._may_write_to(writer)
+            if declared is not None and level not in declared:
                 return self._reject_locked(
                     writer,
                     level,
@@ -1425,6 +1422,32 @@ class Control:
                 state.pending[change.region] = (
                     due if existing is None else min(existing, due)
                 )
+
+    def _may_write_to(self, writer: str) -> frozenset[str] | None:
+        # Callers hold self._lock. The levels this name may write to, or
+        # nothing where it may write to any. A permission is part of the
+        # declaration, so it is on the run, and reading it from the roster
+        # this process happens to hold would make the answer depend on which
+        # replica took the request. A `Control` built per request holds no
+        # agent at all, which is the shape that would enforce nothing.
+        #
+        # The callable is read first because it is already here. Only a name
+        # this process does not hold costs the read, and a name nobody
+        # declared answers nothing, which permits every declared level.
+        state = self._agents.get(writer)
+        if state is not None:
+            given = state.declaration.writes_to
+            # `Agent` accepts any iterable and keeps a frozenset of it, which
+            # its field type does not say.
+            return None if given is None else frozenset(given)
+        return next(
+            (
+                declared.writes_to
+                for declared in self._store.read_agents(self._board_id)
+                if declared.agent == writer
+            ),
+            None,
+        )
 
     def _who_hears(self, region: str, writer: str) -> list[AgentProgress]:
         # Callers hold self._lock. The agents this write should wake, read

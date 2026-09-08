@@ -53,10 +53,14 @@ it. Name a level, and a contribution to that level wakes the agent, which is
 how one agent's finding starts another's work.
 
 Omit `writes_to` and every level is permitted. Name a level, and a write to any
-other level comes back `Rejected` with the cause `NOT_PERMITTED`. The
-permission is held against the writer's name, so it constrains writes made as
-`ocp` and nothing else: a write under a name that nobody registered reaches any
-declared level.
+other level comes back `Rejected` with the cause `NOT_PERMITTED`. Naming none,
+as `writes_to=[]` does, permits none.
+
+The permission goes to the run with the rest of the declaration, so every
+replica reads the same answer and a write refused on one is refused on all.
+It is held against the writer's name and constrains writes made as `ocp` and
+nothing else: a write under a name the run does not carry reaches any declared
+level.
 
 Naming a level that was never declared is a different failure, and it is caught
 earlier: `register_agent` raises `UndeclaredRegionError` rather than letting

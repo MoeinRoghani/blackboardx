@@ -51,6 +51,7 @@ in this table, and every page, docstring and identifier uses it in that sense.
 | **Acknowledgment** | An agent reporting that it has stopped working on one notification. It says nothing about what the agent found, and it covers every notification outstanding for that agent whose range ends at or before the acknowledged notification's range, so an agent that answers only the last one it was sent leaves nothing outstanding. |
 | **Cursor** | An agent's last acknowledged sequence number. |
 | **Address** | Where an agent is reached, given as `address` on its declaration and written to the run. A process holding a transport delivers to it, whether or not it holds a callable for that agent. |
+| **Permission** | Which levels an agent may write to, given as `writes_to` and written to the run. Omitting it permits every level; naming none permits none. Every replica reads the same answer, so a write refused on one is refused on all. |
 | **Subscription** | Which regions wake an agent. Omitting `subscribes_to` subscribes it to every premise and to no level; naming regions subscribes it to exactly those, of either kind. |
 | **Run** | One model, from creation to close. |
 | **The record** | What outlives the run: regions, contributions, premise values and their versions, the sequence, idempotency keys, and the run's outcome with the agents that did not finish. Removed only by `store.delete`, which the library never calls. |
