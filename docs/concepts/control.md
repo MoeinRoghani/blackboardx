@@ -49,7 +49,7 @@ Refusals come back as values, because a refusal can race correct agent code. A c
 | `Written(repeated=True)` | The idempotency key had written this already, and nothing was added |
 | `Conflict` | A premise write named a version other than the current one |
 | `Rejected(ADMISSION)` | The rule refused, with its reason |
-| `Rejected(NOT_PERMITTED)` | The level is outside the `writes_to` a registered agent declared |
+| `Rejected(NOT_PERMITTED)` | The level is outside the `writes_to` the run records for that agent |
 | `Rejected(RUN_CLOSED)` | The run has closed |
 | raises `UndeclaredRegionError` | No region of that name |
 | raises `RegionKindError` | A level operation named a premise, or the reverse |
@@ -123,7 +123,7 @@ readable from [the store](storage.md):
 | --- | --- |
 | Who wrote this, and when | The contribution's `writer` and `written_at` |
 | Was this write refused, and why | The `Rejected` returned to the caller that made it |
-| Which agents are in this run, and where each is reached | `store.read_agents` |
+| Which agents are in this run, where each is reached, and what each may write to | `store.read_agents` |
 | How far has this agent been told, and has it answered | `store.read_agents` |
 | How did the run end, and who did not finish | `store.read_run` |
 | What was never delivered | `store.unsent` |
