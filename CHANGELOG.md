@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.1](https://github.com/MoeinRoghani/blackboardx/compare/v0.14.0...v0.14.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **control:** every replica enforces what an agent may write to ([#298](https://github.com/MoeinRoghani/blackboardx/issues/298)) ([5929908](https://github.com/MoeinRoghani/blackboardx/commit/592990856ab64754e0b0d1995b9fafe0c34e1775)), closes [#297](https://github.com/MoeinRoghani/blackboardx/issues/297)
+
+
+### Documentation
+
+* two store methods name no board, and seven places said otherwise ([#295](https://github.com/MoeinRoghani/blackboardx/issues/295)) ([a3d009d](https://github.com/MoeinRoghani/blackboardx/commit/a3d009d0a3d25930d8a77a84ec40fa87b087da06)), closes [#294](https://github.com/MoeinRoghani/blackboardx/issues/294)
+
 ## [0.14.0](https://github.com/MoeinRoghani/blackboardx/compare/v0.13.0...v0.14.0) (2026-09-06)
 
 
