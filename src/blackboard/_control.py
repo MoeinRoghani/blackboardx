@@ -80,8 +80,11 @@ _TAIL = 1000
 class BoardStore(Protocol):
     """The operations the control component performs on a store.
 
-    A store holds many boards. Every call names the board it acts on, so one
-    connection to a database serves every board an application runs.
+    A store holds many boards. Every call that acts on one names it first,
+    so one connection to a database serves every board an application runs.
+    Two sweep for work instead and name none: ``runs_past_deadline`` answers
+    what needs closing and ``unsent`` what needs sending, over every board
+    the store holds.
 
     ``InMemoryStore`` and ``SqliteStore`` satisfy this protocol, as does any adapter an
     application writes against its own database. The control component names

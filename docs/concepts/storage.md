@@ -2,7 +2,7 @@
 
 A board is a record, and a record has to be somewhere a reader can find it. A **store** is where records are kept, and it holds many boards. Which database backs the store is the application's decision, so `create_model` takes the store as a required argument and supplies no default.
 
-Every store operation names the board it acts on, so one connection serves every board an application runs:
+Every store operation that acts on a board names it, so one connection serves every board an application runs:
 
 ```python
 store = PostgresStore(pool)
@@ -251,7 +251,7 @@ Postgres and MongoDB keep the sequence gapless differently. Postgres blocks a se
 
 ## An adapter of your own
 
-`BoardStore` is the protocol, and it has nineteen methods. `declare`, `append` and `set` write. `read_level`, `read_premise`, `read_board` and `read_regions` read. `delete` removes one board. Every method names the board it acts on first.
+`BoardStore` is the protocol, and it has nineteen methods. `declare`, `append` and `set` write. `read_level`, `read_premise`, `read_board` and `read_regions` read. `delete` removes one board. Each of those names the board it acts on first, as does every method that carries the run. The two exceptions sweep for work rather than acting on a board: `runs_past_deadline` answers what needs closing and `unsent` what needs sending, over every board the store holds, and neither names one.
 
 The remaining five hold the run rather than the record. `open_run` records that a run is open and sets its two deadlines. `read_run` answers with those deadlines and the store's own clock beside them, so a caller decides that a deadline has passed by comparing two instants from one clock rather than trusting its own. `touch_run` pushes the idle deadline out. `close_run` records how the run ended and answers `True` to the one caller that recorded it, which is what closes a run once however many callers reach the deadline together. `runs_past_deadline` answers with the boards whose run is open and past a deadline, for a caller that closes the runs nobody asked about.
 

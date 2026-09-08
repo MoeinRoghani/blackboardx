@@ -95,9 +95,11 @@ class MongoStore:
 
     ``database`` is the application's own ``pymongo.database.Database``, and this
     adapter does not open or close the client behind it.
-    One database holds many boards. Every call names the board it acts on,
+    One database holds many boards. Every call that acts on one names it,
     and two boards under different identifiers share the collections and see
-    none of each other's writes.
+    none of each other's writes. The two that sweep for work read across
+    boards by design, and answer what is owed rather than what is on any
+    board.
 
     Requires the ``mongodb`` extra::
 
