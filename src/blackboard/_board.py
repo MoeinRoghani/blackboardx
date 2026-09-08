@@ -6,8 +6,10 @@ and a write naming a version other than the current one fails. One counter
 orders every write across all regions of one board, and reads are open to any
 caller.
 
-A store holds many boards. Every call names the board it acts on, so one connection to a
-database serves every board an application runs rather than one board. The board
+A store holds many boards. Every call that acts on one names it first, so one
+connection to a database serves every board an application runs rather than one
+board. The two that sweep for work, ``runs_past_deadline`` and ``unsent``, name
+no board because they answer what is owed across all of them. The board
 identifier is opaque to the library.
 """
 

@@ -1,5 +1,6 @@
 """The control component drives any board that satisfies the storage protocol."""
 
+import inspect
 from datetime import UTC, datetime, timedelta
 
 from blackboard import (
@@ -210,6 +211,28 @@ def test_without_one_the_in_memory_board_is_used() -> None:
         sequence=1
     )
     assert [c.content for c in model.reader.read_level("platform")] == ["finding"]
+
+
+def test_every_method_but_two_names_a_board_first() -> None:
+    """The documentation says which, so a method added here updates it.
+
+    `docs/concepts/storage.md`, `docs/glossary.md` and the module docstrings
+    of the adapters all state that a call acting on a board names it first,
+    and name the two that sweep for work across boards instead. A third
+    exception added quietly makes every one of those sentences false.
+    """
+    sweeps = {"runs_past_deadline", "unsent"}
+    named = {name for name in dir(BoardStore) if not name.startswith("_")}
+
+    def arguments(name: str) -> list[str]:
+        taken = inspect.signature(getattr(BoardStore, name)).parameters
+        return [each for each in taken if each != "self"]
+
+    for name in sorted(named - sweeps):
+        first = arguments(name)[0]
+        assert first == "board_id", f"{name} names {first} first, not the board"
+    for name in sorted(sweeps):
+        assert "board_id" not in arguments(name), f"{name} now names a board"
 
 
 def test_the_protocol_is_nineteen_methods() -> None:

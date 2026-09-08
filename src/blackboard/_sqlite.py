@@ -166,9 +166,11 @@ class SqliteStore:
     else: a second store over ``":memory:"`` in the same process shares
     nothing with the first, so it reads an empty board.
 
-    One file holds many boards. Every call names the board it acts on, and
+    One file holds many boards. Every call that acts on one names it, and
     two boards under different identifiers share the file and see none of each other's
-    writes, sequence numbers included.
+    writes, sequence numbers included. The two that sweep for work read across
+    boards by design, and answer what is owed rather than what is on any
+    board.
 
     The schema is created on construction, because SQLite has no server to
     migrate separately and the file is the application's own.

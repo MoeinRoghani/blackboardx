@@ -8,7 +8,7 @@ in this table, and every page, docstring and identifier uses it in that sense.
 | Term | Meaning |
 | --- | --- |
 | **Board** | What the agents of one run share. It stores contributions, orders them, and reads none of them. It outlives the run that opened it, and a later run attaches to the record it left. |
-| **Store** | Where records are kept. One store holds many boards, and every operation on it names the board it acts on. Any implementation of `BoardStore` is a store. |
+| **Store** | Where records are kept. One store holds many boards, and every operation that acts on one names it. Two sweep for work across every board instead, and name none. Any implementation of `BoardStore` is a store. |
 | **Control component** | Everything that decides: which agents are notified, which writes are admitted, and when the run closes. `Control` in the code. |
 | **Application** | The system built on this library. It supplies the agents, the content, the region declarations, and the rules. |
 | **Agent** | A participant that reads the board, decides if it has anything to add, writes, and acknowledges. The creator names the agents a run starts with, and one that joins a run already under way registers itself. Both doors leave the same row on the run, so an agent is on the record rather than in a process. The library never creates one. |
